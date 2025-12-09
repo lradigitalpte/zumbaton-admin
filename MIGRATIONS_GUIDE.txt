@@ -1,0 +1,27 @@
+SUPABASE CLI MIGRATIONS - Quick Guide
+
+1. Install Supabase CLI (if not already installed):
+   npm install -g supabase
+
+2. Link your project:
+   cd zumbaton-admin
+   supabase link --project-ref ejeihiyxuzlqamlgudnr
+
+3. Create a new migration:
+   supabase migration new your-migration-name
+
+4. Edit the migration file in supabase/migrations/ folder
+
+5. Push migrations to your Supabase project:
+   supabase db push
+
+6. To pull remote changes:
+   supabase db pull
+
+7. To reset local database (development):
+   supabase db reset
+
+IMPORTANT: Since you already ran schema.sql manually, you can:
+- Use migrations for future changes
+- Or create a migration that matches your current schema
+
