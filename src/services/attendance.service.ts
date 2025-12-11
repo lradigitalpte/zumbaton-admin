@@ -1,6 +1,7 @@
 import { supabase, getSupabaseAdminClient, TABLES } from '@/lib/supabase'
 import { ApiError } from '@/lib/api-error'
 import { consumeTokens } from './token.service'
+import { updateUserStreak, incrementUserStat, updateLastClassAt } from './user.service'
 import type {
   CheckInRequest,
   CheckInResponse,
@@ -101,6 +102,16 @@ export async function checkIn(params: {
   if (attendanceError) {
     // Log but don't fail - booking is already marked as attended
     console.error('[AttendanceService] Failed to create attendance record:', attendanceError)
+  }
+
+  // 6. Update user stats (attendance count and streak)
+  try {
+    await incrementUserStat(booking.user_id, 'totalClassesAttended', 1)
+    await updateUserStreak(booking.user_id, classTime)
+    await updateLastClassAt(booking.user_id)
+  } catch (statsError) {
+    // Log but don't fail - check-in was successful
+    console.error('[AttendanceService] Failed to update user stats:', statsError)
   }
 
   return {

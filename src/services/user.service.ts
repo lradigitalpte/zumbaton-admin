@@ -599,6 +599,77 @@ export async function updateLastClassAt(userId: string): Promise<void> {
     .eq('user_id', userId)
 }
 
+/**
+ * Calculate and update user streak based on attendance
+ * Streak logic:
+ * - If last class was yesterday: increment streak
+ * - If last class was today: keep streak (already counted)
+ * - If last class was more than 1 day ago: reset to 1
+ * - Update streak_longest if current exceeds it
+ */
+export async function updateUserStreak(userId: string, classDate: Date = new Date()): Promise<void> {
+  const adminClient = getSupabaseAdminClient()
+  
+  // Get current user stats
+  const { data: stats, error: fetchError } = await adminClient
+    .from('user_stats')
+    .select('streak_current, streak_longest, last_class_at')
+    .eq('user_id', userId)
+    .single()
+
+  if (fetchError) {
+    console.error('[UserService] Failed to fetch user stats for streak update:', fetchError)
+    return
+  }
+
+  const currentStreak = stats?.streak_current || 0
+  const longestStreak = stats?.streak_longest || 0
+  const lastClassAt = stats?.last_class_at ? new Date(stats.last_class_at) : null
+
+  // Normalize dates to start of day for comparison
+  const today = new Date(classDate)
+  today.setHours(0, 0, 0, 0)
+
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+
+  let newStreak = 1
+  let shouldUpdate = true
+
+  if (lastClassAt) {
+    const lastClassDate = new Date(lastClassAt)
+    lastClassDate.setHours(0, 0, 0, 0)
+
+    if (lastClassDate.getTime() === today.getTime()) {
+      // Already attended today - don't increment streak again
+      shouldUpdate = false
+    } else if (lastClassDate.getTime() === yesterday.getTime()) {
+      // Attended yesterday - continue streak
+      newStreak = currentStreak + 1
+    } else {
+      // More than 1 day gap - reset to 1
+      newStreak = 1
+    }
+  } else {
+    // First class ever - start streak at 1
+    newStreak = 1
+  }
+
+  if (shouldUpdate) {
+    const newLongestStreak = Math.max(longestStreak, newStreak)
+
+    await adminClient
+      .from('user_stats')
+      .update({
+        streak_current: newStreak,
+        streak_longest: newLongestStreak,
+        last_class_at: classDate.toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+  }
+}
+
 // =====================================================
 // GET USER BY EMAIL
 // =====================================================

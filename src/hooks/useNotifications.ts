@@ -50,6 +50,10 @@ async function fetchNotifications(params?: {
     throw new Error(response.error.message || 'Failed to fetch notifications')
   }
 
+  if (!response.data) {
+    throw new Error('No data received from notifications API')
+  }
+
   return response.data
 }
 

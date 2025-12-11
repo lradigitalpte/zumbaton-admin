@@ -157,8 +157,8 @@ export async function GET(request: NextRequest) {
       const [todayBookingsResult, allBookingsResult] = await Promise.all(bookingQueries)
 
       // Process today's booking counts
-      const todayBookings = todayBookingsResult.data || []
-      bookingCounts = todayBookings.reduce((acc: Record<string, { confirmed: number; attended: number }>, b: { class_id: string; status: string }) => {
+      const todayBookings = (todayBookingsResult.data || []) as Array<{ class_id: string; status: string }>
+      bookingCounts = todayBookings.reduce((acc: Record<string, { confirmed: number; attended: number }>, b) => {
         if (!acc[b.class_id]) {
           acc[b.class_id] = { confirmed: 0, attended: 0 }
         }
@@ -168,14 +168,14 @@ export async function GET(request: NextRequest) {
       }, {})
 
       // Process all bookings for stats
-      const allBookings = allBookingsResult.data || []
-      const uniqueUserIds = new Set(allBookings.map((b: { user_id: string }) => b.user_id))
+      const allBookings = (allBookingsResult.data || []) as Array<{ user_id: string; status: string }>
+      const uniqueUserIds = new Set(allBookings.map(b => b.user_id))
       uniqueStudents = uniqueUserIds.size
       
-      totalBooked = allBookings.filter((b: { status: string }) => 
+      totalBooked = allBookings.filter(b => 
         ['confirmed', 'attended'].includes(b.status)
       ).length
-      totalAttendance = allBookings.filter((b: { status: string }) => 
+      totalAttendance = allBookings.filter(b => 
         b.status === 'attended'
       ).length
     }

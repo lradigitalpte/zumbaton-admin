@@ -74,16 +74,11 @@ export default function CategoriesPage() {
 
   return (
     <div className="space-y-6">
-      <PageBreadCrumb 
-        paths={[
-          { label: "Home", href: "/" },
-          { label: "Categories", href: "/categories" },
-        ]}
-      />
+      <PageBreadCrumb pageTitle="Categories" />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-        <ComponentCard>
+        <ComponentCard title="Total Categories">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Total Categories</p>
@@ -99,7 +94,7 @@ export default function CategoriesPage() {
           </div>
         </ComponentCard>
 
-        <ComponentCard>
+        <ComponentCard title="Active Categories">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Active</p>
@@ -115,7 +110,7 @@ export default function CategoriesPage() {
           </div>
         </ComponentCard>
 
-        <ComponentCard>
+        <ComponentCard title="Inactive Categories">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Inactive</p>
@@ -133,14 +128,8 @@ export default function CategoriesPage() {
       </div>
 
       {/* Categories List */}
-      <ComponentCard>
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">All Categories</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Manage your class categories
-            </p>
-          </div>
+      <ComponentCard title="All Categories" desc="Manage your class categories">
+        <div className="flex items-center justify-end mb-6">
           <Button onClick={openNewCategoryPanel} variant="primary">
             <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

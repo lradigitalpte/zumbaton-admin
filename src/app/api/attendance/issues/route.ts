@@ -111,7 +111,9 @@ export async function GET(request: NextRequest) {
     // Get instructor profiles
     const instructorIds = [...new Set(
       bookings?.map(b => {
-        const classData = b.class as { instructor_id: string } | null
+        const classData = Array.isArray(b.class) 
+          ? (b.class[0] as { instructor_id: string } | undefined)
+          : (b.class as { instructor_id: string } | null | undefined)
         return classData?.instructor_id
       }).filter(Boolean) || []
     )] as string[]
@@ -169,7 +171,9 @@ export async function GET(request: NextRequest) {
       const user = userProfileMap[booking.user_id] || null
       
       // Get class data
-      const classData = booking.class as { id: string; title: string; scheduled_at: string; duration_minutes: number; instructor_id: string } | null
+      const classData = Array.isArray(booking.class)
+        ? (booking.class[0] as { id: string; title: string; scheduled_at: string; duration_minutes: number; instructor_id: string } | undefined)
+        : (booking.class as { id: string; title: string; scheduled_at: string; duration_minutes: number; instructor_id: string } | null | undefined)
       const instructorName = classData?.instructor_id ? instructorMap[classData.instructor_id] : null
       
       const issueInfo = issueStatusMap[booking.id]

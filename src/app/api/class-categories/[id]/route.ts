@@ -19,12 +19,12 @@ interface CategoryRow {
 // PATCH /api/class-categories/[id] - Update a category
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = getSupabaseAdminClient()
     const body = await request.json()
-    const { id } = params
+    const { id } = await params
 
     const { name, slug, description, color, icon, parentId, isActive, sortOrder } = body
 
@@ -99,11 +99,11 @@ export async function PATCH(
 // DELETE /api/class-categories/[id] - Delete a category
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = getSupabaseAdminClient()
-    const { id } = params
+    const { id } = await params
 
     // Check if category is being used by any classes
     const { data: classesUsingCategory, error: checkError } = await supabase

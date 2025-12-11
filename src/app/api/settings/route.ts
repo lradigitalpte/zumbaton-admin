@@ -100,7 +100,7 @@ export async function PATCH(request: NextRequest) {
 
     if (business) {
       updates.push(
-        supabase
+        (supabase
           .from('system_settings')
           .upsert({
             setting_type: 'business',
@@ -109,12 +109,13 @@ export async function PATCH(request: NextRequest) {
           }, {
             onConflict: 'setting_type',
           })
+          .select() as unknown) as Promise<any>
       )
     }
 
     if (booking) {
       updates.push(
-        supabase
+        (supabase
           .from('system_settings')
           .upsert({
             setting_type: 'booking',
@@ -123,12 +124,13 @@ export async function PATCH(request: NextRequest) {
           }, {
             onConflict: 'setting_type',
           })
+          .select() as unknown) as Promise<any>
       )
     }
 
     if (tokens) {
       updates.push(
-        supabase
+        (supabase
           .from('system_settings')
           .upsert({
             setting_type: 'tokens',
@@ -137,12 +139,13 @@ export async function PATCH(request: NextRequest) {
           }, {
             onConflict: 'setting_type',
           })
+          .select() as unknown) as Promise<any>
       )
     }
 
     if (appearance) {
       updates.push(
-        supabase
+        (supabase
           .from('system_settings')
           .upsert({
             setting_type: 'appearance',
@@ -151,6 +154,7 @@ export async function PATCH(request: NextRequest) {
           }, {
             onConflict: 'setting_type',
           })
+          .select() as unknown) as Promise<any>
       )
     }
 

@@ -388,11 +388,11 @@ export default function StaffDetailPage() {
                 <div className="flex justify-between">
                   <dt className="text-sm text-gray-500 dark:text-gray-400">Last Updated</dt>
                   <dd className="text-sm font-medium text-gray-900 dark:text-white">
-                    {new Date(staff.updatedAt).toLocaleDateString("en-US", {
+                    {staff.updatedAt ? new Date(staff.updatedAt).toLocaleDateString("en-US", {
                       month: "long",
                       day: "numeric",
                       year: "numeric",
-                    })}
+                    }) : "N/A"}
                   </dd>
                 </div>
               </dl>
