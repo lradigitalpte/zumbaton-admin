@@ -327,18 +327,18 @@ const AppSidebar: React.FC = () => {
             <Image
               src="/images/logo/zumbaton logo (transparent).png"
               alt="Zumbaton Logo"
-              width={120}
-              height={40}
-              className="h-8 w-auto dark:invert"
+              width={200}
+              height={66}
+              className="h-14 w-auto dark:invert"
               priority
             />
           ) : (
             <Image
               src="/images/logo/logo fav.png"
               alt="Zumbaton"
-              width={36}
-              height={36}
-              className="h-9 w-9 rounded-xl"
+              width={48}
+              height={48}
+              className="h-12 w-12 rounded-xl"
               priority
             />
           )}
