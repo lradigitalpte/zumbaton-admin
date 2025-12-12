@@ -67,9 +67,9 @@ export default function SetPasswordForm() {
           <Image
             src="/images/logo/zumbaton logo (transparent).png"
             alt="Zumbaton Logo"
-            width={200}
-            height={66}
-            className="h-16 w-auto dark:invert"
+            width={120}
+            height={40}
+            className="h-8 w-auto dark:invert"
             priority
           />
         </div>

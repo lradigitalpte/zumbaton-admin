@@ -16,11 +16,7 @@ export const metadata: Metadata = {
   title: "Zumbaton Admin Dashboard",
   description: "Zumbaton fitness class management dashboard",
   icons: {
-    icon: [
-      { url: "/images/logo/logo fav.png", type: "image/png" },
-      { url: "/images/logo/logo fav.png", sizes: "32x32", type: "image/png" },
-      { url: "/images/logo/logo fav.png", sizes: "16x16", type: "image/png" },
-    ],
+    icon: "/images/logo/logo fav.png",
     shortcut: "/images/logo/logo fav.png",
     apple: "/images/logo/logo fav.png",
   },
