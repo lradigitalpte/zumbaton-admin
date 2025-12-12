@@ -1,4 +1,5 @@
 import { Outfit } from 'next/font/google';
+import type { Metadata } from 'next';
 import './globals.css';
 
 import { SidebarProvider } from '@/context/SidebarContext';
@@ -10,6 +11,16 @@ import { ReactQueryProvider } from '@/lib/react-query';
 const outfit = Outfit({
   subsets: ["latin"],
 });
+
+export const metadata: Metadata = {
+  title: "Zumbaton Admin Dashboard",
+  description: "Zumbaton fitness class management dashboard",
+  icons: {
+    icon: "/images/logo/logo fav.png",
+    shortcut: "/images/logo/logo fav.png",
+    apple: "/images/logo/logo fav.png",
+  },
+};
 
 export default function RootLayout({
   children,

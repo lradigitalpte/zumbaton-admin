@@ -4,6 +4,7 @@ import Label from "@/components/form/Label";
 import Button from "@/components/ui/button/Button";
 import { EyeCloseIcon, EyeIcon } from "@/icons";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import React, { useState } from "react";
 
@@ -63,12 +64,14 @@ export default function SetPasswordForm() {
       <div className="w-full max-w-md sm:pt-10 mx-auto mb-5">
         {/* Logo */}
         <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center h-9 w-9 rounded-xl bg-brand-500 text-white font-bold text-lg">
-            Z
-          </span>
-          <span className="text-xl font-bold text-gray-900 dark:text-white">
-            Zumbathon
-          </span>
+          <Image
+            src="/images/logo/zumbaton logo (transparent).png"
+            alt="Zumbaton Logo"
+            width={120}
+            height={40}
+            className="h-8 w-auto dark:invert"
+            priority
+          />
         </div>
       </div>
       <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto">
@@ -78,7 +81,7 @@ export default function SetPasswordForm() {
               Set Your Password
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Welcome to Zumbathon! Create a secure password to complete your account setup.
+              Welcome to Zumbaton! Create a secure password to complete your account setup.
             </p>
           </div>
 

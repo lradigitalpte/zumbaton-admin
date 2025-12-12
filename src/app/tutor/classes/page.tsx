@@ -367,7 +367,7 @@ export default function TutorClassesPage() {
                 <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Location</p>
                   <p className="font-medium text-gray-900 dark:text-white">{selectedClass.room}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Zumbathon Studio</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Zumbaton Studio</p>
                 </div>
                 <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Enrollment</p>

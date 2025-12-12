@@ -2,7 +2,7 @@ import MFAVerificationForm from "@/components/auth/MFAVerificationForm";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "MFA Verification | Zumbathon",
+  title: "MFA Verification | Zumbaton",
   description: "Enter your verification code",
 };
 

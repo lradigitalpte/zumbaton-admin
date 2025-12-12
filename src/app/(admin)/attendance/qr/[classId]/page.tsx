@@ -160,7 +160,7 @@ export default function AttendanceQRPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
               </div>
-              <span className="text-slate-300">Open Zumbathon app</span>
+              <span className="text-slate-300">Open Zumbaton app</span>
               <svg className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
@@ -257,7 +257,7 @@ export default function AttendanceQRPage() {
             Press <kbd className="mx-1 rounded-lg bg-slate-700 px-2 py-0.5 text-xs font-medium text-slate-300">ESC</kbd> or click ✕ to close
           </p>
           <p className="text-sm text-slate-500">
-            Powered by <span className="font-semibold text-brand-400">Zumbathon</span>
+            Powered by <span className="font-semibold text-brand-400">Zumbaton</span>
           </p>
         </div>
       </footer>

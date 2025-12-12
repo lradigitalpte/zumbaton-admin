@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSidebar } from "../context/SidebarContext";
 import { useAuth } from "@/context/AuthContext";
@@ -303,13 +304,23 @@ const TutorSidebar: React.FC = () => {
       >
         <Link href="/tutor" className="flex items-center gap-2">
           {isExpanded || isHovered || isMobileOpen ? (
-            <span className="text-xl font-bold text-gray-900 dark:text-white">
-              Zumbathon
-            </span>
+            <Image
+              src="/images/logo/zumbaton logo (transparent).png"
+              alt="Zumbaton Logo"
+              width={120}
+              height={40}
+              className="h-8 w-auto dark:invert"
+              priority
+            />
           ) : (
-            <span className="text-lg font-bold text-gray-900 dark:text-white">
-              Z
-            </span>
+            <Image
+              src="/images/logo/logo fav.png"
+              alt="Zumbaton"
+              width={36}
+              height={36}
+              className="h-9 w-9 rounded-xl"
+              priority
+            />
           )}
         </Link>
       </div>

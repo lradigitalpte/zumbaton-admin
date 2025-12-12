@@ -3,6 +3,7 @@ import ThemeTogglerTwo from "@/components/common/ThemeTogglerTwo";
 
 import { ThemeProvider } from "@/context/ThemeContext";
 import Link from "next/link";
+import Image from "next/image";
 import React from "react";
 
 export default function AuthLayout({
@@ -21,12 +22,14 @@ export default function AuthLayout({
               <GridShape />
               <div className="flex flex-col items-center max-w-xs">
                 <Link href="/" className="flex items-center gap-3 mb-4">
-                  <span className="flex items-center justify-center h-12 w-12 rounded-xl bg-white text-brand-500 font-bold text-2xl">
-                    Z
-                  </span>
-                  <span className="text-3xl font-bold text-white">
-                    Zumbathon
-                  </span>
+                  <Image
+                    src="/images/logo/zumbaton logo (transparent).png"
+                    alt="Zumbaton Logo"
+                    width={180}
+                    height={60}
+                    className="h-12 w-auto"
+                    priority
+                  />
                 </Link>
                 <p className="text-center text-gray-400 dark:text-white/60">
                   Dance Fitness Studio Management Platform

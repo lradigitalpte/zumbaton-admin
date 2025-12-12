@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useRef, useState,useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSidebar } from "../context/SidebarContext";
 import {
@@ -322,13 +323,24 @@ const AppSidebar: React.FC = () => {
         }`}
       >
         <Link href="/dashboard" className="flex items-center gap-2">
-          <span className="flex items-center justify-center h-9 w-9 rounded-xl bg-brand-500 text-white font-bold text-lg">
-            Z
-          </span>
-          {(isExpanded || isHovered || isMobileOpen) && (
-            <span className="text-xl font-bold text-gray-900 dark:text-white">
-              Zumbathon
-            </span>
+          {isExpanded || isHovered || isMobileOpen ? (
+            <Image
+              src="/images/logo/zumbaton logo (transparent).png"
+              alt="Zumbaton Logo"
+              width={120}
+              height={40}
+              className="h-8 w-auto dark:invert"
+              priority
+            />
+          ) : (
+            <Image
+              src="/images/logo/logo fav.png"
+              alt="Zumbaton"
+              width={36}
+              height={36}
+              className="h-9 w-9 rounded-xl"
+              priority
+            />
           )}
         </Link>
       </div>
