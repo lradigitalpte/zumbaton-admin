@@ -1,6 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
 import { supabase, getSupabaseClient } from '@/lib/supabase'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import { refreshSessionIfNeeded, isSessionValid } from '@/lib/session'
@@ -23,7 +24,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const PUBLIC_ROUTES = ['/signin', '/signup', '/forgot-password', '/set-password', '/mfa', '/reset-password']
+const PUBLIC_ROUTES = ['/signin', '/signup', '/forgot-password', '/set-password', '/mfa', '/reset-password', '/']
 const ADMIN_ROLES: User['role'][] = ['super_admin', 'admin', 'instructor', 'staff', 'receptionist']
 const AUTH_TIMEOUT = 10000 // 10 seconds max for auth check
 
@@ -39,9 +40,22 @@ async function mapSupabaseUserToUser(supabaseUser: SupabaseUser | null): Promise
   
   if (metadataRole && ADMIN_ROLES.includes(metadataRole as User['role'])) {
     console.log('[Auth] ✓ Found admin role in user_metadata:', metadataRole)
+    
+    // Extract user name with better formatting
+    let userName = 'User'
+    if (supabaseUser.user_metadata?.name) {
+      userName = supabaseUser.user_metadata.name
+    } else if (supabaseUser.email) {
+      const emailName = supabaseUser.email.split('@')[0]
+      userName = emailName
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
+    }
+    
     return {
       id: supabaseUser.id,
-      name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || 'User',
+      name: userName,
       email: supabaseUser.email || '',
       role: metadataRole as User['role'],
     }
@@ -99,20 +113,37 @@ async function mapSupabaseUserToUser(supabaseUser: SupabaseUser | null): Promise
 
   // No admin role found anywhere
   console.warn('[Auth] No admin role found, returning user role')
+  
+  // Extract user name with better formatting
+  let userName = 'User'
+  if (supabaseUser.user_metadata?.name) {
+    userName = supabaseUser.user_metadata.name
+  } else if (supabaseUser.email) {
+    const emailName = supabaseUser.email.split('@')[0]
+    userName = emailName
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+  }
+  
   return {
     id: supabaseUser.id,
-    name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || 'User',
+    name: userName,
     email: supabaseUser.email || '',
     role: 'user',
   }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadingTooLong, setLoadingTooLong] = useState(false)
   const hasInitializedRef = useRef(false)
   const isInitializingRef = useRef(false)
+  
+  // Check if current route is a public route
+  const isPublicRoute = PUBLIC_ROUTES.some(route => pathname?.startsWith(route))
 
   const initializeAuth = async () => {
     // Prevent multiple simultaneous calls
@@ -125,12 +156,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true)
     try {
       console.log('[Auth] Getting session...')
-      const { data: { session }, error } = await supabase.auth.getSession()
+      // Wrap getSession in a timeout to prevent hanging
+      let sessionResult: Awaited<ReturnType<typeof supabase.auth.getSession>>
+      try {
+        const sessionPromise = supabase.auth.getSession()
+        const timeoutPromise = new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Session check timed out')), 2000) // Reduced to 2 seconds
+        )
+        sessionResult = await Promise.race([sessionPromise, timeoutPromise])
+        console.log('[Auth] Session retrieved successfully')
+      } catch (timeoutError) {
+        console.warn('[Auth] Session check timed out after 2s - treating as no session')
+        // Treat timeout as "no session" - complete auth immediately
+        setUser(null)
+        setIsLoading(false)
+        isInitializingRef.current = false
+        return
+      }
+      const { data: { session }, error } = sessionResult
 
       if (error) {
         console.error('[Auth] Session error:', error.message)
         setUser(null)
         setIsLoading(false)
+        isInitializingRef.current = false
         return
       }
 
@@ -147,61 +196,129 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const userRole = session.user.user_metadata?.role
         console.log('[Auth] Checking metadata roles:', { appRole, userRole })
         
+        // Helper function to extract user name
+        const getUserName = (): string => {
+          // Try user_metadata.name first
+          if (session.user.user_metadata?.name) {
+            return session.user.user_metadata.name
+          }
+          // Try email and extract username part
+          if (session.user.email) {
+            const emailName = session.user.email.split('@')[0]
+            // Capitalize first letter and replace underscores with spaces
+            return emailName
+              .split('_')
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(' ')
+          }
+          // Fallback based on role
+          if (appRole || userRole) {
+            const role = (appRole || userRole) as string
+            return role.split('_').map(word => 
+              word.charAt(0).toUpperCase() + word.slice(1)
+            ).join(' ')
+          }
+          return 'User'
+        }
+        
         if (appRole && ADMIN_ROLES.includes(appRole as User['role'])) {
           console.log('[Auth] ✓ Found admin role in app_metadata:', appRole)
+          const userName = getUserName()
+          console.log('[Auth] Extracted user name:', userName)
           setUser({
             id: session.user.id,
-            name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+            name: userName,
             email: session.user.email || '',
             role: appRole as User['role'],
           })
+          // Complete initialization - don't query database
+          setIsLoading(false)
+          isInitializingRef.current = false
+          console.log('[Auth] Auth complete (from app_metadata)')
           return
         }
         
         if (userRole && ADMIN_ROLES.includes(userRole as User['role'])) {
           console.log('[Auth] ✓ Found admin role in user_metadata:', userRole)
+          const userName = getUserName()
+          console.log('[Auth] Extracted user name:', userName)
           setUser({
             id: session.user.id,
-            name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+            name: userName,
             email: session.user.email || '',
             role: userRole as User['role'],
           })
+          // Complete initialization - don't query database
+          setIsLoading(false)
+          isInitializingRef.current = false
+          console.log('[Auth] Auth complete (from user_metadata)')
           return
         }
         
-        // Fall back to database lookup
-        const userData = await mapSupabaseUserToUser(session.user)
-        
-        console.log('[Auth] Mapped user data:', userData ? { role: userData.role, email: userData.email } : 'null')
-        
-        if (userData && ADMIN_ROLES.includes(userData.role)) {
-          console.log('[Auth] ✓ User has admin role, setting user state')
-          setUser(userData)
-        } else {
-          console.warn('[Auth] ✗ User does NOT have admin role:', userData?.role)
-          console.warn('[Auth] Admin roles are:', ADMIN_ROLES)
-          // User doesn't have admin role - just set user to null
-          // Don't sign out automatically to prevent loops
+        // Fall back to database lookup (only if role not in metadata)
+        // But skip this if it's taking too long - use metadata only
+        console.log('[Auth] Role not in metadata, trying database lookup...')
+        try {
+          const userData = await mapSupabaseUserToUser(session.user)
+          
+          console.log('[Auth] Mapped user data:', userData ? { role: userData.role, email: userData.email } : 'null')
+          
+          if (userData && ADMIN_ROLES.includes(userData.role)) {
+            console.log('[Auth] ✓ User has admin role, setting user state')
+            setUser(userData)
+            setIsLoading(false)
+            isInitializingRef.current = false
+            return
+          } else {
+            console.warn('[Auth] ✗ User does NOT have admin role:', userData?.role)
+            console.warn('[Auth] Admin roles are:', ADMIN_ROLES)
+            setUser(null)
+            setIsLoading(false)
+            isInitializingRef.current = false
+            return
+          }
+        } catch (dbError) {
+          console.error('[Auth] Database lookup failed or timed out:', dbError)
+          // If database lookup fails, we can't verify admin role
+          // Set user to null so they get redirected to signin
           setUser(null)
+          setIsLoading(false)
+          isInitializingRef.current = false
+          return
         }
       } else {
-        console.log('[Auth] No session found')
+        console.log('[Auth] No session found - completing auth')
         setUser(null)
+        setIsLoading(false)
+        isInitializingRef.current = false
+        return // Exit early when no session - don't wait for finally
       }
     } catch (error) {
       console.error('[Auth] Initialization failed:', error)
       setUser(null)
-    } finally {
-      console.log('[Auth] Auth initialization complete')
       setIsLoading(false)
       isInitializingRef.current = false
+      return // Exit early on error
+    } finally {
+      // Only run if we didn't return early
+      if (isInitializingRef.current) {
+        console.log('[Auth] Auth initialization complete (finally block)')
+        setIsLoading(false)
+        isInitializingRef.current = false
+      }
     }
   }
 
   useEffect(() => {
-    // Prevent multiple initializations - check both refs
-    if (hasInitializedRef.current || isInitializingRef.current) {
-      console.log('[Auth] Effect: Already initialized or initializing, skipping...')
+    // Prevent concurrent initializations - only check if currently initializing
+    if (isInitializingRef.current) {
+      console.log('[Auth] Effect: Already initializing, skipping...')
+      return
+    }
+    
+    // If already initialized, skip (normal case after first mount)
+    if (hasInitializedRef.current) {
+      console.log('[Auth] Effect: Already initialized, skipping...')
       return
     }
     
@@ -223,14 +340,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Add timeout to prevent infinite loading
       const timeoutId = setTimeout(() => {
         if (isMounted) {
-          console.warn('[Auth] Auth initialization timed out after', AUTH_TIMEOUT, 'ms')
+          console.warn('[Auth] Auth initialization timed out after', AUTH_TIMEOUT, 'ms - forcing completion')
+          setUser(null) // Ensure user is null on timeout
           setIsLoading(false)
           isInitializingRef.current = false
+          hasInitializedRef.current = true // Mark as completed (even if failed)
         }
       }, AUTH_TIMEOUT)
 
       try {
         await initializeAuth()
+        // Mark as completed after successful initialization
+        hasInitializedRef.current = true
       } finally {
         clearTimeout(timeoutId)
         clearTimeout(slowLoadingTimeout)
@@ -281,6 +402,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isMounted = false
       subscription.unsubscribe()
       clearInterval(refreshInterval)
+      // Reset refs on unmount to allow re-initialization
+      hasInitializedRef.current = false
+      isInitializingRef.current = false
     }
   }, []) // Empty dependency array - only run once on mount
 
@@ -397,13 +521,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       hasInitializedRef.current = false
       isInitializingRef.current = false
       
-      // Sign out from Supabase (this clears the session)
-      // Don't await this - redirect immediately to prevent hanging
-      supabase.auth.signOut().catch((error) => {
-        console.error('[Auth] Sign out error:', error)
-      })
+      // Sign out from Supabase (this should clear the session)
+      try {
+        await supabase.auth.signOut()
+      } catch (supabaseError) {
+        console.error('[Auth] Supabase sign out error:', supabaseError)
+        // Continue even if Supabase signOut fails
+      }
       
-      // Redirect immediately without waiting - the redirect will clear everything
+      // Manually clear all Supabase-related localStorage items
+      try {
+        const keysToRemove: string[] = []
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (key && (key.startsWith('sb-') || key.includes('supabase'))) {
+            keysToRemove.push(key)
+          }
+        }
+        keysToRemove.forEach(key => {
+          localStorage.removeItem(key)
+        })
+        console.log('[Auth] Cleared', keysToRemove.length, 'localStorage items')
+      } catch (storageError) {
+        console.error('[Auth] Error clearing localStorage:', storageError)
+      }
+      
+      // Redirect to signin page
       window.location.href = '/signin'
     } catch (error) {
       console.error('[Auth] Sign out error:', error)
@@ -413,6 +556,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoadingTooLong(false)
       hasInitializedRef.current = false
       isInitializingRef.current = false
+      
+      // Manually clear localStorage even on error
+      try {
+        const keysToRemove: string[] = []
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (key && (key.startsWith('sb-') || key.includes('supabase'))) {
+            keysToRemove.push(key)
+          }
+        }
+        keysToRemove.forEach(key => {
+          localStorage.removeItem(key)
+        })
+      } catch (storageError) {
+        console.error('[Auth] Error clearing localStorage on error:', storageError)
+      }
+      
       // Even if there's an error, force redirect to clear state
       window.location.href = '/signin'
     }
@@ -422,8 +582,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Route protection should be handled at the page/layout level, not here
   // This prevents infinite redirect loops
 
-  // Show loading spinner while checking auth
-  if (isLoading) {
+  // Show loading spinner while checking auth, but allow public routes to render immediately
+  if (isLoading && !isPublicRoute) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-500"></div>
