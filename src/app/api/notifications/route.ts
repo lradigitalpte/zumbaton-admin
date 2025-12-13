@@ -16,10 +16,30 @@ import { z } from 'zod'
 
 // Query params schema
 const NotificationQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  unreadOnly: z.enum(['true', 'false']).transform(v => v === 'true').default('false'),
-  channel: z.enum(['email', 'push', 'sms', 'in_app']).optional()
+  page: z.preprocess(
+    (val) => {
+      if (val === null || val === '' || val === undefined) return undefined;
+      const num = Number(val);
+      return isNaN(num) ? undefined : num;
+    },
+    z.number().int().positive().default(1)
+  ),
+  limit: z.preprocess(
+    (val) => {
+      if (val === null || val === '' || val === undefined) return undefined;
+      const num = Number(val);
+      return isNaN(num) ? undefined : num;
+    },
+    z.number().int().min(1).max(100).default(20)
+  ),
+  unreadOnly: z.preprocess(
+    (val) => val === null || val === '' || val === undefined ? 'false' : val,
+    z.enum(['true', 'false']).transform(v => v === 'true')
+  ),
+  channel: z.preprocess(
+    (val) => val === null || val === '' ? undefined : val,
+    z.enum(['email', 'push', 'sms', 'in_app']).optional()
+  )
 })
 
 /**
@@ -32,10 +52,10 @@ async function handleGetNotifications(
   try {
     const url = new URL(request.url)
     const queryResult = NotificationQuerySchema.safeParse({
-      page: url.searchParams.get('page'),
-      limit: url.searchParams.get('limit'),
-      unreadOnly: url.searchParams.get('unreadOnly'),
-      channel: url.searchParams.get('channel')
+      page: url.searchParams.get('page') || undefined,
+      limit: url.searchParams.get('limit') || undefined,
+      unreadOnly: url.searchParams.get('unreadOnly') || undefined,
+      channel: url.searchParams.get('channel') || undefined
     })
 
     if (!queryResult.success) {

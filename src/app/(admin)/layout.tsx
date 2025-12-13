@@ -20,12 +20,11 @@ export default function AdminLayout({
 
   // Simple route protection - redirect to signin if not authenticated
   useEffect(() => {
-    console.log('[AdminLayout] Auth state:', { isLoading, user: user?.email, pathname })
+    // Only redirect if auth check is complete and no user
     if (!isLoading && !user) {
-      console.log('[AdminLayout] No user, redirecting to signin...')
       router.replace('/signin');
     }
-  }, [user, isLoading, router, pathname]);
+  }, [user, isLoading, router]);
 
   // Dynamic class for main content margin based on sidebar state
   const mainContentMargin = isMobileOpen
