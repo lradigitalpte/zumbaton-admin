@@ -5,8 +5,9 @@ import Button from "@/components/ui/button/Button";
 import { EyeCloseIcon, EyeIcon } from "@/icons";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
-import React, { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import React, { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 export default function SetPasswordForm() {
   const [password, setPassword] = useState("");
@@ -15,7 +16,26 @@ export default function SetPasswordForm() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [isValidToken, setIsValidToken] = useState<boolean | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Check if we have a valid password reset token
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      // If there's a token in the URL or a session, we're good
+      const token = searchParams.get('token');
+      if (token || session) {
+        setIsValidToken(true);
+      } else {
+        setIsValidToken(false);
+      }
+    };
+
+    checkSession();
+  }, [searchParams]);
 
   const validatePassword = (pwd: string) => {
     const checks = {
@@ -52,24 +72,45 @@ export default function SetPasswordForm() {
 
     setIsSubmitting(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
+    try {
+      // Update password using Supabase
+      // This works when the user has a valid reset token in their session
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: password,
+      });
+
+      if (updateError) {
+        console.error('Error updating password:', updateError);
+        
+        if (updateError.message.includes('session') || updateError.message.includes('token')) {
+          setError('This password reset link has expired or is invalid. Please request a new one.');
+        } else {
+          setError(updateError.message || 'Failed to update password. Please try again.');
+        }
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Success - redirect to sign in
+      router.push("/signin?password-reset=success");
+    } catch (err) {
+      console.error('Error resetting password:', err);
+      setError('Something went wrong. Please try again.');
     setIsSubmitting(false);
-    router.push("/signin");
+    }
   };
 
   return (
     <div className="flex flex-col flex-1 lg:w-1/2 w-full">
       <div className="w-full max-w-md sm:pt-10 mx-auto mb-5">
         {/* Logo */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-center gap-2">
           <Image
             src="/images/logo/zumbaton logo (transparent).png"
             alt="Zumbaton Logo"
-            width={120}
-            height={40}
-            className="h-8 w-auto dark:invert"
+            width={400}
+            height={133}
+            className="h-32 w-auto dark:invert"
             priority
           />
         </div>
@@ -78,13 +119,34 @@ export default function SetPasswordForm() {
         <div>
           <div className="mb-5 sm:mb-8">
             <h1 className="mb-2 font-semibold text-gray-800 text-title-sm dark:text-white/90 sm:text-title-md">
-              Set Your Password
+              {isValidToken === false ? 'Invalid Reset Link' : 'Set Your Password'}
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Welcome to Zumbaton! Create a secure password to complete your account setup.
+              {isValidToken === false 
+                ? 'This password reset link has expired or is invalid. Please request a new one.'
+                : 'Create a secure password to complete your password reset.'}
             </p>
           </div>
 
+          {isValidToken === false ? (
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800">
+                <p className="text-sm text-red-600 dark:text-red-400">
+                  This password reset link is no longer valid. Password reset links expire after a certain time for security reasons.
+                </p>
+              </div>
+              <Link href="/forgot-password">
+                <Button className="w-full" size="sm">
+                  Request New Reset Link
+                </Button>
+              </Link>
+              <Link href="/signin">
+                <Button className="w-full" size="sm" variant="outline">
+                  Back to Sign In
+                </Button>
+              </Link>
+            </div>
+          ) : (
           <form onSubmit={handleSubmit}>
             <div className="space-y-6">
               {error && (
@@ -189,6 +251,7 @@ export default function SetPasswordForm() {
               </div>
             </div>
           </form>
+          )}
 
           <div className="mt-5">
             <p className="text-sm font-normal text-center text-gray-700 dark:text-gray-400 sm:text-start">

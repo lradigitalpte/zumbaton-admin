@@ -99,18 +99,12 @@ const AppHeader: React.FC = () => {
 
           <Link href="/dashboard" className="lg:hidden">
             <Image
-              width={154}
-              height={32}
-              className="dark:hidden"
-              src="./images/logo/logo.svg"
-              alt="Logo"
-            />
-            <Image
-              width={154}
-              height={32}
-              className="hidden dark:block"
-              src="./images/logo/logo-dark.svg"
-              alt="Logo"
+              width={200}
+              height={67}
+              className="h-10 w-auto dark:invert"
+              src="/images/logo/zumbaton logo (transparent).png"
+              alt="Zumbaton Logo"
+              priority
             />
           </Link>
 

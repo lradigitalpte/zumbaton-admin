@@ -73,13 +73,13 @@ export default function SignInForm() {
     <div className="flex flex-col flex-1 lg:w-1/2 w-full">
       <div className="w-full max-w-md sm:pt-10 mx-auto mb-5">
         {/* Zumbaton Logo */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-center gap-2">
           <Image
             src="/images/logo/zumbaton logo (transparent).png"
             alt="Zumbaton Logo"
-            width={120}
-            height={40}
-            className="h-8 w-auto dark:invert"
+            width={400}
+            height={133}
+            className="h-32 w-auto dark:invert"
             priority
           />
         </div>
@@ -157,33 +157,6 @@ export default function SignInForm() {
                 </div>
               </div>
             </form>
-
-            {/* Demo Links for Testing Auth Pages */}
-            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wider">
-                Demo Pages (for testing)
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href="/forgot-password"
-                  className="text-xs px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
-                >
-                  Forgot Password
-                </Link>
-                <Link
-                  href="/set-password?token=demo"
-                  className="text-xs px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
-                >
-                  Set Password
-                </Link>
-                <Link
-                  href="/mfa"
-                  className="text-xs px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
-                >
-                  MFA Verification
-                </Link>
-              </div>
-            </div>
           </div>
         </div>
       </div>

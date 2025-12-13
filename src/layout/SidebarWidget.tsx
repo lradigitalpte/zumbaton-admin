@@ -13,7 +13,7 @@ export default function SidebarWidget() {
     <div className="mx-auto mb-10 w-full max-w-60 px-2">
       <button
         onClick={handleLogout}
-        className="flex items-center justify-center gap-2 w-full p-3 font-medium text-gray-700 rounded-lg border border-gray-200 bg-gray-50 text-theme-sm hover:bg-gray-100 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white transition-colors"
+        className="flex items-center justify-center gap-2 w-full p-3 font-medium text-red-600 rounded-lg border border-red-200 bg-red-50 text-theme-sm hover:bg-red-100 hover:text-red-700 hover:border-red-300 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 dark:hover:text-red-300 dark:hover:border-red-700 transition-colors"
       >
         <svg
           className="w-5 h-5"

@@ -22,13 +22,40 @@ export default function ForgotPasswordForm() {
       return;
     }
 
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
     setIsSubmitting(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
+    try {
+      const response = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || 'Failed to send reset link. Please try again.');
     setIsSubmitting(false);
+        return;
+      }
+
+      // Success - show confirmation message
     setIsSubmitted(true);
+    } catch (err) {
+      console.error('Error sending password reset:', err);
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -45,13 +72,13 @@ export default function ForgotPasswordForm() {
       <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto">
         <div>
           {/* Logo */}
-          <div className="flex items-center gap-2 mb-6">
+          <div className="flex items-center justify-center gap-2 mb-6">
             <Image
               src="/images/logo/zumbaton logo (transparent).png"
               alt="Zumbaton Logo"
-              width={120}
-              height={40}
-              className="h-8 w-auto dark:invert"
+              width={400}
+              height={133}
+              className="h-32 w-auto dark:invert"
               priority
             />
           </div>

@@ -25,9 +25,9 @@ export default function AuthLayout({
                   <Image
                     src="/images/logo/zumbaton logo (transparent).png"
                     alt="Zumbaton Logo"
-                    width={180}
-                    height={60}
-                    className="h-12 w-auto"
+                    width={320}
+                    height={107}
+                    className="h-28 w-auto"
                     priority
                   />
                 </Link>

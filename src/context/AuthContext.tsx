@@ -1,8 +1,9 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react'
 import { supabase, getSupabaseClient } from '@/lib/supabase'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
+import { refreshSessionIfNeeded, isSessionValid } from '@/lib/session'
 
 interface User {
   id: string
@@ -17,6 +18,7 @@ interface AuthContextType {
   isAuthenticated: boolean
   signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string; role?: User['role'] }>
   signOut: () => Promise<void>
+  checkSession: () => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -109,8 +111,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadingTooLong, setLoadingTooLong] = useState(false)
+  const hasInitializedRef = useRef(false)
+  const isInitializingRef = useRef(false)
 
   const initializeAuth = async () => {
+    // Prevent multiple simultaneous calls
+    if (isInitializingRef.current) {
+      return
+    }
+    
+    isInitializingRef.current = true
     console.log('[Auth] Starting auth initialization...')
     setIsLoading(true)
     try {
@@ -128,6 +138,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (session?.user) {
         console.log('[Auth] Session found, mapping user...')
+        
+        // Don't refresh here - let Supabase auto-refresh handle it
+        // Only refresh if explicitly needed (not during initialization)
         
         // First check app_metadata (set by Supabase admin) or user_metadata
         const appRole = session.user.app_metadata?.role
@@ -181,10 +194,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       console.log('[Auth] Auth initialization complete')
       setIsLoading(false)
+      isInitializingRef.current = false
     }
   }
 
   useEffect(() => {
+    // Prevent multiple initializations - check both refs
+    if (hasInitializedRef.current || isInitializingRef.current) {
+      console.log('[Auth] Effect: Already initialized or initializing, skipping...')
+      return
+    }
+    
+    // Mark as initializing immediately to prevent race conditions
+    hasInitializedRef.current = true
+    isInitializingRef.current = true
+
     let isMounted = true
     let slowLoadingTimeout: NodeJS.Timeout
 
@@ -201,6 +225,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (isMounted) {
           console.warn('[Auth] Auth initialization timed out after', AUTH_TIMEOUT, 'ms')
           setIsLoading(false)
+          isInitializingRef.current = false
         }
       }, AUTH_TIMEOUT)
 
@@ -209,6 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } finally {
         clearTimeout(timeoutId)
         clearTimeout(slowLoadingTimeout)
+        isInitializingRef.current = false
       }
     }
 
@@ -242,11 +268,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     )
 
+    // Set up periodic session refresh (every 5 minutes)
+    // Use a ref-like approach to check user without causing re-renders
+    const refreshInterval = setInterval(async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        await refreshSessionIfNeeded()
+      }
+    }, 5 * 60 * 1000) // 5 minutes
+
     return () => {
       isMounted = false
       subscription.unsubscribe()
+      clearInterval(refreshInterval)
     }
-  }, [])
+  }, []) // Empty dependency array - only run once on mount
 
   const signIn = async (email: string, password: string): Promise<{ success: boolean; error?: string; role?: User['role'] }> => {
     console.log('[Auth] Starting sign in for:', email)
@@ -335,23 +371,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const checkSession = async (): Promise<boolean> => {
+    try {
+      const isValid = await isSessionValid()
+      if (isValid) {
+        // Refresh session if needed
+        await refreshSessionIfNeeded()
+        // Re-initialize auth to update user state
+        await initializeAuth()
+      }
+      return isValid
+    } catch (error) {
+      console.error('[Auth] Error checking session:', error)
+      return false
+    }
+  }
+
   const signOut = async () => {
     try {
       // Clear user state immediately
       setUser(null)
+      setIsLoading(false)
+      setLoadingTooLong(false)
+      // Reset initialization refs to allow re-initialization on next page load
+      hasInitializedRef.current = false
+      isInitializingRef.current = false
       
       // Sign out from Supabase (this clears the session)
-      const { error } = await supabase.auth.signOut()
-      
-      if (error) {
+      // Don't await this - redirect immediately to prevent hanging
+      supabase.auth.signOut().catch((error) => {
         console.error('[Auth] Sign out error:', error)
-      }
+      })
       
-      // Use window.location for a full page reload to clear all state and session
-      // This ensures everything is properly cleared
+      // Redirect immediately without waiting - the redirect will clear everything
       window.location.href = '/signin'
     } catch (error) {
       console.error('[Auth] Sign out error:', error)
+      // Clear state even on error
+      setUser(null)
+      setIsLoading(false)
+      setLoadingTooLong(false)
+      hasInitializedRef.current = false
+      isInitializingRef.current = false
       // Even if there's an error, force redirect to clear state
       window.location.href = '/signin'
     }
@@ -390,6 +451,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: !!user,
       signIn,
       signOut,
+      checkSession,
     }}>
       {children}
     </AuthContext.Provider>

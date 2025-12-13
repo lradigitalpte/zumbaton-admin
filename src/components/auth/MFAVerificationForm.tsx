@@ -96,13 +96,13 @@ export default function MFAVerificationForm() {
       <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto">
         <div>
           {/* Logo */}
-          <div className="flex items-center gap-2 mb-6">
+          <div className="flex items-center justify-center gap-2 mb-6">
             <Image
               src="/images/logo/zumbaton logo (transparent).png"
               alt="Zumbaton Logo"
-              width={120}
-              height={40}
-              className="h-8 w-auto dark:invert"
+              width={400}
+              height={133}
+              className="h-32 w-auto dark:invert"
               priority
             />
           </div>
