@@ -44,8 +44,6 @@ export default function SignInForm() {
       
       if (result.success) {
         // Get the user's role to determine redirect destination
-        // The role is returned as part of the auth context after sign in
-        // Check localStorage or decode from the result
         const userRole = result.role;
         
         // Role-based redirect:
@@ -56,8 +54,9 @@ export default function SignInForm() {
           redirectPath = '/tutor';
         }
         
-        // Use window.location for full page reload to ensure auth state is properly recognized
-        window.location.href = redirectPath;
+        // Use router.push for client-side navigation (preserves state, no refresh)
+        // This keeps the user state intact and allows instant name display
+        router.push(redirectPath);
       } else {
         setError(result.error || "Sign in failed. Please check your credentials.");
         setIsSubmitting(false);

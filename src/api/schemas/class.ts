@@ -50,6 +50,15 @@ export const CreateClassRequestSchema = z.object({
   capacity: z.number().int().positive('Capacity must be at least 1'),
   tokenCost: z.number().int().positive().default(1),
   location: z.string().max(200).optional(),
+  roomId: UuidSchema.optional(),
+  categoryId: UuidSchema.optional(),
+  recurrenceType: z.enum(['single', 'recurring', 'course']).optional(),
+  recurrencePattern: z.object({
+    days: z.array(z.string()).optional(),
+    endDate: z.string().optional(),
+    endType: z.enum(['never', 'date', 'count']).optional(),
+    occurrences: z.number().int().positive().optional(),
+  }).optional(),
 })
 export type CreateClassRequest = z.infer<typeof CreateClassRequestSchema>
 

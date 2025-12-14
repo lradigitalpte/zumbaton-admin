@@ -45,7 +45,7 @@ export default function TutorClassesPage() {
         type: cls.class_type.charAt(0).toUpperCase() + cls.class_type.slice(1),
         time: classTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
         duration: cls.duration_minutes,
-        room: cls.location || "TBD",
+        room: cls.room_name || cls.location || "TBD",
         date: classTime.toISOString().split("T")[0],
         enrolled: cls.bookedCount,
         capacity: cls.capacity,
@@ -285,12 +285,12 @@ export default function TutorClassesPage() {
                     <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
                       <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
                         <span>Attendance Rate</span>
-                        <span>{Math.round((classItem.attended / classItem.enrolled) * 100)}%</span>
+                        <span>{classItem.enrolled > 0 ? Math.round((classItem.attended / classItem.enrolled) * 100) : 0}%</span>
                       </div>
                       <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
                         <div 
                           className="h-full rounded-full bg-emerald-500"
-                          style={{ width: `${(classItem.attended / classItem.enrolled) * 100}%` }}
+                          style={{ width: `${classItem.enrolled > 0 ? (classItem.attended / classItem.enrolled) * 100 : 0}%` }}
                         ></div>
                       </div>
                     </div>
@@ -389,7 +389,7 @@ export default function TutorClassesPage() {
                 <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 mb-6">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">Attendance Report</p>
-                    <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">{Math.round((selectedClass.attended / selectedClass.enrolled) * 100)}%</p>
+                    <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">{selectedClass.enrolled > 0 ? Math.round((selectedClass.attended / selectedClass.enrolled) * 100) : 0}%</p>
                   </div>
                   <div className="flex items-center gap-4 text-sm">
                     <span className="text-emerald-700 dark:text-emerald-400">{selectedClass.attended} attended</span>

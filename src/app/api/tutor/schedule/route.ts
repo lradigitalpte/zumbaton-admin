@@ -60,6 +60,11 @@ export async function GET(request: NextRequest) {
         duration_minutes,
         capacity,
         location,
+        room_id,
+        rooms (
+          id,
+          name
+        ),
         status
       `)
       .eq('instructor_id', instructorId)
@@ -117,13 +122,18 @@ export async function GET(request: NextRequest) {
         schedule[dayKey] = []
       }
 
+      // Get room name from joined rooms table or fall back to location
+      const roomName = (cls.rooms && Array.isArray(cls.rooms) && cls.rooms.length > 0)
+        ? cls.rooms[0].name
+        : (cls.location || null);
+      
       schedule[dayKey].push({
         id: cls.id,
         title: cls.title,
         classType: cls.class_type,
         time: date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
         duration: cls.duration_minutes,
-        location: cls.location,
+        location: roomName,
         status: cls.status,
         booked: bookingCounts[cls.id] || 0,
         capacity: cls.capacity,

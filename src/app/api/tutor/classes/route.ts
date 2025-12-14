@@ -47,6 +47,11 @@ export async function GET(request: NextRequest) {
         capacity,
         token_cost,
         location,
+        room_id,
+        rooms (
+          id,
+          name
+        ),
         status,
         created_at
       `, { count: 'exact' })
@@ -106,12 +111,20 @@ export async function GET(request: NextRequest) {
       }, {} as Record<string, { total: number; attended: number }>)
     }
 
-    // Combine classes with booking data
-    const classesWithBookings = (classes || []).map(cls => ({
-      ...cls,
-      bookedCount: bookingData[cls.id]?.total || 0,
-      attendedCount: bookingData[cls.id]?.attended || 0,
-    }))
+    // Combine classes with booking data and format room name
+    const classesWithBookings = (classes || []).map(cls => {
+      // Get room name from joined rooms table or fall back to location field
+      const roomName = (cls.rooms && Array.isArray(cls.rooms) && cls.rooms.length > 0)
+        ? cls.rooms[0].name
+        : (cls.location || null);
+      
+      return {
+        ...cls,
+        room_name: roomName,
+        bookedCount: bookingData[cls.id]?.total || 0,
+        attendedCount: bookingData[cls.id]?.attended || 0,
+      };
+    })
 
     return NextResponse.json({
       success: true,

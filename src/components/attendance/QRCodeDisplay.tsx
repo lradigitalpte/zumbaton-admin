@@ -48,7 +48,7 @@ export default function QRCodeDisplay({
     const token = generateToken();
     setCurrentToken(token);
 
-    const qrData: QRData = {
+    const qrDataObject: QRData = {
       classId,
       sessionDate: sessionDate || now.toISOString().split("T")[0],
       sessionTime: sessionTime || now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
@@ -56,8 +56,15 @@ export default function QRCodeDisplay({
       expiresAt: Date.now() + refreshInterval * 1000,
     };
 
+    // Create URL for phone camera scanning (opens web app directly)
+    // Get web app URL from environment or use default
+    const webAppUrl = process.env.NEXT_PUBLIC_WEB_URL || 'https://zumbaton-web.vercel.app';
+    const encodedData = btoa(JSON.stringify(qrDataObject));
+    const checkInUrl = `${webAppUrl}/check-in/${encodedData}`;
+
     try {
-      const dataUrl = await QRCode.toDataURL(JSON.stringify(qrData), {
+      // QR code contains URL - when scanned from phone camera, opens web app directly
+      const dataUrl = await QRCode.toDataURL(checkInUrl, {
         width: size,
         margin: 2,
         color: {
@@ -104,16 +111,17 @@ export default function QRCodeDisplay({
   };
 
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex flex-col items-center overflow-visible pb-4 w-full">
       {/* QR Code Container */}
-      <div className="relative rounded-3xl bg-white p-6 shadow-lg">
+      <div className="relative rounded-3xl bg-white p-6 shadow-lg overflow-visible mb-4 w-fit">
         {qrDataUrl ? (
           <img
             src={qrDataUrl}
             alt="Attendance QR Code"
             width={size}
             height={size}
-            className="rounded-2xl"
+            className="rounded-2xl block"
+            style={{ display: 'block', width: `${size}px`, height: `${size}px`, objectFit: 'contain' }}
           />
         ) : (
           <div
@@ -125,7 +133,7 @@ export default function QRCodeDisplay({
         )}
 
         {/* Refresh indicator */}
-        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 transform">
+        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 transform z-10">
           <div className="flex items-center gap-2 rounded-full bg-gray-900 px-4 py-2 text-white shadow-lg">
             <svg
               className={`h-4 w-4 ${countdown <= 5 ? "animate-pulse text-amber-400" : ""}`}
@@ -149,7 +157,7 @@ export default function QRCodeDisplay({
       <div className="mt-8 text-center">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{className}</h2>
         <p className="mt-1 text-gray-500 dark:text-gray-400">
-          Scan to check in • Code refreshes every {refreshInterval}s
+          Scan to check in • Code refreshes every {refreshInterval >= 60 ? `${Math.floor(refreshInterval / 60)} minute${Math.floor(refreshInterval / 60) > 1 ? 's' : ''}` : `${refreshInterval}s`}
         </p>
       </div>
 

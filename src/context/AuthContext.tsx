@@ -32,14 +32,10 @@ const AUTH_TIMEOUT = 10000 // 10 seconds max for auth check
 async function mapSupabaseUserToUser(supabaseUser: SupabaseUser | null): Promise<User | null> {
   if (!supabaseUser) return null
 
-  console.log('[Auth] Mapping user:', supabaseUser.id, supabaseUser.email)
-
   // First, check user_metadata for role (this is faster and doesn't need RLS)
   const metadataRole = supabaseUser.user_metadata?.role
-  console.log('[Auth] User metadata role:', metadataRole)
   
   if (metadataRole && ADMIN_ROLES.includes(metadataRole as User['role'])) {
-    console.log('[Auth] ✓ Found admin role in user_metadata:', metadataRole)
     
     // Extract user name with better formatting
     let userName = 'User'
@@ -64,34 +60,31 @@ async function mapSupabaseUserToUser(supabaseUser: SupabaseUser | null): Promise
   // Try to fetch from user_profiles table with timeout
   try {
     const client = getSupabaseClient()
-    console.log('[Auth] Fetching profile from user_profiles...')
     
     // Add a timeout to prevent hanging (RLS can cause circular dependency)
-    let timeoutReached = false
-    const timeoutId = setTimeout(() => {
-      timeoutReached = true
-      console.warn('[Auth] Profile fetch taking too long, will use fallback')
-    }, 3000)
+    const profilePromise = client
+      .from('user_profiles')
+      .select('id, email, name, role')
+      .eq('id', supabaseUser.id)
+      .maybeSingle()
+    
+    const timeoutPromise = new Promise<null>((resolve) => 
+      setTimeout(() => resolve(null), 3000)
+    )
     
     try {
-      const { data: profile, error } = await client
-        .from('user_profiles')
-        .select('id, email, name, role')
-        .eq('id', supabaseUser.id)
-        .maybeSingle()
+      const result = await Promise.race([profilePromise, timeoutPromise]) as { data: any; error: any } | null
       
-      clearTimeout(timeoutId)
-      
-      if (timeoutReached) {
-        console.warn('[Auth] Profile fetch completed after timeout warning')
+      if (!result) {
+        // Timeout reached
+        return null
       }
       
-      console.log('[Auth] Profile query result:', { profile, error: error?.message })
+      const { data: profile, error } = result
 
       if (error) {
         console.error('[Auth] Error fetching user profile:', error.message, error.code)
       } else if (profile) {
-        console.log('[Auth] ✓ User profile loaded:', { id: profile.id, email: profile.email, role: profile.role })
         
         const profileRole = profile.role as User['role']
         return {
@@ -100,19 +93,13 @@ async function mapSupabaseUserToUser(supabaseUser: SupabaseUser | null): Promise
           email: profile.email || supabaseUser.email || '',
           role: profileRole,
         }
-      } else {
-        console.warn('[Auth] No profile found in user_profiles table')
       }
     } catch (fetchError) {
-      clearTimeout(timeoutId)
-      console.warn('[Auth] Profile fetch error:', fetchError)
+      // Silently handle fetch errors
     }
   } catch (error) {
     console.error('[Auth] Exception in profile fetch:', error)
   }
-
-  // No admin role found anywhere
-  console.warn('[Auth] No admin role found, returning user role')
   
   // Extract user name with better formatting
   let userName = 'User'
@@ -152,21 +139,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     
     isInitializingRef.current = true
-    console.log('[Auth] Starting auth initialization...')
     setIsLoading(true)
     try {
-      console.log('[Auth] Getting session...')
       // Wrap getSession in a timeout to prevent hanging
       let sessionResult: Awaited<ReturnType<typeof supabase.auth.getSession>>
       try {
         const sessionPromise = supabase.auth.getSession()
         const timeoutPromise = new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Session check timed out')), 2000) // Reduced to 2 seconds
+          setTimeout(() => reject(new Error('Session check timed out')), 2000)
         )
         sessionResult = await Promise.race([sessionPromise, timeoutPromise])
-        console.log('[Auth] Session retrieved successfully')
       } catch (timeoutError) {
-        console.warn('[Auth] Session check timed out after 2s - treating as no session')
         // Treat timeout as "no session" - complete auth immediately
         setUser(null)
         setIsLoading(false)
@@ -191,16 +174,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Don't refresh here - let Supabase auto-refresh handle it
         // Only refresh if explicitly needed (not during initialization)
         
+        // Quick check: Try to get name from localStorage first for instant display
+        let cachedName: string | null = null
+        if (typeof window !== 'undefined') {
+          try {
+            const storageKey = Object.keys(localStorage).find(key => 
+              key.includes('supabase') && key.includes('auth-token')
+            )
+            if (storageKey) {
+              const stored = localStorage.getItem(storageKey)
+              if (stored) {
+                const parsed = JSON.parse(stored)
+                if (parsed?.currentSession?.user?.user_metadata?.name) {
+                  cachedName = parsed.currentSession.user.user_metadata.name
+                  console.log('[Auth] Found cached name in localStorage:', cachedName)
+                }
+              }
+            }
+          } catch (e) {
+            // Ignore localStorage errors
+          }
+        }
+        
         // First check app_metadata (set by Supabase admin) or user_metadata
         const appRole = session.user.app_metadata?.role
         const userRole = session.user.user_metadata?.role
         console.log('[Auth] Checking metadata roles:', { appRole, userRole })
+        console.log('[Auth] User metadata name:', session.user.user_metadata?.name)
         
-        // Helper function to extract user name
+        // Helper function to extract user name - use metadata directly, no formatting delays
         const getUserName = (): string => {
-          // Try user_metadata.name first
-          if (session.user.user_metadata?.name) {
-            return session.user.user_metadata.name
+          // Use cached name from localStorage if available (fastest)
+          if (cachedName) {
+            console.log('[Auth] Using cached name from localStorage:', cachedName)
+            return cachedName
+          }
+          // Try user_metadata.name first - use it directly if available
+          const metadataName = session.user.user_metadata?.name
+          if (metadataName) {
+            console.log('[Auth] Found name in user_metadata:', metadataName)
+            return metadataName as string
           }
           // Try email and extract username part
           if (session.user.email) {
@@ -208,70 +221,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Capitalize first letter and replace underscores with spaces
             return emailName
               .split('_')
-              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+              .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
               .join(' ')
           }
           // Fallback based on role
           if (appRole || userRole) {
             const role = (appRole || userRole) as string
-            return role.split('_').map(word => 
-              word.charAt(0).toUpperCase() + word.slice(1)
+            return role.split('_').map((word: string) => 
+              word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
             ).join(' ')
           }
           return 'User'
         }
         
         if (appRole && ADMIN_ROLES.includes(appRole as User['role'])) {
-          console.log('[Auth] ✓ Found admin role in app_metadata:', appRole)
           const userName = getUserName()
-          console.log('[Auth] Extracted user name:', userName)
           setUser({
             id: session.user.id,
             name: userName,
             email: session.user.email || '',
             role: appRole as User['role'],
           })
-          // Complete initialization - don't query database
           setIsLoading(false)
           isInitializingRef.current = false
-          console.log('[Auth] Auth complete (from app_metadata)')
           return
         }
         
         if (userRole && ADMIN_ROLES.includes(userRole as User['role'])) {
-          console.log('[Auth] ✓ Found admin role in user_metadata:', userRole)
           const userName = getUserName()
-          console.log('[Auth] Extracted user name:', userName)
           setUser({
             id: session.user.id,
             name: userName,
             email: session.user.email || '',
             role: userRole as User['role'],
           })
-          // Complete initialization - don't query database
           setIsLoading(false)
           isInitializingRef.current = false
-          console.log('[Auth] Auth complete (from user_metadata)')
           return
         }
         
         // Fall back to database lookup (only if role not in metadata)
-        // But skip this if it's taking too long - use metadata only
-        console.log('[Auth] Role not in metadata, trying database lookup...')
         try {
           const userData = await mapSupabaseUserToUser(session.user)
           
-          console.log('[Auth] Mapped user data:', userData ? { role: userData.role, email: userData.email } : 'null')
-          
           if (userData && ADMIN_ROLES.includes(userData.role)) {
-            console.log('[Auth] ✓ User has admin role, setting user state')
             setUser(userData)
             setIsLoading(false)
             isInitializingRef.current = false
             return
           } else {
-            console.warn('[Auth] ✗ User does NOT have admin role:', userData?.role)
-            console.warn('[Auth] Admin roles are:', ADMIN_ROLES)
             setUser(null)
             setIsLoading(false)
             isInitializingRef.current = false
@@ -287,11 +285,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
       } else {
-        console.log('[Auth] No session found - completing auth')
         setUser(null)
         setIsLoading(false)
         isInitializingRef.current = false
-        return // Exit early when no session - don't wait for finally
+        return
       }
     } catch (error) {
       console.error('[Auth] Initialization failed:', error)
@@ -409,23 +406,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []) // Empty dependency array - only run once on mount
 
   const signIn = async (email: string, password: string): Promise<{ success: boolean; error?: string; role?: User['role'] }> => {
-    console.log('[Auth] Starting sign in for:', email)
+    // Validate input first
+    if (!email || !password) {
+      return {
+        success: false,
+        error: 'Please enter both email and password',
+      }
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      return {
+        success: false,
+        error: 'Please enter a valid email address',
+      }
+    }
+
     try {
-      // Add timeout for the entire sign-in process
+      // Reduced timeout - 10 seconds instead of 15
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Sign in timed out. Please check your internet connection.')), 15000)
+        setTimeout(() => reject(new Error('Sign in timed out. Please check your internet connection and try again.')), 10000)
       })
 
       const signInPromise = (async () => {
-        console.log('[Auth] Calling Supabase signInWithPassword...')
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
+        // Add timeout to the actual Supabase call
+        const supabaseCall = supabase.auth.signInWithPassword({
+          email: email.trim(),
           password,
         })
-
-        console.log('[Auth] Sign in response:', { hasData: !!data, hasUser: !!data?.user, error: error?.message })
+        
+        const supabaseTimeout = new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Supabase request timed out')), 8000)
+        )
+        
+        let data, error
+        try {
+          const result = await Promise.race([supabaseCall, supabaseTimeout]) as { data: any; error: any }
+          data = result.data
+          error = result.error
+        } catch (timeoutError: any) {
+          return {
+            success: false,
+            error: 'Connection timeout. Please check your internet connection and try again.',
+          }
+        }
 
         if (error) {
+          // Handle specific error codes
+          if (error.status === 400) {
+            return {
+              success: false,
+              error: 'Invalid email or password. Please check your credentials and try again.',
+            }
+          }
+          if (error.status === 429) {
+            return {
+              success: false,
+              error: 'Too many login attempts. Please try again later.',
+            }
+          }
+          if (error.message?.includes('Email not confirmed')) {
+            return {
+              success: false,
+              error: 'Please verify your email address before signing in.',
+            }
+          }
           return {
             success: false,
             error: error.message || 'Invalid email or password',
@@ -442,20 +488,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Check metadata first (fast path - no database query needed)
         const appRole = data.user.app_metadata?.role
         const userRole = data.user.user_metadata?.role
-        console.log('[Auth] Checking roles from metadata:', { appRole, userRole })
 
         let finalRole: User['role'] = 'user'
-        let userName = data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'User'
+        // Use name from metadata directly if available
+        let userName = 'User'
+        if (data.user.user_metadata?.name) {
+          userName = data.user.user_metadata.name as string
+        } else if (data.user.email) {
+          userName = data.user.email.split('@')[0]
+        }
 
         if (appRole && ADMIN_ROLES.includes(appRole as User['role'])) {
           finalRole = appRole as User['role']
-          console.log('[Auth] Using role from app_metadata:', finalRole)
         } else if (userRole && ADMIN_ROLES.includes(userRole as User['role'])) {
           finalRole = userRole as User['role']
-          console.log('[Auth] Using role from user_metadata:', finalRole)
         } else {
           // Fall back to database query (may be slow due to RLS)
-          console.log('[Auth] No role in metadata, trying database...')
           const userData = await mapSupabaseUserToUser(data.user)
           if (userData) {
             finalRole = userData.role
@@ -465,7 +513,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Check if user has admin-level role
         if (!ADMIN_ROLES.includes(finalRole)) {
-          console.warn('[Auth] User does not have admin role:', finalRole)
           await supabase.auth.signOut()
           return {
             success: false,
@@ -480,17 +527,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: finalRole,
         }
 
-        console.log('[Auth] ✓ Sign in successful:', { email: userData.email, role: userData.role })
         setUser(userData)
         return { success: true, role: finalRole }
       })()
 
-      return await Promise.race([signInPromise, timeoutPromise])
-    } catch (error) {
+      const result = await Promise.race([signInPromise, timeoutPromise])
+      return result
+    } catch (error: any) {
       console.error('[Auth] Sign in failed:', error)
+      
+      // Handle timeout specifically
+      if (error?.message?.includes('timed out') || error?.message?.includes('timeout')) {
+        return {
+          success: false,
+          error: 'Sign in timed out. Please check your internet connection and try again.',
+        }
+      }
+      
+      // Handle network errors
+      if (error?.message?.includes('fetch') || error?.message?.includes('network')) {
+        return {
+          success: false,
+          error: 'Network error. Please check your internet connection and try again.',
+        }
+      }
+      
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'An unexpected error occurred',
+        error: error instanceof Error ? error.message : 'An unexpected error occurred. Please try again.',
       }
     }
   }

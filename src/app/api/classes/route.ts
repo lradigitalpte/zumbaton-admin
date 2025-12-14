@@ -43,17 +43,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    // Validate base request body
+    // Validate request body (now includes roomId, categoryId, recurrenceType, recurrencePattern)
     const validatedData = CreateClassRequestSchema.parse(body)
 
-    // Create class with extended fields
-    const result = await createClass({
-      ...validatedData,
-      roomId: body.roomId,
-      categoryId: body.categoryId,
-      recurrenceType: body.recurrenceType,
-      recurrencePattern: body.recurrencePattern,
-    })
+    // Create class with all validated fields
+    const result = await createClass(validatedData)
 
     return NextResponse.json({
       success: true,
