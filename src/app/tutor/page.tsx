@@ -68,7 +68,7 @@ export default function TutorDashboardPage() {
         name: cls.title,
         time: classTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
         duration: cls.duration_minutes,
-        room: cls.location || "TBD",
+        room: cls.room_name || cls.location || "TBD",
         enrolled: cls.bookedCount,
         capacity: cls.capacity,
         checkedIn: cls.checkedInCount,

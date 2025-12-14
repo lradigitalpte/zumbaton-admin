@@ -140,7 +140,7 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
         {/* Main Content */}
         <div className="flex flex-1 overflow-hidden">
           {/* QR Code Section */}
-          <div className="flex flex-1 items-center justify-center p-8">
+          <div className="flex flex-1 items-center justify-center p-8 overflow-visible">
             <QRCodeDisplay
               classId={classData.id}
               className={classData.name}

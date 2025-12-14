@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
       // Get this week's classes
       supabase
         .from('classes')
-        .select('id, title, class_type, scheduled_at, duration_minutes, capacity, location, status')
+        .select('id, title, class_type, scheduled_at, duration_minutes, capacity, location, room_id, rooms (id, name), status')
         .eq('instructor_id', instructorId)
         .gte('scheduled_at', startOfWeek.toISOString())
         .lt('scheduled_at', endOfWeek.toISOString())
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
       // Get today's classes
       supabase
         .from('classes')
-        .select('id, title, class_type, scheduled_at, duration_minutes, capacity, location, status')
+        .select('id, title, class_type, scheduled_at, duration_minutes, capacity, location, room_id, rooms (id, name), status')
         .eq('instructor_id', instructorId)
         .gte('scheduled_at', startOfDay.toISOString())
         .lt('scheduled_at', endOfDay.toISOString())
@@ -180,12 +180,19 @@ export async function GET(request: NextRequest) {
       ).length
     }
 
-    // Format today's classes with booking info
-    const todayClassesWithBookings = todayClasses.map(cls => ({
-      ...cls,
-      bookedCount: (bookingCounts[cls.id]?.confirmed || 0) + (bookingCounts[cls.id]?.attended || 0),
-      checkedInCount: bookingCounts[cls.id]?.attended || 0,
-    }))
+    // Format today's classes with booking info and room name
+    const todayClassesWithBookings = todayClasses.map(cls => {
+      const roomName = (cls.rooms && Array.isArray(cls.rooms) && cls.rooms.length > 0)
+        ? cls.rooms[0].name
+        : (cls.location || null);
+      
+      return {
+        ...cls,
+        room_name: roomName,
+        bookedCount: (bookingCounts[cls.id]?.confirmed || 0) + (bookingCounts[cls.id]?.attended || 0),
+        checkedInCount: bookingCounts[cls.id]?.attended || 0,
+      };
+    })
 
     // Calculate attendance rate
     const attendanceRate = totalBooked > 0 

@@ -32,6 +32,7 @@ export interface TutorDashboardData {
     duration_minutes: number
     capacity: number
     location: string | null
+    room_name?: string | null
     status: string
     bookedCount: number
     checkedInCount: number
@@ -60,6 +61,7 @@ export interface TutorClass {
   capacity: number
   token_cost: number
   location: string | null
+  room_name?: string | null
   status: string
   created_at: string
   bookedCount: number

@@ -1,16 +1,55 @@
 "use client";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { useAuth } from "@/context/AuthContext";
 
+// Helper to get name from localStorage (instant, no waiting for AuthContext)
+function getNameFromLocalStorage(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const storageKey = Object.keys(localStorage).find(key => 
+      key.includes('supabase') && key.includes('auth-token')
+    )
+    if (storageKey) {
+      const stored = localStorage.getItem(storageKey)
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        // Check currentSession first
+        if (parsed?.currentSession?.user?.user_metadata?.name) {
+          return parsed.currentSession.user.user_metadata.name
+        }
+        // Fallback to session if currentSession doesn't exist
+        if (parsed?.session?.user?.user_metadata?.name) {
+          return parsed.session.user.user_metadata.name
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore errors
+  }
+  return null
+}
+
 export default function UserDropdown() {
   const [isOpen, setIsOpen] = useState(false);
   const { user, signOut } = useAuth();
   const pathname = usePathname();
+  
+  // Get name from localStorage instantly, then use user.name when available
+  const [cachedName, setCachedName] = useState<string | null>(null);
+  
+  useEffect(() => {
+    // Read from localStorage on mount for instant display
+    const name = getNameFromLocalStorage();
+    if (name) {
+      setCachedName(name);
+    }
+  }, []);
 
-  const displayName = user?.name || "User";
+  // Use user.name if available, otherwise use cached name, otherwise "User"
+  const displayName = user?.name || cachedName || "User";
   const displayEmail = user?.email || "";
 
   // Determine if user is in tutor portal
