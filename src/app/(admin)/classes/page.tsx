@@ -10,6 +10,8 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { RefreshCw, AlertCircle, Loader2 } from "lucide-react";
 import type { ClassWithAvailability, ClassListResponse } from "@/api/schemas";
+import { useCancelClass } from "@/hooks/useClasses";
+import { useRoomsList } from "@/hooks/useRooms";
 
 // Skeleton Components
 const StatCardSkeleton = () => (
@@ -76,8 +78,16 @@ interface DisplayClass {
   capacity: number;
   enrolled: number;
   tokenCost: number;
-  status: "active" | "cancelled" | "full";
+  status: "active" | "cancelled" | "full" | "completed";
   description: string;
+  recurrenceType?: 'single' | 'recurring' | 'course';
+  recurrencePattern?: Record<string, unknown> | null;
+  scheduledAt: string;
+  location?: string | null;
+  roomId?: string | null;
+  roomName?: string | null;
+  level?: string;
+  classType?: string;
 }
 
 // Helper to get day of week from date
@@ -96,6 +106,19 @@ function formatTime(dateStr: string): string {
 // Helper to get initials from name
 function getInitials(name: string | null): string {
   if (!name) return "??";
+  
+  // Handle multiple instructors (comma-separated names)
+  if (name.includes(',')) {
+    const names = name.split(',').map(n => n.trim());
+    // Get first letter of each instructor's first name
+    return names
+      .map(n => n.split(' ')[0]?.[0] || '')
+      .join('')
+      .toUpperCase()
+      .slice(0, 3); // Allow up to 3 instructors to show
+  }
+  
+  // Single instructor - original logic
   return name
     .split(" ")
     .map((n) => n[0])
@@ -107,11 +130,27 @@ function getInitials(name: string | null): string {
 // Transform API class to display class
 function transformClass(cls: ClassWithAvailability): DisplayClass {
   // Determine display status
-  let status: "active" | "cancelled" | "full" = "active";
+  let status: "active" | "cancelled" | "full" | "completed" = "active";
   if (cls.status === "cancelled") {
     status = "cancelled";
+  } else if (cls.status === "completed") {
+    status = "completed";
   } else if (cls.spotsRemaining <= 0) {
     status = "full";
+  } else {
+    // Check if the class date has passed for ALL class types
+    const classDate = new Date(cls.scheduledAt);
+    const now = new Date();
+    // Add buffer to account for class duration - class is considered past after its end time
+    const classEndTime = new Date(classDate);
+    classEndTime.setMinutes(classEndTime.getMinutes() + (cls.durationMinutes || 60));
+    
+    // If class end time has passed and status is still scheduled, mark as completed
+    // Note: For recurring classes, individual instances are marked, but the parent card
+    // shows aggregate status based on all instances
+    if (classEndTime < now && cls.status === 'scheduled') {
+      status = "completed";
+    }
   }
 
   return {
@@ -127,6 +166,13 @@ function transformClass(cls: ClassWithAvailability): DisplayClass {
     tokenCost: cls.tokenCost,
     status,
     description: cls.description || "",
+    recurrenceType: cls.recurrenceType || 'single',
+    recurrencePattern: cls.recurrencePattern,
+    scheduledAt: cls.scheduledAt,
+    location: cls.location || null,
+    roomId: cls.roomId || null,
+    level: cls.level,
+    classType: cls.classType,
   };
 }
 
@@ -134,7 +180,21 @@ function transformClass(cls: ClassWithAvailability): DisplayClass {
 const LOADING_TIMEOUT = 15000;
 
 export default function ClassesPage() {
-  const [filter, setFilter] = useState<"all" | "active" | "cancelled" | "full">("all");
+  // Fetch rooms to get room names
+  const { data: roomsData } = useRoomsList();
+  const rooms = roomsData?.rooms || [];
+  
+  // Create a map of roomId to room name
+  const roomMap = useMemo(() => {
+    const map = new Map<string, string>();
+    rooms.forEach(room => {
+      if (room.id) {
+        map.set(room.id, room.name);
+      }
+    });
+    return map;
+  }, [rooms]);
+  const [filter, setFilter] = useState<"all" | "active" | "completed" | "cancelled" | "full">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [attendanceModal, setAttendanceModal] = useState<{
@@ -142,6 +202,30 @@ export default function ClassesPage() {
     classData: DisplayClass | null;
   }>({ isOpen: false, classData: null });
   const [loadingTimeout, setLoadingTimeout] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; classId: string | null; className: string }>({
+    isOpen: false,
+    classId: null,
+    className: "",
+  });
+  const [recurringPanel, setRecurringPanel] = useState<{
+    isOpen: boolean;
+    recurringClasses: DisplayClass[];
+    parentClass: DisplayClass | null;
+  }>({
+    isOpen: false,
+    recurringClasses: [],
+    parentClass: null,
+  });
+  const [detailsPanel, setDetailsPanel] = useState<{
+    isOpen: boolean;
+    classData: DisplayClass | null;
+  }>({
+    isOpen: false,
+    classData: null,
+  });
+
+  // Cancel/Delete class mutation
+  const cancelClassMutation = useCancelClass();
 
   // Fetch classes from API with caching using custom query for classes response format
   const keys = createEntityKeys("classes");
@@ -163,8 +247,10 @@ export default function ClassesPage() {
       // The API returns { success, data: { classes, total, page, pageSize, hasMore } }
       return response.data?.data;
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes cache
-    gcTime: 10 * 60 * 1000,
+    staleTime: 0, // Always fetch fresh data to show accurate booking counts
+    gcTime: 5 * 60 * 1000,
+    refetchInterval: 30 * 1000, // Auto-refresh every 30 seconds to catch booking updates
+    refetchOnWindowFocus: true, // Refetch when user returns to the tab
   });
 
   // Extract classes array from response
@@ -201,8 +287,172 @@ export default function ClassesPage() {
 
   // Transform API data to display format
   const classes = useMemo(() => {
-    return apiClasses.map(transformClass);
-  }, [apiClasses]);
+    return apiClasses.map(cls => {
+      const displayClass = transformClass(cls);
+      // Add room name if roomId exists
+      if (displayClass.roomId && roomMap.has(displayClass.roomId)) {
+        displayClass.roomName = roomMap.get(displayClass.roomId) || null;
+      }
+      return displayClass;
+    });
+  }, [apiClasses, roomMap]);
+
+  // Group recurring classes - show only the first occurrence as the parent
+  // For recurring classes, we show a special parent card that represents the series
+  const groupedClasses = useMemo(() => {
+    const singleClasses: DisplayClass[] = [];
+    const recurringGroups = new Map<string, DisplayClass[]>();
+    
+    classes.forEach((cls) => {
+      // Check if this is a recurring or course class
+      // Also check if the name contains a date pattern (occurrence classes have "- MM/DD/YYYY" suffix)
+      const isRecurringType = cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course';
+      const isOccurrenceClass = /-\s*\d{1,2}\/\d{1,2}\/\d{4}$/.test(cls.name);
+      
+      if (isRecurringType || isOccurrenceClass) {
+        // Extract base name (remove date suffix for occurrence classes)
+        const baseName = cls.name.replace(/-\s*\d{1,2}\/\d{1,2}\/\d{4}$/, '').trim();
+        
+        // Create a key based on base class name, instructor, time, and recurrence pattern
+        const patternKey = cls.recurrencePattern 
+          ? JSON.stringify(cls.recurrencePattern)
+          : '';
+        // Use base name for grouping
+        const groupKey = `${baseName}-${cls.instructor}-${cls.time}-${patternKey}`;
+        
+        if (!recurringGroups.has(groupKey)) {
+          recurringGroups.set(groupKey, []);
+        }
+        recurringGroups.get(groupKey)!.push(cls);
+      } else {
+        singleClasses.push(cls);
+      }
+    });
+
+    // For each recurring group, create a special parent card
+    const recurringParents: DisplayClass[] = [];
+    recurringGroups.forEach((group) => {
+      // Sort by scheduled date
+      const sorted = [...group].sort((a, b) => 
+        new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+      );
+      
+      // Get the first class as base
+      const firstClass = sorted[0];
+      const baseName = firstClass.name.replace(/-\s*\d{1,2}\/\d{1,2}\/\d{4}$/, '').trim();
+      
+      // Find the next upcoming session (not completed)
+      const now = new Date();
+      const nextUpcoming = sorted.find(c => {
+        const classEndTime = new Date(c.scheduledAt);
+        classEndTime.setMinutes(classEndTime.getMinutes() + c.duration);
+        return classEndTime > now && c.status !== 'completed' && c.status !== 'cancelled';
+      }) || sorted[0]; // Fallback to first if all are past
+      
+      // Calculate aggregate stats for the recurring series
+      // For enrolled: sum across all sessions (total bookings)
+      const totalEnrolled = sorted.reduce((sum, c) => sum + c.enrolled, 0);
+      // For capacity: use per-session capacity (all instances should have the same capacity)
+      // Don't sum - capacity is per session, not total
+      const perSessionCapacity = nextUpcoming.capacity || firstClass.capacity;
+      const activeCount = sorted.filter(c => c.status === 'active').length;
+      const completedCount = sorted.filter(c => c.status === 'completed').length;
+      
+      // Determine parent status: active if any instance is active, completed only if ALL are completed
+      let parentStatus: DisplayClass["status"] = "active";
+      if (activeCount === 0 && completedCount === sorted.length) {
+        // All instances are completed
+        parentStatus = "completed";
+      } else if (sorted.every(c => c.status === "cancelled")) {
+        parentStatus = "cancelled";
+      } else if (sorted.every(c => c.status === "full")) {
+        parentStatus = "full";
+      } else if (activeCount > 0) {
+        // At least one is active
+        parentStatus = "active";
+      }
+      
+      // Create a special parent card for the recurring series
+      // Use the next upcoming session's date/time for display
+      const parentCard: DisplayClass = {
+        ...nextUpcoming,
+        name: baseName,
+        enrolled: totalEnrolled, // Total enrolled across all sessions
+        capacity: perSessionCapacity, // Capacity per session (not total)
+        status: parentStatus,
+        // Mark this as a parent card (we'll use this to style it differently)
+        recurrenceType: firstClass.recurrenceType,
+      };
+      
+      recurringParents.push(parentCard);
+    });
+
+    return {
+      single: singleClasses,
+      recurring: recurringParents,
+      recurringGroups: recurringGroups,
+    };
+  }, [classes]);
+
+  // Get all instances for a recurring class
+  const getRecurringInstances = (parentClass: DisplayClass): DisplayClass[] => {
+    // Extract base name (remove date suffix if present)
+    const baseName = parentClass.name.replace(/-\s*\d{1,2}\/\d{1,2}\/\d{4}$/, '').trim();
+    const patternKey = parentClass.recurrencePattern 
+      ? JSON.stringify(parentClass.recurrencePattern)
+      : '';
+    const groupKey = `${baseName}-${parentClass.instructor}-${parentClass.time}-${patternKey}`;
+    
+    const group = groupedClasses.recurringGroups.get(groupKey);
+    if (!group) return [];
+    
+    // Sort by scheduled date
+    return [...group].sort((a, b) => 
+      new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+    );
+  };
+
+  // Open recurring classes panel
+  const openRecurringPanel = (parentClass: DisplayClass) => {
+    const instances = getRecurringInstances(parentClass);
+    setRecurringPanel({
+      isOpen: true,
+      recurringClasses: instances,
+      parentClass,
+    });
+  };
+
+  // Close recurring classes panel
+  const closeRecurringPanel = () => {
+    setRecurringPanel({
+      isOpen: false,
+      recurringClasses: [],
+      parentClass: null,
+    });
+  };
+
+  // Open class details panel
+  const openDetailsPanel = (cls: DisplayClass) => {
+    setDetailsPanel({
+      isOpen: true,
+      classData: cls,
+    });
+  };
+
+  // Close class details panel
+  const closeDetailsPanel = () => {
+    setDetailsPanel({
+      isOpen: false,
+      classData: null,
+    });
+  };
+
+  // Combine single and recurring parent classes for display
+  const displayClasses = useMemo(() => {
+    return [...groupedClasses.single, ...groupedClasses.recurring].sort((a, b) => 
+      new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+    );
+  }, [groupedClasses]);
 
   const openAttendanceModal = (cls: DisplayClass) => {
     setAttendanceModal({ isOpen: true, classData: cls });
@@ -212,8 +462,40 @@ export default function ClassesPage() {
     setAttendanceModal({ isOpen: false, classData: null });
   };
 
-  const filteredClasses = classes.filter((cls) => {
-    const matchesFilter = filter === "all" || cls.status === filter;
+  const handleDeleteClick = (cls: DisplayClass) => {
+    setDeleteConfirm({ isOpen: true, classId: cls.id, className: cls.name });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirm.classId) return;
+
+    try {
+      await cancelClassMutation.mutateAsync(deleteConfirm.classId);
+      setDeleteConfirm({ isOpen: false, classId: null, className: "" });
+      // The mutation will automatically invalidate and refetch the classes list
+    } catch (error) {
+      console.error("Failed to cancel class:", error);
+      // You might want to show a toast notification here
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirm({ isOpen: false, classId: null, className: "" });
+  };
+
+  const filteredClasses = displayClasses.filter((cls) => {
+    let matchesFilter = true;
+    if (filter !== "all") {
+      if (filter === "active") {
+        matchesFilter = cls.status === "active";
+      } else if (filter === "completed") {
+        matchesFilter = cls.status === "completed";
+      } else if (filter === "cancelled") {
+        matchesFilter = cls.status === "cancelled";
+      } else if (filter === "full") {
+        matchesFilter = cls.status === "full";
+      }
+    }
     const matchesSearch =
       cls.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       cls.instructor.toLowerCase().includes(searchQuery.toLowerCase());
@@ -228,6 +510,8 @@ export default function ClassesPage() {
         return "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800";
       case "full":
         return "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800";
+      case "completed":
+        return "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800";
       default:
         return "bg-gray-50 text-gray-700 border-gray-200";
     }
@@ -244,10 +528,50 @@ export default function ClassesPage() {
   const stats = {
     total: classes.length,
     active: classes.filter((c) => c.status === "active").length,
+    completed: classes.filter((c) => c.status === "completed").length,
     full: classes.filter((c) => c.status === "full").length,
     cancelled: classes.filter((c) => c.status === "cancelled").length,
     totalEnrolled: classes.reduce((sum, c) => sum + c.enrolled, 0),
     totalCapacity: classes.reduce((sum, c) => sum + c.capacity, 0),
+  };
+
+  // Helper to get class type badge
+  const getClassTypeBadge = (recurrenceType?: 'single' | 'recurring' | 'course') => {
+    const type = recurrenceType || 'single';
+    
+    const badges = {
+      single: {
+        label: 'Single',
+        className: 'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-900/20 dark:text-gray-400 dark:border-gray-800',
+      },
+      recurring: {
+        label: 'Recurring',
+        className: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800',
+      },
+      course: {
+        label: 'Course',
+        className: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800',
+      },
+    };
+    
+    const badge = badges[type];
+    if (!badge) return null;
+    
+    return (
+      <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${badge.className}`}>
+        {badge.label}
+      </span>
+    );
+  };
+
+  // Helper to format date for single classes
+  const formatClassDate = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      year: 'numeric'
+    });
   };
 
   // Loading state with skeleton
@@ -392,8 +716,9 @@ export default function ClassesPage() {
           {[
             { key: "all", label: "All", count: stats.total },
             { key: "active", label: "Active", count: stats.active },
-            { key: "full", label: "Full", count: stats.full },
+            { key: "completed", label: "Completed", count: stats.completed },
             { key: "cancelled", label: "Cancelled", count: stats.cancelled },
+            { key: "full", label: "Full", count: stats.full },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -417,17 +742,6 @@ export default function ClassesPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Refresh Button */}
-          <button
-            onClick={handleRefresh}
-            disabled={isFetching}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-            title="Refresh classes"
-          >
-            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
-
           <div className="relative">
             <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -477,19 +791,51 @@ export default function ClassesPage() {
           {filteredClasses.map((cls) => (
             <div
               key={cls.id}
-              className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white transition-all hover:shadow-lg dark:border-gray-800 dark:bg-gray-900"
+              className={`group relative overflow-hidden rounded-2xl border transition-all hover:shadow-lg ${
+                (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') 
+                  ? 'cursor-pointer border-blue-300 bg-blue-50/50 dark:border-blue-700 dark:bg-blue-900/20' 
+                  : 'border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'
+              }`}
+              onClick={(e) => {
+                if ((cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && 
+                    !(e.target as HTMLElement).closest('button, a')) {
+                  openRecurringPanel(cls);
+                }
+              }}
             >
               {/* Header */}
-              <div className="border-b border-gray-100 p-5 dark:border-gray-800">
+              <div className={`border-b p-5 ${
+                (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                  ? 'border-blue-200 dark:border-blue-800'
+                  : 'border-gray-100 dark:border-gray-800'
+              }`}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-gray-900 dark:text-white">{cls.name}</h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className={`font-semibold ${
+                        (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                          ? 'text-blue-900 dark:text-blue-100'
+                          : 'text-gray-900 dark:text-white'
+                      }`}>
+                        {cls.name}
+                        {(cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && (
+                          <span className="ml-2 text-xs font-normal text-blue-600 dark:text-blue-400">
+                            (Series)
+                          </span>
+                        )}
+                      </h3>
+                      {getClassTypeBadge(cls.recurrenceType)}
                       <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${getStatusStyles(cls.status)}`}>
                         {cls.status}
                       </span>
                     </div>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 line-clamp-1">{cls.description}</p>
+                    <p className={`mt-1 text-sm line-clamp-1 ${
+                      (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                        ? 'text-blue-700 dark:text-blue-300'
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      {cls.description}
+                    </p>
                   </div>
                   <button className="rounded-lg p-1.5 text-gray-400 opacity-0 transition-opacity hover:bg-gray-100 group-hover:opacity-100 dark:hover:bg-gray-800">
                     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -500,33 +846,134 @@ export default function ClassesPage() {
               </div>
 
               {/* Body */}
-              <div className="p-5">
+              <div className={`p-5 ${
+                (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                  ? 'bg-blue-50/30 dark:bg-blue-900/10'
+                  : ''
+              }`}>
                 {/* Instructor */}
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-blue-500 to-purple-600 text-sm font-medium text-white">
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-medium text-white ${
+                    (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                      ? 'bg-gradient-to-br from-blue-500 to-cyan-600'
+                      : 'bg-linear-to-br from-blue-500 to-purple-600'
+                  }`}>
                     {cls.instructorAvatar}
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">{cls.instructor}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Instructor</p>
+                    <p className={`text-sm font-medium ${
+                      (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                        ? 'text-blue-900 dark:text-blue-100'
+                        : 'text-gray-900 dark:text-white'
+                    }`}>
+                      {cls.instructor}
+                    </p>
+                    <p className={`text-xs ${
+                      (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                        ? 'text-blue-600 dark:text-blue-400'
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      Instructor
+                    </p>
                   </div>
                 </div>
 
                 {/* Schedule Info */}
-                <div className="mt-4 grid grid-cols-3 gap-3">
-                  <div className="rounded-xl bg-gray-50 p-3 dark:bg-gray-800/50">
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Day</p>
-                    <p className="mt-0.5 text-sm font-medium text-gray-900 dark:text-white">{cls.dayOfWeek}</p>
+                <div className={`mt-4 grid gap-3 ${
+                  cls.recurrenceType === 'single' 
+                    ? 'grid-cols-2' 
+                    : (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                      ? 'grid-cols-2'
+                      : 'grid-cols-3'
+                }`}>
+                  {cls.recurrenceType === 'single' && (
+                    <div className="rounded-xl bg-gray-50 p-3 dark:bg-gray-800/50">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Date</p>
+                      <p className="mt-0.5 text-sm font-medium text-gray-900 dark:text-white">{formatClassDate(cls.scheduledAt)}</p>
+                    </div>
+                  )}
+                  {(cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && (
+                    <div className={`rounded-xl p-3 ${
+                      (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                        ? 'bg-blue-100 dark:bg-blue-900/30'
+                        : 'bg-gray-50 dark:bg-gray-800/50'
+                    }`}>
+                      <p className={`text-xs ${
+                        (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                          ? 'text-blue-700 dark:text-blue-300'
+                          : 'text-gray-500 dark:text-gray-400'
+                      }`}>
+                        Next Session
+                      </p>
+                      <p className={`mt-0.5 text-sm font-medium ${
+                        (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                          ? 'text-blue-900 dark:text-blue-100'
+                          : 'text-gray-900 dark:text-white'
+                      }`}>
+                        {formatClassDate(cls.scheduledAt)}
+                      </p>
+                    </div>
+                  )}
+                  {cls.recurrenceType !== 'single' && !(cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && (
+                    <div className="rounded-xl bg-gray-50 p-3 dark:bg-gray-800/50">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Day</p>
+                      <p className="mt-0.5 text-sm font-medium text-gray-900 dark:text-white">{cls.dayOfWeek}</p>
+                    </div>
+                  )}
+                  <div className={`rounded-xl p-3 ${
+                    (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                      ? 'bg-blue-100 dark:bg-blue-900/30'
+                      : 'bg-gray-50 dark:bg-gray-800/50'
+                  }`}>
+                    <p className={`text-xs ${
+                      (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                        ? 'text-blue-700 dark:text-blue-300'
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      Time
+                    </p>
+                    <p className={`mt-0.5 text-sm font-medium ${
+                      (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                        ? 'text-blue-900 dark:text-blue-100'
+                        : 'text-gray-900 dark:text-white'
+                    }`}>
+                      {cls.time}
+                    </p>
                   </div>
-                  <div className="rounded-xl bg-gray-50 p-3 dark:bg-gray-800/50">
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Time</p>
-                    <p className="mt-0.5 text-sm font-medium text-gray-900 dark:text-white">{cls.time}</p>
-                  </div>
-                  <div className="rounded-xl bg-gray-50 p-3 dark:bg-gray-800/50">
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Duration</p>
-                    <p className="mt-0.5 text-sm font-medium text-gray-900 dark:text-white">{cls.duration}m</p>
+                  <div className={`rounded-xl p-3 ${
+                    (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                      ? 'bg-blue-100 dark:bg-blue-900/30'
+                      : 'bg-gray-50 dark:bg-gray-800/50'
+                  }`}>
+                    <p className={`text-xs ${
+                      (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                        ? 'text-blue-700 dark:text-blue-300'
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      Duration
+                    </p>
+                    <p className={`mt-0.5 text-sm font-medium ${
+                      (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                        ? 'text-blue-900 dark:text-blue-100'
+                        : 'text-gray-900 dark:text-white'
+                    }`}>
+                      {cls.duration}m
+                    </p>
                   </div>
                 </div>
+
+                {/* Location/Room */}
+                {(cls.roomName || cls.location) && (
+                  <div className="mt-4 flex items-center gap-2 text-sm">
+                    <svg className="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <span className="text-gray-600 dark:text-gray-300">
+                      {cls.roomName || cls.location || "No location"}
+                    </span>
+                  </div>
+                )}
 
                 {/* Capacity */}
                 <div className="mt-4">
@@ -552,25 +999,64 @@ export default function ClassesPage() {
                     </div>
                     <span className="text-sm font-medium text-gray-900 dark:text-white">{cls.tokenCost} {cls.tokenCost === 1 ? "Token" : "Tokens"}</span>
                   </div>
+                  {(cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && (
+                    <div className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      <span className="font-medium">{getRecurringInstances(cls).length} sessions</span>
+                    </div>
+                  )}
                   <div className="flex gap-2">
+                    {/* View Details Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openDetailsPanel(cls);
+                      }}
+                      className="inline-flex items-center justify-center rounded-lg p-2 text-blue-500 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400 transition-colors"
+                      title="View Details"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </button>
                     {/* Attendance QR Button */}
                     <button
-                      onClick={() => openAttendanceModal(cls)}
-                      className="rounded-lg p-2 text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openAttendanceModal(cls);
+                      }}
+                      className="inline-flex items-center justify-center rounded-lg p-2 text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400 transition-colors"
                       title="Start Attendance"
                     >
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
                       </svg>
                     </button>
-                    <Link href={`/classes/${cls.id}`}>
-                      <button className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300">
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
-                      </button>
+                    <Link 
+                      href={`/classes/new?id=${cls.id}`}
+                      className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors"
+                      title="Edit Class"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
                     </Link>
-                    <button className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteClick(cls);
+                      }}
+                      disabled={cancelClassMutation.isPending}
+                      className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      title="Cancel Class"
+                    >
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
@@ -599,11 +1085,32 @@ export default function ClassesPage() {
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
                 {filteredClasses.map((cls) => (
-                  <tr key={cls.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                  <tr 
+                    key={cls.id} 
+                    className={`transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50 ${
+                      (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') 
+                        ? 'cursor-pointer' 
+                        : ''
+                    }`}
+                    onClick={(e) => {
+                      if ((cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && 
+                          !(e.target as HTMLElement).closest('button, a')) {
+                        openRecurringPanel(cls);
+                      }
+                    }}
+                  >
                     <td className="px-6 py-4">
                       <div>
-                        <p className="font-medium text-gray-900 dark:text-white">{cls.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-900 dark:text-white">{cls.name}</p>
+                          {getClassTypeBadge(cls.recurrenceType)}
+                        </div>
                         <p className="text-sm text-gray-500 dark:text-gray-400">{cls.duration} minutes</p>
+                        {(cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && (
+                          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                            {getRecurringInstances(cls).length} sessions
+                          </p>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -616,8 +1123,17 @@ export default function ClassesPage() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm">
-                        <p className="font-medium text-gray-900 dark:text-white">{cls.dayOfWeek}</p>
-                        <p className="text-gray-500 dark:text-gray-400">{cls.time}</p>
+                        {cls.recurrenceType === 'single' ? (
+                          <>
+                            <p className="font-medium text-gray-900 dark:text-white">{formatClassDate(cls.scheduledAt)}</p>
+                            <p className="text-gray-500 dark:text-gray-400">{cls.time}</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="font-medium text-gray-900 dark:text-white">{cls.dayOfWeek}</p>
+                            <p className="text-gray-500 dark:text-gray-400">{cls.time}</p>
+                          </>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -653,22 +1169,38 @@ export default function ClassesPage() {
                       <div className="flex items-center justify-end gap-2">
                         {/* Attendance QR Button */}
                         <button
-                          onClick={() => openAttendanceModal(cls)}
-                          className="rounded-lg p-2 text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400"
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openAttendanceModal(cls);
+                          }}
+                          className="inline-flex items-center justify-center rounded-lg p-2 text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400 transition-colors"
                           title="Start Attendance"
                         >
                           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
                           </svg>
                         </button>
-                        <Link href={`/classes/${cls.id}`}>
-                          <button className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300">
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          </button>
+                        <Link 
+                          href={`/classes/new?id=${cls.id}`}
+                          className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors"
+                          title="Edit Class"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
                         </Link>
-                        <button className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteClick(cls);
+                          }}
+                          disabled={cancelClassMutation.isPending}
+                          className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="Cancel Class"
+                        >
                           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
@@ -709,6 +1241,295 @@ export default function ClassesPage() {
             capacity: attendanceModal.classData.capacity,
           }}
         />
+      )}
+
+      {/* Recurring Classes Slider Panel */}
+      {recurringPanel.isOpen && recurringPanel.parentClass && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-end">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/50 transition-opacity"
+            onClick={closeRecurringPanel}
+          />
+          
+          {/* Panel */}
+          <div className="relative w-full sm:w-[500px] h-[80vh] sm:h-[600px] bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-l-2xl sm:rounded-tr-none shadow-2xl flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
+              <div className="flex-1">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                  {recurringPanel.parentClass.name}
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  {recurringPanel.recurringClasses.length} {recurringPanel.recurringClasses.length === 1 ? 'session' : 'sessions'}
+                </p>
+              </div>
+              <button
+                onClick={closeRecurringPanel}
+                className="ml-4 rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="space-y-3">
+                {recurringPanel.recurringClasses.map((instance) => (
+                  <div
+                    key={instance.id}
+                    className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${getStatusStyles(instance.status)}`}>
+                            {instance.status}
+                          </span>
+                          {getClassTypeBadge(instance.recurrenceType)}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">Date</p>
+                            <p className="font-medium text-gray-900 dark:text-white">
+                              {new Date(instance.scheduledAt).toLocaleDateString('en-US', { 
+                                weekday: 'short', 
+                                month: 'short', 
+                                day: 'numeric',
+                                year: 'numeric'
+                              })}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">Time</p>
+                            <p className="font-medium text-gray-900 dark:text-white">{instance.time}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">Capacity</p>
+                            <p className="font-medium text-gray-900 dark:text-white">
+                              {instance.enrolled}/{instance.capacity}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">Tokens</p>
+                            <p className="font-medium text-gray-900 dark:text-white">{instance.tokenCost}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 ml-4">
+                        <Link 
+                          href={`/classes/new?id=${instance.id}`}
+                          className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300 transition-colors"
+                          title="Edit"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteClick(instance);
+                          }}
+                          className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-colors"
+                          title="Cancel"
+                        >
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Class Details Slider Panel */}
+      {detailsPanel.isOpen && detailsPanel.classData && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-end">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/50 transition-opacity"
+            onClick={closeDetailsPanel}
+          />
+          
+          {/* Panel */}
+          <div className="relative w-full sm:w-[500px] h-[80vh] sm:h-[600px] bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-l-2xl sm:rounded-tr-none shadow-2xl flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
+              <div className="flex-1">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                  {detailsPanel.classData.name}
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Class Details
+                </p>
+              </div>
+              <button
+                onClick={closeDetailsPanel}
+                className="ml-4 rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="space-y-6">
+                {/* Status and Type */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {getClassTypeBadge(detailsPanel.classData.recurrenceType)}
+                  <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${getStatusStyles(detailsPanel.classData.status)}`}>
+                    {detailsPanel.classData.status}
+                  </span>
+                </div>
+
+                {/* Description */}
+                {detailsPanel.classData.description && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{detailsPanel.classData.description}</p>
+                  </div>
+                )}
+
+                {/* Schedule Info */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date & Time</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {detailsPanel.classData.recurrenceType === 'single' 
+                        ? formatClassDate(detailsPanel.classData.scheduledAt)
+                        : detailsPanel.classData.dayOfWeek
+                      }
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{detailsPanel.classData.time}</p>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Duration</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{detailsPanel.classData.duration} minutes</p>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Capacity</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {detailsPanel.classData.enrolled} / {detailsPanel.classData.capacity}
+                    </p>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Token Cost</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {detailsPanel.classData.tokenCost} {detailsPanel.classData.tokenCost === 1 ? 'token' : 'tokens'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Location/Room */}
+                {(detailsPanel.classData.roomName || detailsPanel.classData.location) && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Location</h3>
+                    <div className="flex items-center gap-2">
+                      <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {detailsPanel.classData.roomName || detailsPanel.classData.location || "No location specified"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Instructor */}
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Instructor</h3>
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-xs font-medium text-white">
+                      {detailsPanel.classData.instructorAvatar}
+                    </div>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{detailsPanel.classData.instructor}</p>
+                  </div>
+                </div>
+
+                {/* Level and Type */}
+                {(detailsPanel.classData.level || detailsPanel.classData.classType) && (
+                  <div className="grid grid-cols-2 gap-4">
+                    {detailsPanel.classData.level && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Level</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 capitalize">
+                          {detailsPanel.classData.level.replace('_', ' ')}
+                        </p>
+                      </div>
+                    )}
+                    {detailsPanel.classData.classType && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Class Type</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 capitalize">
+                          {detailsPanel.classData.classType}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900">
+            <div className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+                  <svg className="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Cancel Class</h3>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    Are you sure you want to cancel <span className="font-medium text-gray-900 dark:text-white">{deleteConfirm.className}</span>? This action will cancel the class and refund tokens to enrolled students.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 flex gap-3">
+                <button
+                  onClick={handleDeleteCancel}
+                  disabled={cancelClassMutation.isPending}
+                  className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  disabled={cancelClassMutation.isPending}
+                  className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {cancelClassMutation.isPending ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Cancelling...
+                    </span>
+                  ) : (
+                    "Yes, Cancel Class"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

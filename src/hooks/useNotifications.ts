@@ -3,6 +3,8 @@ import { useEffect } from 'react'
 import { api } from '@/lib/api-client'
 import { getSupabaseClient } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
+import { useToast as useAdminToast } from '@/components/ui/Toast'
+import { handleApiResponse, handleMutationError, createToastAdapter } from '@/lib/toast-helper'
 
 export interface Notification {
   id: string
@@ -89,25 +91,39 @@ export function useNotifications(params?: {
 
 export function useMarkNotificationRead() {
   const queryClient = useQueryClient()
+  const adminToast = useAdminToast()
+  const toast = createToastAdapter(adminToast)
 
   return useMutation({
     mutationFn: markNotificationRead,
     onSuccess: () => {
       // Invalidate notifications queries
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      // No toast on single mark as read (user action, not significant)
     },
+    onError: (error: Error) => {
+      handleMutationError(error, toast, 'Mark as read')
+    }
   })
 }
 
 export function useMarkAllNotificationsRead() {
   const queryClient = useQueryClient()
+  const adminToast = useAdminToast()
+  const toast = createToastAdapter(adminToast)
 
   return useMutation({
     mutationFn: markAllNotificationsRead,
     onSuccess: () => {
       // Invalidate notifications queries
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      handleApiResponse({ success: true, message: 'All notifications marked as read' }, toast, {
+        successTitle: 'Marked as Read'
+      })
     },
+    onError: (error: Error) => {
+      handleMutationError(error, toast, 'Mark all as read')
+    }
   })
 }
 

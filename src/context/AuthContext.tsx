@@ -121,6 +121,28 @@ async function mapSupabaseUserToUser(supabaseUser: SupabaseUser | null): Promise
   }
 }
 
+// Helper to get auth token with timeout
+async function getAuthTokenWithTimeout(timeoutMs: number = 3000): Promise<string | null> {
+  try {
+    const sessionPromise = supabase.auth.getSession()
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Token fetch timed out')), timeoutMs)
+    )
+
+    try {
+      const result = await Promise.race([sessionPromise, timeoutPromise]) as { data: { session: any }; error: any }
+      if (result?.data?.session?.access_token) {
+        return result.data.session.access_token
+      }
+      return null
+    } catch {
+      return null
+    }
+  } catch {
+    return null
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
@@ -151,6 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sessionResult = await Promise.race([sessionPromise, timeoutPromise])
       } catch (timeoutError) {
         // Treat timeout as "no session" - complete auth immediately
+        console.error('[Auth] Session check timed out:', timeoutError)
         setUser(null)
         setIsLoading(false)
         isInitializingRef.current = false
@@ -171,31 +194,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         console.log('[Auth] Session found, mapping user...')
         
-        // Don't refresh here - let Supabase auto-refresh handle it
-        // Only refresh if explicitly needed (not during initialization)
-        
-        // Quick check: Try to get name from localStorage first for instant display
-        let cachedName: string | null = null
-        if (typeof window !== 'undefined') {
-          try {
-            const storageKey = Object.keys(localStorage).find(key => 
-              key.includes('supabase') && key.includes('auth-token')
-            )
-            if (storageKey) {
-              const stored = localStorage.getItem(storageKey)
-              if (stored) {
-                const parsed = JSON.parse(stored)
-                if (parsed?.currentSession?.user?.user_metadata?.name) {
-                  cachedName = parsed.currentSession.user.user_metadata.name
-                  console.log('[Auth] Found cached name in localStorage:', cachedName)
-                }
-              }
-            }
-          } catch (e) {
-            // Ignore localStorage errors
-          }
-        }
-        
         // First check app_metadata (set by Supabase admin) or user_metadata
         const appRole = session.user.app_metadata?.role
         const userRole = session.user.user_metadata?.role
@@ -204,11 +202,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         // Helper function to extract user name - use metadata directly, no formatting delays
         const getUserName = (): string => {
-          // Use cached name from localStorage if available (fastest)
-          if (cachedName) {
-            console.log('[Auth] Using cached name from localStorage:', cachedName)
-            return cachedName
-          }
           // Try user_metadata.name first - use it directly if available
           const metadataName = session.user.user_metadata?.name
           if (metadataName) {
@@ -260,9 +253,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
         
-        // Fall back to database lookup (only if role not in metadata)
+        // Fall back to database lookup with timeout (only if role not in metadata)
         try {
-          const userData = await mapSupabaseUserToUser(session.user)
+          // Wrap mapSupabaseUserToUser with explicit timeout
+          const userDataPromise = mapSupabaseUserToUser(session.user)
+          const dbTimeoutPromise = new Promise<null>((resolve) =>
+            setTimeout(() => {
+              console.warn('[Auth] Database lookup timed out, skipping')
+              resolve(null)
+            }, 2000)
+          )
+          
+          const userData = await Promise.race([userDataPromise, dbTimeoutPromise])
           
           if (userData && ADMIN_ROLES.includes(userData.role)) {
             setUser(userData)
@@ -270,13 +272,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             isInitializingRef.current = false
             return
           } else {
+            // Either no data or not an admin - either way, can't authenticate
             setUser(null)
             setIsLoading(false)
             isInitializingRef.current = false
             return
           }
         } catch (dbError) {
-          console.error('[Auth] Database lookup failed or timed out:', dbError)
+          console.error('[Auth] Database lookup failed:', dbError)
           // If database lookup fails, we can't verify admin role
           // Set user to null so they get redirected to signin
           setUser(null)
@@ -307,57 +310,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    // Prevent concurrent initializations - only check if currently initializing
-    if (isInitializingRef.current) {
-      console.log('[Auth] Effect: Already initializing, skipping...')
-      return
-    }
-    
-    // If already initialized, skip (normal case after first mount)
-    if (hasInitializedRef.current) {
-      console.log('[Auth] Effect: Already initialized, skipping...')
-      return
-    }
-    
-    // Mark as initializing immediately to prevent race conditions
-    hasInitializedRef.current = true
-    isInitializingRef.current = true
-
     let isMounted = true
-    let slowLoadingTimeout: NodeJS.Timeout
+    let timeoutId: NodeJS.Timeout | undefined
 
-    const init = async () => {
-      // Show "taking too long" message after 5 seconds
-      slowLoadingTimeout = setTimeout(() => {
-        if (isMounted) {
-          setLoadingTooLong(true)
-        }
-      }, 5000)
+    // Prevent duplicate initialization
+    if (hasInitializedRef.current) {
+      console.log('[Auth] useEffect: Already initialized, skipping')
+      return
+    }
 
-      // Add timeout to prevent infinite loading
-      const timeoutId = setTimeout(() => {
-        if (isMounted) {
-          console.warn('[Auth] Auth initialization timed out after', AUTH_TIMEOUT, 'ms - forcing completion')
-          setUser(null) // Ensure user is null on timeout
-          setIsLoading(false)
-          isInitializingRef.current = false
-          hasInitializedRef.current = true // Mark as completed (even if failed)
-        }
-      }, AUTH_TIMEOUT)
+    hasInitializedRef.current = true
 
+    const doInitialize = async () => {
       try {
+        console.log('[Auth] useEffect: Starting initialization')
+        
+        // Set a hard timeout to prevent infinite loading
+        timeoutId = setTimeout(() => {
+          if (isMounted) {
+            console.warn('[Auth] useEffect: Hard timeout - forcing completion')
+            setIsLoading(false)
+            isInitializingRef.current = false
+          }
+        }, 8000) // 8 second hard timeout
+
+        // Call initialization function
         await initializeAuth()
-        // Mark as completed after successful initialization
-        hasInitializedRef.current = true
+        
+        if (isMounted) {
+          console.log('[Auth] useEffect: Initialization complete')
+          setIsLoading(false)
+        }
+      } catch (error) {
+        console.error('[Auth] useEffect: Initialization error:', error)
+        if (isMounted) {
+          setIsLoading(false)
+        }
       } finally {
-        clearTimeout(timeoutId)
-        clearTimeout(slowLoadingTimeout)
+        if (timeoutId) clearTimeout(timeoutId)
         isInitializingRef.current = false
       }
     }
 
-    init()
+    // Start initialization immediately
+    doInitialize()
 
+    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!isMounted) return
@@ -367,16 +365,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (userData && ADMIN_ROLES.includes(userData.role)) {
             setUser(userData)
             setIsLoading(false)
-            setLoadingTooLong(false)
           } else {
             setUser(null)
             setIsLoading(false)
-            setLoadingTooLong(false)
           }
         } else if (event === 'SIGNED_OUT') {
           setUser(null)
           setIsLoading(false)
-          setLoadingTooLong(false)
         } else if (event === 'TOKEN_REFRESHED' && session?.user) {
           const userData = await mapSupabaseUserToUser(session.user)
           if (userData && ADMIN_ROLES.includes(userData.role)) {
@@ -386,22 +381,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     )
 
-    // Set up periodic session refresh (every 5 minutes)
-    // Use a ref-like approach to check user without causing re-renders
-    const refreshInterval = setInterval(async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
-        await refreshSessionIfNeeded()
-      }
-    }, 5 * 60 * 1000) // 5 minutes
-
+    // Cleanup
     return () => {
       isMounted = false
+      if (timeoutId) clearTimeout(timeoutId)
       subscription.unsubscribe()
-      clearInterval(refreshInterval)
-      // Reset refs on unmount to allow re-initialization
-      hasInitializedRef.current = false
-      isInitializingRef.current = false
+      // Don't reset hasInitializedRef here - we want to prevent re-initialization
     }
   }, []) // Empty dependency array - only run once on mount
 

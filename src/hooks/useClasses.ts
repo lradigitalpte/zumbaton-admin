@@ -57,6 +57,8 @@ export interface ClassWithAvailability {
   spotsRemaining: number
   waitlistCount: number
   isBookable: boolean
+  allowDropIn?: boolean
+  dropInTokenCost?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -67,6 +69,7 @@ export interface CreateClassData {
   classType: string
   level?: string
   instructorId?: string
+  instructorIds?: string[] // Multiple instructor IDs
   scheduledAt: string
   durationMinutes?: number
   capacity: number
@@ -81,6 +84,9 @@ export interface CreateClassData {
     endType?: 'never' | 'date' | 'count'
     occurrences?: number
   }
+  // Walk-in/drop-in settings
+  allowDropIn?: boolean
+  dropInTokenCost?: number
 }
 
 export interface ClassListQuery {
@@ -215,8 +221,8 @@ async function updateClass(id: string, data: Partial<CreateClassData>): Promise<
 }
 
 async function cancelClass(id: string): Promise<{ success: boolean; message: string; refundedBookings: number }> {
-  const response = await api.post<{ data: { success: boolean; message: string; refundedBookings: number } }>(
-    `/api/classes/${id}/cancel`
+  const response = await api.delete<{ data: { success: boolean; message: string; refundedBookings: number } }>(
+    `/api/classes/${id}`
   )
 
   if (response.error) {

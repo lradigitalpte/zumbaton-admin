@@ -1,18 +1,21 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useMemo, useEffect, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import ComponentCard from "@/components/common/ComponentCard";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import Button from "@/components/ui/button/Button";
 import Label from "@/components/form/Label";
 import Input from "@/components/form/input/InputField";
 import Select from "@/components/form/Select";
+import MultiSelect from "@/components/form/MultiSelect";
 import { 
   useInstructors, 
   useRooms, 
   useClassCategories, 
   useCreateClass,
+  useClass,
+  useUpdateClass,
   CreateClassData,
 } from "@/hooks/useClasses";
 import { useClassCategories as useCategoriesHook } from "@/hooks/useClassCategories";
@@ -61,8 +64,11 @@ const FormSectionSkeleton = () => (
   </div>
 );
 
-export default function NewClassPage() {
+function NewClassPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const classId = searchParams.get("id");
+  const isEditMode = !!classId;
   
   // Fetch data from API
   const { data: instructors = [], isLoading: loadingInstructors } = useInstructors();
@@ -73,17 +79,24 @@ export default function NewClassPage() {
   const { data: categoriesLegacy = [] } = useClassCategories();
   const allCategories = categories.length > 0 ? categories : categoriesLegacy;
   
-  // Create class mutation
+  // Fetch class data if editing
+  const { data: existingClass, isLoading: loadingClass } = useClass(classId || "");
+  
+  // Create/Update class mutations
   const createClass = useCreateClass();
+  const updateClass = useUpdateClass();
   
   const [classType, setClassType] = useState("single");
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [showCategoryPanel, setShowCategoryPanel] = useState(false);
+  const [formPopulated, setFormPopulated] = useState(false);
+  const previousRoomRef = useRef<string>("");
+  const isInitialPopulationRef = useRef<boolean>(false);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
     category: "",
-    instructor: "",
+    instructor: [] as string[], // Changed to array for multiple instructors
     room: "",
     level: "all_levels",
     // Single class fields
@@ -99,10 +112,116 @@ export default function NewClassPage() {
     duration: "60",
     capacity: "20",
     tokenCost: "1",
-    // Course specific
-    courseTotalPrice: "",
+    // Drop-in/walk-in settings
     allowDropIn: false,
+    dropInTokenCost: "",
   });
+
+  // Populate form when class data is loaded (edit mode)
+  useEffect(() => {
+    if (
+      existingClass && 
+      isEditMode && 
+      !loadingClass && 
+      !loadingInstructors && 
+      !loadingRooms && 
+      !loadingCategories &&
+      !formPopulated &&
+      instructors.length > 0 &&
+      rooms.length > 0 &&
+      allCategories.length > 0
+    ) {
+      const scheduledDate = new Date(existingClass.scheduledAt);
+      // Get date in local timezone
+      const year = scheduledDate.getFullYear();
+      const month = String(scheduledDate.getMonth() + 1).padStart(2, '0');
+      const day = String(scheduledDate.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      
+      // Get time in local timezone
+      const hours = String(scheduledDate.getHours()).padStart(2, '0');
+      const minutes = String(scheduledDate.getMinutes()).padStart(2, '0');
+      const timeStr = `${hours}:${minutes}`;
+      
+      // Determine class type from recurrence
+      // Check if this is an individual instance (has date suffix in title like "Class Name - 1/10/2026")
+      const isIndividualInstance = /-\s*\d{1,2}\/\d{1,2}\/\d{4}$/.test(existingClass.title || "");
+      
+      let detectedClassType = "single";
+      // If it's an individual instance, always treat it as "single" for editing
+      // This allows editing just that one instance without affecting the series
+      if (!isIndividualInstance && existingClass.recurrenceType) {
+        detectedClassType = existingClass.recurrenceType;
+      }
+      
+      // Extract days from recurrence pattern if it exists (only for parent classes)
+      let days: string[] = [];
+      if (!isIndividualInstance && existingClass.recurrencePattern && typeof existingClass.recurrencePattern === 'object') {
+        const pattern = existingClass.recurrencePattern as any;
+        if (pattern.days && Array.isArray(pattern.days)) {
+          days = pattern.days;
+        }
+      }
+      
+      // Get IDs - handle both null and undefined, convert to empty string if null/undefined
+      const categoryId = existingClass.categoryId ? String(existingClass.categoryId) : "";
+      const instructorId = existingClass.instructorId ? String(existingClass.instructorId) : "";
+      const roomId = existingClass.roomId ? String(existingClass.roomId) : "";
+      const level = existingClass.level ? String(existingClass.level) : "all_levels";
+      
+      // Handle instructor - convert to array format
+      // If instructor_name contains commas, try to parse multiple instructors
+      // Otherwise, use the single instructorId
+      const instructorArray = instructorId ? [instructorId] : [];
+      
+      setClassType(detectedClassType);
+      setSelectedDays(days);
+      
+      setFormData(prev => ({
+        ...prev,
+        name: existingClass.title || "",
+        description: existingClass.description || "",
+        category: categoryId,
+        instructor: instructorArray, // Keep as array
+        room: roomId,
+        level: level,
+        date: (detectedClassType === "single" || isIndividualInstance) ? dateStr : prev.date,
+        startDate: detectedClassType === "recurring" && !isIndividualInstance ? dateStr : prev.startDate,
+        endDate: detectedClassType === "recurring" && !isIndividualInstance && existingClass.recurrencePattern 
+          ? (existingClass.recurrencePattern as any).endDate?.split('T')[0] || "" 
+          : prev.endDate,
+        courseWeeks: detectedClassType === "course" && !isIndividualInstance && existingClass.recurrencePattern
+          ? String(Math.ceil(((existingClass.recurrencePattern as any).occurrences || 8) / (days.length || 1)))
+          : prev.courseWeeks,
+        courseStartDate: detectedClassType === "course" && !isIndividualInstance ? dateStr : prev.courseStartDate,
+        startTime: timeStr,
+        duration: String(existingClass.durationMinutes || 60),
+        capacity: String(existingClass.capacity || 20),
+        tokenCost: String(existingClass.tokenCost || 1),
+      }));
+      
+      setFormPopulated(true);
+      isInitialPopulationRef.current = true;
+      // Set the previous room ref to the loaded room so we don't auto-populate on initial load
+      previousRoomRef.current = roomId;
+      
+      // Reset the initial population flag after a short delay
+      setTimeout(() => {
+        isInitialPopulationRef.current = false;
+      }, 1000);
+    }
+  }, [
+    existingClass, 
+    isEditMode, 
+    loadingClass, 
+    loadingInstructors, 
+    loadingRooms, 
+    loadingCategories,
+    formPopulated,
+    instructors.length,
+    rooms.length,
+    allCategories.length
+  ]);
 
   // Format instructors for Select component
   const instructorOptions = useMemo(() => 
@@ -122,12 +241,37 @@ export default function NewClassPage() {
     [allCategories]
   );
 
+  // Auto-populate capacity when room is selected
+  useEffect(() => {
+    // Skip auto-population during initial form population (edit mode)
+    if (isInitialPopulationRef.current) return;
+    
+    // Only auto-populate if room actually changed (not on initial load or other updates)
+    if (formData.room && formData.room !== previousRoomRef.current && rooms.length > 0) {
+      const selectedRoom = rooms.find(r => r.id === formData.room);
+      if (selectedRoom && selectedRoom.capacity) {
+        setFormData(prev => ({
+          ...prev,
+          capacity: String(selectedRoom.capacity),
+        }));
+      }
+      previousRoomRef.current = formData.room;
+    } else if (!formData.room) {
+      // Reset ref when room is cleared
+      previousRoomRef.current = "";
+    }
+  }, [formData.room, rooms]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Check if editing an individual instance (has date suffix in title)
+    const isIndividualInstance = existingClass && /-\s*\d{1,2}\/\d{1,2}\/\d{4}$/.test(existingClass.title || "");
+
     // Build scheduled datetime
     let scheduledAt: string;
-    if (classType === "single") {
+    if (classType === "single" || isIndividualInstance) {
+      // For individual instances, use the date field
       scheduledAt = new Date(`${formData.date}T${formData.startTime}`).toISOString();
     } else if (classType === "recurring") {
       scheduledAt = new Date(`${formData.startDate}T${formData.startTime}`).toISOString();
@@ -136,7 +280,9 @@ export default function NewClassPage() {
     }
 
     // Build recurrence pattern for recurring/course
+    // For individual instances, don't include recurrence pattern (it stays as part of the series)
     let recurrencePattern: CreateClassData['recurrencePattern'] = undefined;
+    if (!isIndividualInstance) {
     if (classType === "recurring") {
       recurrencePattern = {
         days: selectedDays,
@@ -150,6 +296,7 @@ export default function NewClassPage() {
         endType: 'date',
         occurrences: calculateTotalSessions(),
       };
+      }
     }
 
     // Get category slug - use it directly, map to closest enum value if needed
@@ -181,32 +328,69 @@ export default function NewClassPage() {
       // Default to 'dance' if no match found
     }
 
+    // For individual instances, keep the original recurrenceType and recurrencePattern
+    // so it remains part of the series (isIndividualInstance already defined above)
+    
+    // Handle multiple instructors - use first one as primary, store all in instructorIds
+    // Ensure instructor is always an array
+    const instructorArray = Array.isArray(formData.instructor) 
+      ? formData.instructor 
+      : (formData.instructor ? [formData.instructor] : []);
+    
+    const primaryInstructorId = instructorArray.length > 0 && instructorArray[0] ? instructorArray[0] : undefined;
+    const allInstructorIds = instructorArray.length > 0 ? instructorArray : undefined;
+
     const classData: CreateClassData = {
       title: formData.name,
       description: formData.description || undefined,
       classType: classTypeValue,
       level: formData.level,
-      instructorId: formData.instructor || undefined,
+      // Only include instructorId if it's a valid UUID (not empty string)
+      ...(primaryInstructorId && primaryInstructorId.trim() !== '' ? { instructorId: primaryInstructorId } : {}),
+      // Only include instructorIds if it's a valid array with UUIDs
+      ...(allInstructorIds && allInstructorIds.length > 0 && allInstructorIds.every(id => id && id.trim() !== '') 
+        ? { instructorIds: allInstructorIds } 
+        : {}),
       scheduledAt,
       durationMinutes: parseInt(formData.duration),
       capacity: parseInt(formData.capacity),
       tokenCost: parseInt(formData.tokenCost),
       roomId: formData.room || undefined,
       categoryId: formData.category || undefined,
-      recurrenceType: classType as 'single' | 'recurring' | 'course',
-      recurrencePattern: recurrencePattern,
+      // For individual instances, preserve the original recurrence info
+      recurrenceType: isIndividualInstance 
+        ? (existingClass?.recurrenceType as 'single' | 'recurring' | 'course' | undefined)
+        : (classType as 'single' | 'recurring' | 'course'),
+      recurrencePattern: isIndividualInstance 
+        ? (existingClass?.recurrencePattern && typeof existingClass.recurrencePattern === 'object' && 'days' in existingClass.recurrencePattern ? existingClass.recurrencePattern : undefined)
+        : recurrencePattern,
+      // Walk-in/drop-in settings
+      allowDropIn: formData.allowDropIn || false,
+      dropInTokenCost: formData.allowDropIn && formData.dropInTokenCost 
+        ? parseInt(formData.dropInTokenCost) 
+        : undefined,
     };
 
     try {
+      if (isEditMode && classId) {
+        await updateClass.mutateAsync({ id: classId, data: classData });
+      } else {
       await createClass.mutateAsync(classData);
+      }
       router.push("/classes");
     } catch (error) {
-      console.error("Failed to create class:", error);
+      console.error(`Failed to ${isEditMode ? 'update' : 'create'} class:`, error);
     }
   };
 
-  const handleChange = (field: string) => (value: string) => {
+  const handleChange = (field: string) => (value: string | string[]) => {
+    // For instructor field, always convert to array to support multiple instructors
+    if (field === 'instructor') {
+      const instructorValue = Array.isArray(value) ? value : (value ? [value] : []);
+      setFormData((prev) => ({ ...prev, [field]: instructorValue }));
+    } else {
     setFormData((prev) => ({ ...prev, [field]: value }));
+    }
   };
 
   const toggleDay = (day: string) => {
@@ -235,15 +419,15 @@ export default function NewClassPage() {
 
   // Get selected items for preview
   const selectedCategory = categories.find(c => c.id === formData.category);
-  const selectedInstructor = instructors.find(i => i.id === formData.instructor);
+  const selectedInstructors = instructors.filter(i => formData.instructor.includes(i.id));
   const selectedRoom = rooms.find(r => r.id === formData.room);
-  const isLoading = loadingInstructors || loadingRooms || loadingCategories;
+  const isLoading = loadingInstructors || loadingRooms || loadingCategories || (isEditMode && loadingClass);
 
   // Loading State with Skeleton
   if (isLoading) {
     return (
       <div>
-        <PageBreadCrumb pageTitle="Add New Class" />
+        <PageBreadCrumb pageTitle={isEditMode ? "Edit Class" : "Add New Class"} />
         <div className="space-y-6">
           {/* Class Type Skeleton */}
           <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800 animate-pulse">
@@ -289,19 +473,31 @@ export default function NewClassPage() {
 
   return (
     <div>
-      <PageBreadCrumb pageTitle="Add New Class" />
+      <PageBreadCrumb pageTitle={isEditMode ? "Edit Class" : "Add New Class"} />
 
       <div className="space-y-6">
         {/* Class Type Selection */}
         <ComponentCard title="Class Type">
+          {isEditMode && existingClass && /-\s*\d{1,2}\/\d{1,2}\/\d{4}$/.test(existingClass.title || "") && (
+            <div className="mb-4 p-3 rounded-lg bg-gray-100 dark:bg-gray-800 text-sm text-gray-600 dark:text-gray-400">
+              <p>Class type is locked for individual instances. This session is part of a {existingClass.recurrenceType || 'recurring'} series.</p>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            {classTypes.map((type) => (
+            {classTypes.map((type) => {
+              const isIndividualInstance = isEditMode && existingClass && /-\s*\d{1,2}\/\d{1,2}\/\d{4}$/.test(existingClass.title || "");
+              const isDisabled = isIndividualInstance && type.value !== "single";
+              
+              return (
               <button
                 key={type.value}
                 type="button"
-                onClick={() => setClassType(type.value)}
+                onClick={() => !isDisabled && setClassType(type.value)}
+                disabled={isDisabled}
                 className={`p-4 rounded-xl border-2 text-left transition-all ${
-                  classType === type.value
+                  isDisabled
+                    ? "border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed dark:border-gray-700 dark:bg-gray-800"
+                    : classType === type.value
                     ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
                     : "border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
                 }`}
@@ -342,7 +538,8 @@ export default function NewClassPage() {
                   </div>
                 </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         </ComponentCard>
 
@@ -398,7 +595,7 @@ export default function NewClassPage() {
                     options={categoryOptions}
                     placeholder={loadingCategories ? "Loading..." : categories.length === 0 ? "No categories - Click 'Add Category' to create one" : "Select category"}
                     onChange={handleChange("category")}
-                    defaultValue={formData.category}
+                    value={formData.category}
                   />
                 </div>
 
@@ -408,7 +605,7 @@ export default function NewClassPage() {
                     options={instructorOptions}
                     placeholder={loadingInstructors ? "Loading..." : "Select instructor"}
                     onChange={handleChange("instructor")}
-                    defaultValue={formData.instructor}
+                    value={Array.isArray(formData.instructor) ? formData.instructor[0] || "" : formData.instructor || ""}
                   />
                 </div>
 
@@ -418,7 +615,7 @@ export default function NewClassPage() {
                     options={roomOptions}
                     placeholder={loadingRooms ? "Loading..." : "Select room"}
                     onChange={handleChange("room")}
-                    defaultValue={formData.room}
+                    value={formData.room}
                   />
                 </div>
 
@@ -428,7 +625,7 @@ export default function NewClassPage() {
                     options={levels}
                     placeholder="Select level"
                     onChange={handleChange("level")}
-                    defaultValue={formData.level}
+                    value={formData.level}
                   />
                 </div>
 
@@ -448,6 +645,24 @@ export default function NewClassPage() {
 
           {/* Schedule - Varies by class type */}
           <ComponentCard title="Schedule">
+            {/* Show info banner for individual instances */}
+            {isEditMode && existingClass && /-\s*\d{1,2}\/\d{1,2}\/\d{4}$/.test(existingClass.title || "") && (
+              <div className="mb-6 p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                <div className="flex items-start gap-3">
+                  <svg className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                      Editing Individual Instance
+                    </p>
+                    <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                      You're editing a single session from a recurring series. Changes to date, time, instructor, capacity, or token cost will only affect this specific session, not the entire series.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             {classType === "single" && (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
                 <div>
@@ -473,9 +688,7 @@ export default function NewClassPage() {
                   <Input
                     id="duration"
                     type="number"
-                    min="15"
-                    max="120"
-                    step="15"
+                    min="1"
                     value={formData.duration}
                     onChange={(e) => handleChange("duration")(e.target.value)}
                   />
@@ -676,6 +889,14 @@ export default function NewClassPage() {
                   value={formData.capacity}
                   onChange={(e) => handleChange("capacity")(e.target.value)}
                 />
+                {selectedRoom && selectedRoom.capacity && (
+                  <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    Default: {selectedRoom.capacity} (from {selectedRoom.name})
+                    {parseInt(formData.capacity) !== selectedRoom.capacity && (
+                      <span className="ml-1 text-amber-600 dark:text-amber-400">• Custom</span>
+                    )}
+                  </p>
+                )}
               </div>
 
               {classType !== "course" && (
@@ -685,7 +906,6 @@ export default function NewClassPage() {
                     id="tokenCost"
                     type="number"
                     min="1"
-                    max="10"
                     value={formData.tokenCost}
                     onChange={(e) => handleChange("tokenCost")(e.target.value)}
                   />
@@ -693,29 +913,27 @@ export default function NewClassPage() {
               )}
 
               {classType === "course" && (
-                <>
                   <div>
-                    <Label htmlFor="courseTotalPrice">Course Price (Total)</Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                  <Label htmlFor="tokenCost">Token Cost (per session)</Label>
                       <Input
-                        id="courseTotalPrice"
+                    id="tokenCost"
                         type="number"
-                        min="0"
-                        step="0.01"
-                        className="pl-7"
-                        placeholder="e.g., 120.00"
-                        value={formData.courseTotalPrice}
-                        onChange={(e) => handleChange("courseTotalPrice")(e.target.value)}
+                    min="1"
+                    value={formData.tokenCost}
+                    onChange={(e) => handleChange("tokenCost")(e.target.value)}
                       />
-                    </div>
-                    {calculateTotalSessions() > 0 && formData.courseTotalPrice && (
+                  {calculateTotalSessions() > 0 && formData.tokenCost && (
                       <p className="text-xs text-gray-500 mt-1">
-                        ${(parseFloat(formData.courseTotalPrice) / calculateTotalSessions()).toFixed(2)} per session
+                      {parseInt(formData.tokenCost) * calculateTotalSessions()} tokens total for {calculateTotalSessions()} sessions
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-3 pt-6">
+              )}
+            </div>
+
+            {classType === "course" && (
+              <div className="mt-4">
+                <div className="flex items-center gap-3">
                     <button
                       type="button"
                       onClick={() => setFormData(prev => ({ ...prev, allowDropIn: !prev.allowDropIn }))}
@@ -732,21 +950,22 @@ export default function NewClassPage() {
                       <p className="text-xs text-gray-500">Let non-enrolled students join with tokens</p>
                     </div>
                   </div>
-                </>
-              )}
-            </div>
-
-            {classType === "course" && formData.allowDropIn && (
+                {formData.allowDropIn && (
               <div className="mt-4">
-                <Label htmlFor="tokenCost">Drop-in Token Cost</Label>
+                    <Label htmlFor="dropInTokenCost">Drop-in Token Cost (per session)</Label>
                 <Input
-                  id="tokenCost"
+                      id="dropInTokenCost"
                   type="number"
                   min="1"
-                  max="10"
                   value={formData.tokenCost}
                   onChange={(e) => handleChange("tokenCost")(e.target.value)}
+                      placeholder="Same as course token cost"
                 />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Tokens required for students not enrolled in the full course
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </ComponentCard>
@@ -778,7 +997,7 @@ export default function NewClassPage() {
                   </div>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                     {selectedCategory?.name}
-                    {selectedInstructor && ` • ${selectedInstructor.name}`}
+                    {selectedInstructors.length > 0 && ` • ${selectedInstructors.map(i => i.name).join(", ")}`}
                     {selectedRoom && ` • ${selectedRoom.name}`}
                   </p>
                   <div className="flex flex-wrap gap-4 mt-3 text-sm">
@@ -791,11 +1010,10 @@ export default function NewClassPage() {
                     {formData.capacity && (
                       <span className="text-gray-600 dark:text-gray-300">👥 {formData.capacity} spots</span>
                     )}
-                    {classType !== "course" && formData.tokenCost && (
-                      <span className="text-gray-600 dark:text-gray-300">🎟️ {formData.tokenCost} token(s)</span>
-                    )}
-                    {classType === "course" && formData.courseTotalPrice && (
-                      <span className="text-gray-600 dark:text-gray-300">💰 ${formData.courseTotalPrice}</span>
+                    {formData.tokenCost && (
+                      <span className="text-gray-600 dark:text-gray-300">
+                        🎟️ {formData.tokenCost} token{classType === "course" && calculateTotalSessions() > 0 ? ` × ${calculateTotalSessions()} sessions = ${parseInt(formData.tokenCost) * calculateTotalSessions()} total` : "(s)"}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -804,10 +1022,10 @@ export default function NewClassPage() {
           )}
 
           {/* Error message */}
-          {createClass.isError && (
+          {(createClass.isError || updateClass.isError) && (
             <div className="p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
               <p className="text-sm text-red-800 dark:text-red-300">
-                <strong>Error:</strong> {createClass.error?.message || 'Failed to create class'}
+                <strong>Error:</strong> {(createClass.error || updateClass.error)?.message || `Failed to ${isEditMode ? 'update' : 'create'} class`}
               </p>
             </div>
           )}
@@ -823,9 +1041,15 @@ export default function NewClassPage() {
             </Button>
             <Button 
               type="submit" 
-              disabled={createClass.isPending || !formData.name || !formData.startTime}
+              disabled={(createClass.isPending || updateClass.isPending) || !formData.name || !formData.startTime}
             >
-              {createClass.isPending ? "Creating..." : `Create ${classType === "course" ? "Course" : "Class"}`}
+              {(createClass.isPending || updateClass.isPending) 
+                ? (isEditMode ? "Updating..." : "Creating...") 
+                : (isEditMode 
+                  ? `Update ${classType === "course" ? "Course" : "Class"}` 
+                  : `Create ${classType === "course" ? "Course" : "Class"}`
+                )
+              }
             </Button>
           </div>
         </form>
@@ -843,5 +1067,22 @@ export default function NewClassPage() {
         />
       </div>
     </div>
+  );
+}
+
+export default function NewClassPage() {
+  return (
+    <Suspense fallback={
+      <div>
+        <PageBreadCrumb pageTitle="Add New Class" />
+        <div className="space-y-6">
+          <FormSectionSkeleton />
+          <FormSectionSkeleton />
+          <FormSectionSkeleton />
+        </div>
+      </div>
+    }>
+      <NewClassPageContent />
+    </Suspense>
   );
 }

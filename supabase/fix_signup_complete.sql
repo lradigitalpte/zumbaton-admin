@@ -66,23 +66,52 @@ CREATE TRIGGER on_auth_user_created
     FOR EACH ROW
     EXECUTE FUNCTION handle_new_user();
 
--- Step 3: Fix RLS policies - Drop conflicting ones first
+-- Step 3: Disable RLS temporarily to avoid policy conflicts
+ALTER TABLE user_profiles DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_notification_preferences DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_stats DISABLE ROW LEVEL SECURITY;
+
+-- Step 4: Drop all existing policies
 DROP POLICY IF EXISTS "System can insert profiles" ON user_profiles;
-DROP POLICY IF EXISTS "Users can manage own notification prefs" ON user_notification_preferences;
+DROP POLICY IF EXISTS "Users can view own profile" ON user_profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON user_profiles;
+DROP POLICY IF EXISTS "Admins can view all profiles" ON user_profiles;
+DROP POLICY IF EXISTS "Admins can update any profile" ON user_profiles;
+DROP POLICY IF EXISTS "Super admin can delete users" ON user_profiles;
+
+DROP POLICY IF EXISTS "Users can view own notification prefs" ON user_notification_preferences;
+DROP POLICY IF EXISTS "Users can update own notification prefs" ON user_notification_preferences;
 DROP POLICY IF EXISTS "System can create notification prefs" ON user_notification_preferences;
+DROP POLICY IF EXISTS "Users can manage own notification prefs" ON user_notification_preferences;
+DROP POLICY IF EXISTS "System can manage notification prefs" ON user_notification_preferences;
+
 DROP POLICY IF EXISTS "System can manage stats" ON user_stats;
+DROP POLICY IF EXISTS "Users can view own stats" ON user_stats;
 
--- Step 4: Create permissive policies for trigger function
--- The trigger runs as SECURITY DEFINER, so it should bypass RLS, 
--- but we need policies that allow the inserts
+-- Step 5: Re-enable RLS
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_notification_preferences ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_stats ENABLE ROW LEVEL SECURITY;
 
+-- Step 6: Create clean policies
 -- User profiles: Allow system to insert via trigger
 CREATE POLICY "System can insert profiles"
     ON user_profiles
     FOR INSERT
     WITH CHECK (true);
 
--- Notification preferences: Split into separate policies
+CREATE POLICY "Users can view own profile"
+    ON user_profiles
+    FOR SELECT
+    USING (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile"
+    ON user_profiles
+    FOR UPDATE
+    USING (auth.uid() = id)
+    WITH CHECK (auth.uid() = id);
+
+-- Notification preferences: Clean policies
 CREATE POLICY "Users can view own notification prefs"
     ON user_notification_preferences
     FOR SELECT

@@ -121,10 +121,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       attendances.map(a => [a.booking_id, a.checked_in_at])
     )
 
-    // Format attendees (only those who have checked in)
-    const attendees = bookings
-      .filter(b => attendanceMap.has(b.id)) // Only show checked-in attendees
-      .map(booking => {
+    // Format ALL enrolled attendees (not just checked-in ones)
+    // This allows the UI to show all students who registered, whether they've checked in or not
+    const attendees = bookings.map(booking => {
         const user = userProfiles[booking.user_id]
         const checkedInAt = attendanceMap.get(booking.id)
         
@@ -150,10 +149,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         }
       })
       .sort((a, b) => {
-        // Sort by check-in time (most recent first)
-        if (!a.checkedInAt) return 1
-        if (!b.checkedInAt) return -1
+        // Sort by check-in time (checked-in first, then by name)
+        if (a.checkedInAt && !b.checkedInAt) return -1
+        if (!a.checkedInAt && b.checkedInAt) return 1
+        if (a.checkedInAt && b.checkedInAt) {
         return b.checkedInAt.localeCompare(a.checkedInAt)
+        }
+        return a.name.localeCompare(b.name)
       })
 
     // Format class data

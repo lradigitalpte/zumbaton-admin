@@ -33,6 +33,15 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
+    // First, get instructor's name to check for multiple instructor classes
+    const { data: instructorProfile } = await supabase
+      .from('user_profiles')
+      .select('name')
+      .eq('id', instructorId)
+      .single()
+    
+    const instructorName = instructorProfile?.name || ''
+
     const now = new Date()
     let query = supabase
       .from('classes')
@@ -53,9 +62,14 @@ export async function GET(request: NextRequest) {
           name
         ),
         status,
-        created_at
+        created_at,
+        instructor_name,
+        recurrence_type,
+        recurrence_pattern,
+        parent_class_id
       `, { count: 'exact' })
-      .eq('instructor_id', instructorId)
+      // Include classes where instructor is primary OR in multiple instructors list
+      .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
       .order('scheduled_at', { ascending: status !== 'past' })
 
     // Apply status filter
@@ -114,9 +128,21 @@ export async function GET(request: NextRequest) {
     // Combine classes with booking data and format room name
     const classesWithBookings = (classes || []).map(cls => {
       // Get room name from joined rooms table or fall back to location field
-      const roomName = (cls.rooms && Array.isArray(cls.rooms) && cls.rooms.length > 0)
-        ? cls.rooms[0].name
-        : (cls.location || null);
+      let roomName = null;
+      
+      // Handle rooms join - can be array, object, or null
+      if (cls.rooms) {
+        if (Array.isArray(cls.rooms) && cls.rooms.length > 0) {
+          roomName = (cls.rooms[0] as any).name;
+        } else if (typeof cls.rooms === 'object' && !Array.isArray(cls.rooms) && (cls.rooms as any).name) {
+          roomName = (cls.rooms as any).name;
+        }
+      }
+      
+      // Fall back to location field if no room name found
+      if (!roomName && cls.location) {
+        roomName = cls.location;
+      }
       
       return {
         ...cls,
@@ -126,10 +152,13 @@ export async function GET(request: NextRequest) {
       };
     })
 
+    // Group recurring and course classes
+    const groupedClasses = groupRecurringAndCourseClasses(classesWithBookings, bookingData)
+
     return NextResponse.json({
       success: true,
       data: {
-        classes: classesWithBookings,
+        classes: groupedClasses,
         meta: {
           total: count || 0,
           limit,
@@ -146,3 +175,143 @@ export async function GET(request: NextRequest) {
     )
   }
 }
+
+/**
+ * Group recurring and course classes - show parent cards for series
+ */
+function groupRecurringAndCourseClasses(
+  classes: any[],
+  bookingData: Record<string, { total: number; attended: number }>
+): any[] {
+  const singleClasses: any[] = []
+  const recurringParents: any[] = []
+  const courseParents: any[] = []
+
+  // Separate parent classes and child instances
+  const parentClasses: any[] = []
+  const childInstances: any[] = []
+
+  classes.forEach((classItem: any) => {
+    const isRecurringType = classItem.recurrence_type === 'recurring' || classItem.recurrence_type === 'course'
+    const isOccurrenceClass = /-\s*\d{1,2}\/\d{1,2}\/\d{4}$/.test(classItem.title)
+    
+    // Parent classes: have recurrence_type but no parent_class_id and no date suffix
+    if (isRecurringType && !classItem.parent_class_id && !isOccurrenceClass) {
+      parentClasses.push(classItem)
+    } 
+    // Child instances: have parent_class_id or date suffix
+    else if (classItem.parent_class_id || isOccurrenceClass) {
+      childInstances.push(classItem)
+    }
+    // Single classes: show all
+    else {
+      parentClasses.push(classItem)
+    }
+  })
+
+  // Group child instances by parent_class_id
+  const childrenByParent = new Map<string, any[]>()
+  childInstances.forEach((child) => {
+    const parentId = child.parent_class_id
+    if (parentId) {
+      if (!childrenByParent.has(parentId)) {
+        childrenByParent.set(parentId, [])
+      }
+      childrenByParent.get(parentId)!.push(child)
+    }
+  })
+
+  // Process each parent class
+  parentClasses.forEach((parent) => {
+    const bookedCount = bookingData[parent.id]?.total || 0
+    const attendedCount = bookingData[parent.id]?.attended || 0
+    
+    const isRecurring = parent.recurrence_type === 'recurring'
+    const isCourse = parent.recurrence_type === 'course'
+    
+    if (isRecurring || isCourse) {
+      const instances = childrenByParent.get(parent.id) || []
+      
+      if (instances.length > 0) {
+        // Sort instances by date
+        const sorted = [...instances].sort((a, b) => 
+          new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
+        )
+        
+        // Find next upcoming session (or first session if all are past)
+        const now = new Date()
+        const nextUpcoming = sorted.find(s => new Date(s.scheduled_at) > now) || sorted[sorted.length - 1] || sorted[0]
+        
+        // Calculate total enrolled/attended across all sessions
+        const totalEnrolled = sorted.reduce((sum, s) => sum + (bookingData[s.id]?.total || 0), 0)
+        const totalAttended = sorted.reduce((sum, s) => sum + (bookingData[s.id]?.attended || 0), 0)
+        const perSessionCapacity = parent.capacity
+        
+        // Get room name from next upcoming session or parent
+        let roomName = null
+        if (nextUpcoming.rooms) {
+          if (Array.isArray(nextUpcoming.rooms) && nextUpcoming.rooms.length > 0) {
+            roomName = nextUpcoming.rooms[0].name
+          } else if (typeof nextUpcoming.rooms === 'object' && nextUpcoming.rooms.name) {
+            roomName = nextUpcoming.rooms.name
+          }
+        }
+        if (!roomName && nextUpcoming.location) {
+          roomName = nextUpcoming.location
+        }
+        if (!roomName && parent.rooms) {
+          if (Array.isArray(parent.rooms) && parent.rooms.length > 0) {
+            roomName = parent.rooms[0].name
+          } else if (typeof parent.rooms === 'object' && parent.rooms.name) {
+            roomName = parent.rooms.name
+          }
+        }
+        if (!roomName && parent.location) {
+          roomName = parent.location
+        }
+        
+        const parentCard = {
+          ...parent,
+          room_name: roomName,
+          scheduled_at: nextUpcoming.scheduled_at,
+          bookedCount: totalEnrolled,
+          attendedCount: totalAttended,
+          capacity: perSessionCapacity,
+          _isParent: true,
+          _childInstances: sorted,
+          _totalSessions: sorted.length,
+        }
+        
+        if (isCourse) {
+          courseParents.push(parentCard)
+        } else {
+          recurringParents.push(parentCard)
+        }
+      } else {
+        // No instances yet, show parent as-is
+        const parentCard = {
+          ...parent,
+          _isParent: true,
+          _childInstances: [],
+          _totalSessions: 0,
+        }
+        if (isCourse) {
+          courseParents.push(parentCard)
+        } else {
+          recurringParents.push(parentCard)
+        }
+      }
+    } else {
+      singleClasses.push(parent)
+    }
+  })
+
+  // Return all classes sorted by date
+  return [...singleClasses, ...recurringParents, ...courseParents].sort((a, b) => {
+    const dateA = new Date(a.scheduled_at).getTime()
+    const dateB = new Date(b.scheduled_at).getTime()
+    return dateA - dateB
+  })
+}
+
+

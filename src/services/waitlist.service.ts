@@ -286,12 +286,12 @@ export async function processWaitlistForClass(classId: string): Promise<{
     return { notified: 0, classId }
   }
 
-  // Get current booking count
+  // Get current booking count - count both confirmed and attended as enrolled
   const { count: bookedCount } = await supabase
     .from(TABLES.BOOKINGS)
     .select('*', { count: 'exact', head: true })
     .eq('class_id', classId)
-    .eq('status', 'confirmed')
+    .in('status', ['confirmed', 'attended'])
 
   const spotsAvailable = classData.capacity - (bookedCount || 0)
 
@@ -323,8 +323,55 @@ export async function processWaitlistForClass(classId: string): Promise<{
       })
       .eq('id', entry.id)
 
-    // TODO: Send notification to user (email, push, etc.)
-    // await sendWaitlistNotification(entry.user_id, classId, expiresAt)
+    // Send notification to user (in-app and email)
+    try {
+      const { sendNotification, sendWaitlistSpotAvailable } = await import('./notification.service')
+      const { data: classData } = await supabase
+        .from(TABLES.CLASSES)
+        .select('title, scheduled_at')
+        .eq('id', classId)
+        .single()
+
+      const { data: userProfile } = await supabase
+        .from('user_profiles')
+        .select('name')
+        .eq('id', entry.user_id)
+        .single()
+
+      if (classData && userProfile) {
+        const classDate = new Date(classData.scheduled_at)
+        const formattedDate = classDate.toLocaleDateString('en-US', { 
+          weekday: 'long', 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        })
+
+        // Send in-app notification
+        await sendNotification({
+          userId: entry.user_id,
+          type: 'waitlist_spot_available',
+          channel: 'in_app',
+          data: {
+            user_name: userProfile.name,
+            class_title: classData.title,
+            class_date: formattedDate,
+            confirm_url: `/bookings/waitlist/${entry.id}/confirm`,
+          },
+        })
+
+        // Send email notification
+        await sendWaitlistSpotAvailable(entry.user_id, {
+          userName: userProfile.name,
+          classTitle: classData.title,
+          classDate: formattedDate,
+          confirmUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/bookings/waitlist/${entry.id}/confirm`,
+        })
+      }
+    } catch (notificationError) {
+      // Log but don't fail waitlist processing if notification fails
+      console.error('[Waitlist] Error sending notification:', notificationError)
+    }
 
     notified++
   }

@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
+import { useToast as useAdminToast } from '@/components/ui/Toast'
+import { handleApiResponse, handleMutationError, createToastAdapter } from '@/lib/toast-helper'
 
 // =====================================================
 // Types
@@ -159,6 +161,8 @@ export function usePackages(query: PackageListQuery = {}) {
 // Create package mutation
 export function useCreatePackage() {
   const queryClient = useQueryClient()
+  const adminToast = useAdminToast()
+  const toast = createToastAdapter(adminToast)
 
   return useMutation({
     mutationFn: createPackage,
@@ -167,13 +171,21 @@ export function useCreatePackage() {
         queryKey: packageKeys.all,
         refetchType: 'active',
       })
+      handleApiResponse({ success: true, message: 'Package created successfully' }, toast, {
+        successTitle: 'Package Created'
+      })
     },
+    onError: (error: Error) => {
+      handleMutationError(error, toast, 'Create package')
+    }
   })
 }
 
 // Update package mutation
 export function useUpdatePackage() {
   const queryClient = useQueryClient()
+  const adminToast = useAdminToast()
+  const toast = createToastAdapter(adminToast)
 
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: UpdatePackageData }) => updatePackage(id, data),
@@ -186,13 +198,21 @@ export function useUpdatePackage() {
         queryKey: packageKeys.lists(),
         refetchType: 'active',
       })
+      handleApiResponse({ success: true, message: 'Package updated successfully' }, toast, {
+        successTitle: 'Package Updated'
+      })
     },
+    onError: (error: Error) => {
+      handleMutationError(error, toast, 'Update package')
+    }
   })
 }
 
 // Deactivate package mutation
 export function useDeactivatePackage() {
   const queryClient = useQueryClient()
+  const adminToast = useAdminToast()
+  const toast = createToastAdapter(adminToast)
 
   return useMutation({
     mutationFn: deactivatePackage,
@@ -201,22 +221,37 @@ export function useDeactivatePackage() {
         queryKey: packageKeys.all,
         refetchType: 'active',
       })
+      handleApiResponse({ success: true, message: 'Package deactivated successfully' }, toast, {
+        successTitle: 'Package Deactivated'
+      })
     },
+    onError: (error: Error) => {
+      handleMutationError(error, toast, 'Deactivate package')
+    }
   })
 }
 
 // Toggle package status mutation
 export function useTogglePackageStatus() {
   const queryClient = useQueryClient()
+  const adminToast = useAdminToast()
+  const toast = createToastAdapter(adminToast)
 
   return useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => togglePackageStatus(id, isActive),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: packageKeys.all,
         refetchType: 'active',
       })
+      const action = variables.isActive ? 'activated' : 'deactivated'
+      handleApiResponse({ success: true, message: `Package ${action} successfully` }, toast, {
+        successTitle: `Package ${variables.isActive ? 'Activated' : 'Deactivated'}`
+      })
     },
+    onError: (error: Error) => {
+      handleMutationError(error, toast, 'Toggle package status')
+    }
   })
 }
 

@@ -18,25 +18,25 @@ export default function NotificationSettingsPage() {
   const { data: preferences, isLoading, error } = useNotificationPreferences();
   const updatePreferences = useUpdateNotificationPreferences();
 
-  // Define notification structure
+  // Define notification structure - matches our implemented notification types
   const notificationDefinitions = useMemo(() => ({
     booking: [
-      { id: "new_booking", title: "New Booking", description: "When a user books a class" },
-      { id: "booking_cancelled", title: "Booking Cancelled", description: "When a user cancels a booking" },
+      { id: "booking_confirmation", title: "Booking Confirmation", description: "When someone books a class (you get notified)" },
+      { id: "booking_cancelled", title: "Booking Cancelled", description: "When someone cancels their booking" },
+      { id: "booking_reminder", title: "Class Reminder", description: "Reminder 2 hours before class starts" },
       { id: "waitlist_promotion", title: "Waitlist Promotion", description: "When a user is moved from waitlist to confirmed" },
-      { id: "no_show", title: "No-Show Alert", description: "When a user doesn't attend their booked class" },
+      { id: "no_show_warning", title: "No-Show Warning", description: "When a user misses their class" },
+      { id: "class_cancelled", title: "Class Cancelled", description: "When a class is cancelled by admin" },
     ],
     token: [
-      { id: "token_purchase", title: "Token Purchase", description: "When a user purchases tokens" },
-      { id: "low_token_alert", title: "Low Token Alert", description: "When a user's token balance is low" },
-      { id: "token_expiry", title: "Token Expiry Warning", description: "Before tokens are about to expire" },
-      { id: "token_adjustment", title: "Token Adjustment", description: "When tokens are manually adjusted" },
+      { id: "token_purchase", title: "Token Purchase", description: "When tokens are purchased" },
+      { id: "token_balance_low", title: "Low Token Alert", description: "When token balance drops below threshold" },
+      { id: "package_expiring", title: "Package Expiry Warning", description: "When token package is about to expire" },
     ],
     system: [
-      { id: "new_user", title: "New User Registration", description: "When a new user signs up" },
-      { id: "flagged_user", title: "Flagged User Alert", description: "When a user is flagged for review" },
-      { id: "daily_summary", title: "Daily Summary", description: "Daily overview of activity" },
-      { id: "weekly_report", title: "Weekly Report", description: "Weekly performance report" },
+      { id: "welcome", title: "Welcome Message", description: "Welcome notification for new users" },
+      { id: "payment_successful", title: "Payment Confirmation", description: "After a successful payment" },
+      { id: "general", title: "General Announcements", description: "System-wide announcements and updates" },
     ],
   }), []);
 

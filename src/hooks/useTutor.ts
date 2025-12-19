@@ -66,6 +66,11 @@ export interface TutorClass {
   created_at: string
   bookedCount: number
   attendedCount: number
+  _isParent?: boolean
+  _childInstances?: TutorClass[]
+  _totalSessions?: number
+  recurrence_type?: string | null
+  parent_class_id?: string | null
 }
 
 export interface TutorStudent {

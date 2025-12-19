@@ -99,23 +99,23 @@ export async function sendNotification(
 ): Promise<SendNotificationResponse> {
   const { userId, type, channel, data: templateData } = request
 
-  // Check user preferences
+  // Check user preferences (both global and granular)
   const prefs = await getNotificationPreferences(userId)
   
+  // Check global channel preferences first
   if (channel === 'email' && !prefs.emailEnabled) {
-    return {
-      notificationId: '',
-      status: 'failed',
-      sentAt: null,
-    }
+    console.log(`[Notification] Skipped: Email globally disabled for user ${userId}`)
+    return { notificationId: '', status: 'failed', sentAt: null }
   }
   
   if (channel === 'push' && !prefs.pushEnabled) {
-    return {
-      notificationId: '',
-      status: 'failed',
-      sentAt: null,
-    }
+    console.log(`[Notification] Skipped: Push globally disabled for user ${userId}`)
+    return { notificationId: '', status: 'failed', sentAt: null }
+  }
+  
+  if (channel === 'sms' && !prefs.smsEnabled) {
+    console.log(`[Notification] Skipped: SMS globally disabled for user ${userId}`)
+    return { notificationId: '', status: 'failed', sentAt: null }
   }
 
   // Get template
