@@ -17,10 +17,10 @@ export type TokenSelectionStrategy = 'oldest-first' | 'expiring-first'
 
 interface TokenOperationResult {
   success: boolean
-  userPackageId: string
+  userPackageId: string | null
   tokensChange: number
   newBalance: number
-  transactionId: string
+  transactionId: string | undefined
 }
 
 interface HoldTokensParams {
@@ -33,7 +33,7 @@ interface HoldTokensParams {
 
 interface ConsumeTokensParams {
   userId: string
-  userPackageId: string
+  userPackageId: string | null
   bookingId: string
   tokensToConsume: number
   transactionType: TransactionType
@@ -224,58 +224,68 @@ export async function consumeTokens(params: ConsumeTokensParams): Promise<TokenO
     performedBy,
   } = params
 
-  // Get current package state
-  const { data: pkg, error: fetchError } = await supabase
-    .from(TABLES.USER_PACKAGES)
-    .select('*')
-    .eq('id', userPackageId)
-    .single()
+  // Use admin client to bypass RLS
+  const adminClient = getSupabaseAdminClient()
 
-  if (fetchError || !pkg) {
-    throw new ApiError('NOT_FOUND_ERROR', 'User package not found', 404)
+  // If userPackageId provided, deduct from that specific package's held tokens
+  if (userPackageId) {
+    const { data: pkg, error: fetchError } = await adminClient
+      .from(TABLES.USER_PACKAGES)
+      .select('*')
+      .eq('id', userPackageId)
+      .single()
+
+    // If package exists, deduct from its held tokens
+    if (!fetchError && pkg) {
+      const newRemaining = pkg.tokens_remaining - tokensToConsume
+      const newHeld = Math.max(0, pkg.tokens_held - tokensToConsume)
+
+      // Update package
+      const { error: updateError } = await adminClient
+        .from(TABLES.USER_PACKAGES)
+        .update({
+          tokens_remaining: newRemaining,
+          tokens_held: newHeld,
+          status: newRemaining <= 0 ? 'depleted' : 'active',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', userPackageId)
+
+      if (updateError) {
+        throw new ApiError('SERVER_ERROR', 'Failed to consume tokens', 500, updateError)
+      }
+
+      // Record transaction
+      const transaction = await recordTransaction({
+        userId,
+        userPackageId,
+        bookingId,
+        transactionType,
+        tokensChange: -tokensToConsume,
+        tokensBefore: pkg.tokens_remaining,
+        tokensAfter: newRemaining,
+        description: description || `Tokens consumed for ${transactionType}`,
+        performedBy,
+      })
+
+      const balance = await getUserTokenBalance(userId, adminClient)
+
+      return {
+        success: true,
+        userPackageId,
+        tokensChange: tokensToConsume,
+        newBalance: balance.availableTokens,
+        transactionId: transaction.id,
+      }
+    }
+    
+    // Package not found - this shouldn't happen if booking exists
+    console.error(`[TokenService] Package ${userPackageId} not found for booking ${bookingId}`)
+    throw new ApiError('NOT_FOUND_ERROR', 'Booking package not found', 404)
   }
 
-  const newRemaining = pkg.tokens_remaining - tokensToConsume
-  const newHeld = Math.max(0, pkg.tokens_held - tokensToConsume)
-
-  // Update package
-  const { error: updateError } = await supabase
-    .from(TABLES.USER_PACKAGES)
-    .update({
-      tokens_remaining: newRemaining,
-      tokens_held: newHeld,
-      status: newRemaining <= 0 ? 'depleted' : 'active',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', userPackageId)
-
-  if (updateError) {
-    throw new ApiError('SERVER_ERROR', 'Failed to consume tokens', 500, updateError)
-  }
-
-  // Record transaction
-  const transaction = await recordTransaction({
-    userId,
-    userPackageId,
-    bookingId,
-    transactionType,
-    tokensChange: -tokensToConsume,
-    tokensBefore: pkg.tokens_remaining,
-    tokensAfter: newRemaining,
-    description: description || `Tokens consumed for ${transactionType}`,
-    performedBy,
-  })
-
-  // Get new balance
-  const balance = await getUserTokenBalance(userId)
-
-  return {
-    success: true,
-    userPackageId,
-    tokensChange: tokensToConsume,
-    newBalance: balance.availableTokens,
-    transactionId: transaction.id,
-  }
+  // No userPackageId provided - shouldn't happen for valid bookings
+  throw new ApiError('VALIDATION_ERROR', 'No package ID provided for token consumption', 400)
 }
 
 // Release held tokens (for cancellations)
@@ -335,7 +345,7 @@ export async function releaseTokens(params: ReleaseTokensParams): Promise<TokenO
 // Record a token transaction (audit log)
 async function recordTransaction(params: {
   userId: string
-  userPackageId: string
+  userPackageId: string | null
   bookingId?: string
   transactionType: TransactionType
   tokensChange: number
@@ -344,7 +354,14 @@ async function recordTransaction(params: {
   description?: string
   performedBy?: string
 }): Promise<TokenTransaction> {
-  const { data, error } = await supabase
+  // Validate performedBy is a UUID or null
+  const isValidUUID = params.performedBy ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.performedBy) : true
+  const performedByValue = isValidUUID ? (params.performedBy || null) : null
+
+  // Use admin client to bypass RLS policies for system operations
+  const adminClient = getSupabaseAdminClient()
+  
+  const { data, error } = await adminClient
     .from(TABLES.TOKEN_TRANSACTIONS)
     .insert({
       user_id: params.userId,
@@ -355,7 +372,7 @@ async function recordTransaction(params: {
       tokens_before: params.tokensBefore,
       tokens_after: params.tokensAfter,
       description: params.description || null,
-      performed_by: params.performedBy || null,
+      performed_by: performedByValue,
       created_at: new Date().toISOString(),
     })
     .select()

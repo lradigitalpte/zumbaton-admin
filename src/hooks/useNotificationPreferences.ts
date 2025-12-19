@@ -9,22 +9,22 @@ export interface NotificationChannel {
 
 export interface GranularNotificationPreferences {
   // Booking notifications
-  new_booking: NotificationChannel
-  booking_cancelled: NotificationChannel
-  waitlist_promotion: NotificationChannel
-  no_show: NotificationChannel
+  booking_confirmation: NotificationChannel    // When you/someone books a class
+  booking_cancelled: NotificationChannel       // When you/someone cancels a booking
+  booking_reminder: NotificationChannel        // Class reminder 2 hours before
+  waitlist_promotion: NotificationChannel      // When promoted from waitlist
+  no_show_warning: NotificationChannel         // After a no-show
+  class_cancelled: NotificationChannel         // When admin cancels a class
   
   // Token notifications
-  token_purchase: NotificationChannel
-  low_token_alert: NotificationChannel
-  token_expiry: NotificationChannel
-  token_adjustment: NotificationChannel
+  token_purchase: NotificationChannel          // When tokens are purchased
+  token_balance_low: NotificationChannel       // When token balance is low
+  package_expiring: NotificationChannel        // When package is about to expire
   
   // System notifications
-  new_user: NotificationChannel
-  flagged_user: NotificationChannel
-  daily_summary: NotificationChannel
-  weekly_report: NotificationChannel
+  welcome: NotificationChannel                 // Welcome notification on signup
+  payment_successful: NotificationChannel      // After successful payment
+  general: NotificationChannel                 // General announcements
 }
 
 export interface NotificationPreferences {

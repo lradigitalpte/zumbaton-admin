@@ -10,6 +10,7 @@ import {
   runWaitlistExpiryJob,
   sendTokenExpiryWarnings,
   sendClassReminders,
+  markCompletedClasses,
   getJobSchedule,
 } from '@/services/scheduled-jobs.service'
 import { ApiError } from '@/lib/api-error'
@@ -62,6 +63,9 @@ export async function POST(request: NextRequest) {
         break
       case 'class-reminders':
         results = [await sendClassReminders()]
+        break
+      case 'mark-completed-classes':
+        results = [await markCompletedClasses()]
         break
       case 'all':
       default:

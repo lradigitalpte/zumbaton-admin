@@ -87,6 +87,7 @@ const othersItems: NavItem[] = [
       { name: "General", path: "/settings", pro: false },
       { name: "Profile", path: "/settings/profile", pro: false },
       { name: "Notifications", path: "/settings/notifications", pro: false },
+      { name: "Cron Jobs", path: "/settings/cron-jobs", pro: false },
     ],
   },
   {

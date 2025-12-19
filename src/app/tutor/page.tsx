@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useTutorDashboard } from "@/hooks/useTutor";
 import { useAuth } from "@/context/AuthContext";
+import QRAttendanceModal from "@/components/attendance/QRAttendanceModal";
 
 interface TodayClass {
   id: string;
@@ -15,22 +16,17 @@ interface TodayClass {
   capacity: number;
   checkedIn: number;
   status: "upcoming" | "in_progress" | "completed";
+  date: string;
+  type: string;
 }
 
-interface Student {
-  id: string;
-  name: string;
-  avatar: string;
-  status: "confirmed" | "waitlist" | "checked_in" | "no_show";
-  tokensUsed: number;
-  attendanceRate: number;
-}
 
 export default function TutorDashboardPage() {
   const { user } = useAuth();
   const { data: dashboardData, isLoading, error } = useTutorDashboard();
   const [selectedClass, setSelectedClass] = useState<TodayClass | null>(null);
-  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
+  const [realAttendees, setRealAttendees] = useState<Array<{ id: string; name: string; checkedInAt: string; avatar?: string }>>([]);
+  const [isLoadingAttendees, setIsLoadingAttendees] = useState(false);
 
   // Format API data to component format
   const tutorInfo = useMemo(() => ({
@@ -68,14 +64,57 @@ export default function TutorDashboardPage() {
         name: cls.title,
         time: classTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
         duration: cls.duration_minutes,
-        room: cls.room_name || cls.location || "TBD",
+        room: cls.room_name || cls.location || "TBD", // Use room_name first, then location, then TBD
         enrolled: cls.bookedCount,
         capacity: cls.capacity,
         checkedIn: cls.checkedInCount,
         status,
+        date: classTime.toISOString().split("T")[0],
+        type: cls.class_type || "",
       };
     });
   }, [dashboardData]);
+
+  // Fetch real attendees when a class is selected
+  useEffect(() => {
+    if (!selectedClass) {
+      setRealAttendees([]);
+      return;
+    }
+
+    const fetchAttendees = async () => {
+      setIsLoadingAttendees(true);
+      try {
+        const response = await fetch(`/api/attendance/class/${selectedClass.id}/attendees`);
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+          // Transform attendees to the format expected by QRAttendanceModal
+          // The API now returns ALL enrolled students, not just checked-in ones
+          const attendees = (result.data.attendees || []).map((attendee: any) => ({
+            id: attendee.userId || attendee.id,
+            name: attendee.name || attendee.userName || "Unknown",
+            checkedInAt: attendee.checkedInAt || "",
+            avatar: attendee.avatar || undefined,
+          }));
+          // Always set attendees array (even if empty) so component knows to use real data
+          setRealAttendees(attendees);
+        } else {
+          console.error("Failed to fetch attendees:", result.error);
+          // Set empty array to indicate we tried to fetch but got no data
+          setRealAttendees([]);
+        }
+      } catch (err) {
+        console.error("Error fetching attendees:", err);
+        // Set empty array to indicate we tried to fetch but got an error
+        setRealAttendees([]);
+      } finally {
+        setIsLoadingAttendees(false);
+      }
+    };
+
+    fetchAttendees();
+  }, [selectedClass?.id]);
 
   // Transform week schedule for sidebar
   const upcomingSchedule = useMemo(() => {
@@ -116,14 +155,6 @@ export default function TutorDashboardPage() {
     return "Good evening";
   }, []);
 
-  const classStudents: Student[] = [
-    { id: "1", name: "Emma Thompson", avatar: "", status: "checked_in", tokensUsed: 1, attendanceRate: 95 },
-    { id: "2", name: "Michael Brown", avatar: "", status: "checked_in", tokensUsed: 1, attendanceRate: 88 },
-    { id: "3", name: "Sarah Wilson", avatar: "", status: "confirmed", tokensUsed: 1, attendanceRate: 92 },
-    { id: "4", name: "David Lee", avatar: "", status: "confirmed", tokensUsed: 1, attendanceRate: 78 },
-    { id: "5", name: "Jennifer Garcia", avatar: "", status: "waitlist", tokensUsed: 0, attendanceRate: 85 },
-    { id: "6", name: "Robert Martinez", avatar: "", status: "no_show", tokensUsed: 1, attendanceRate: 65 },
-  ];
 
   const getStatusColor = (status: TodayClass["status"]) => {
     switch (status) {
@@ -133,14 +164,6 @@ export default function TutorDashboardPage() {
     }
   };
 
-  const getStudentStatusColor = (status: Student["status"]) => {
-    switch (status) {
-      case "checked_in": return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400";
-      case "confirmed": return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
-      case "waitlist": return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
-      case "no_show": return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
-    }
-  };
 
   // Loading state
   if (isLoading) {
@@ -308,7 +331,7 @@ export default function TutorDashboardPage() {
                              classItem.status === "completed" ? "Completed" : "Upcoming"}
                           </span>
                           <button
-                            onClick={() => { setSelectedClass(classItem); setShowAttendanceModal(true); }}
+                            onClick={() => { setSelectedClass(classItem); }}
                             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                               classItem.status === "completed"
                                 ? "bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-400"
@@ -414,88 +437,25 @@ export default function TutorDashboardPage() {
         </div>
       </div>
 
-      {/* Attendance Modal */}
-      {showAttendanceModal && selectedClass && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setShowAttendanceModal(false)} />
-          <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl dark:bg-gray-800">
-            <div className="sticky top-0 bg-white dark:bg-gray-800 p-6 border-b border-gray-200 dark:border-gray-700 z-10">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedClass.name}</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{selectedClass.time} • {selectedClass.room}</p>
-                </div>
-                <button
-                  onClick={() => setShowAttendanceModal(false)}
-                  className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Quick Stats */}
-              <div className="grid grid-cols-4 gap-3 mt-4">
-                <div className="text-center p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">{selectedClass.enrolled}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Enrolled</p>
-                </div>
-                <div className="text-center p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">
-                  <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{classStudents.filter(s => s.status === "checked_in").length}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Checked In</p>
-                </div>
-                <div className="text-center p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20">
-                  <p className="text-lg font-bold text-amber-600 dark:text-amber-400">{classStudents.filter(s => s.status === "waitlist").length}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Waitlist</p>
-                </div>
-                <div className="text-center p-3 rounded-xl bg-red-50 dark:bg-red-900/20">
-                  <p className="text-lg font-bold text-red-600 dark:text-red-400">{classStudents.filter(s => s.status === "no_show").length}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">No Show</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Student List */}
-            <div className="p-6 space-y-3">
-              {classStudents.map((student) => (
-                <div key={student.id} className="flex items-center justify-between p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-semibold text-white">
-                      {student.name.split(" ").map(n => n[0]).join("")}
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900 dark:text-white">{student.name}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{student.attendanceRate}% attendance</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStudentStatusColor(student.status)}`}>
-                      {student.status === "checked_in" ? "Checked In" :
-                       student.status === "confirmed" ? "Confirmed" :
-                       student.status === "waitlist" ? "Waitlist" : "No Show"}
-                    </span>
-                    {student.status === "confirmed" && (
-                      <button className="px-3 py-1.5 rounded-lg bg-emerald-500 text-sm font-medium text-white hover:bg-emerald-600 transition-colors">
-                        Check In
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Actions */}
-            <div className="sticky bottom-0 bg-white dark:bg-gray-800 p-6 border-t border-gray-200 dark:border-gray-700 flex justify-between">
-              <button className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors">
-                Mark All No-Shows
-              </button>
-              <button className="px-4 py-2 rounded-xl bg-amber-500 text-sm font-semibold text-white hover:bg-amber-600 transition-colors">
-                Save Attendance
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* QR Attendance Modal */}
+      {selectedClass && (
+        <QRAttendanceModal
+          isOpen={!!selectedClass}
+          onClose={() => setSelectedClass(null)}
+          classInfo={{
+            id: selectedClass.id,
+            name: selectedClass.name,
+            type: selectedClass.type,
+            time: selectedClass.time,
+            duration: selectedClass.duration,
+            room: selectedClass.room,
+            date: selectedClass.date,
+            enrolled: selectedClass.enrolled,
+            capacity: selectedClass.capacity,
+          }}
+          realAttendees={realAttendees}
+          realEnrolled={selectedClass.enrolled}
+        />
       )}
     </div>
   );

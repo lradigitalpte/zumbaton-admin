@@ -42,6 +42,15 @@ export async function GET(request: NextRequest) {
     const endOfDay = new Date(now)
     endOfDay.setHours(23, 59, 59, 999)
 
+    // First, get instructor's name to check for multiple instructor classes
+    const { data: instructorProfile } = await supabase
+      .from('user_profiles')
+      .select('name')
+      .eq('id', instructorId)
+      .single()
+    
+    const instructorName = instructorProfile?.name || ''
+
     // Run all initial queries in PARALLEL
     const [
       profileResult,
@@ -58,48 +67,48 @@ export async function GET(request: NextRequest) {
         .eq('id', instructorId)
         .single(),
       
-      // Get this week's classes
+      // Get this week's classes - include classes where instructor is primary OR in multiple instructors list
       supabase
         .from('classes')
-        .select('id, title, class_type, scheduled_at, duration_minutes, capacity, location, room_id, rooms (id, name), status')
-        .eq('instructor_id', instructorId)
+        .select('id, title, class_type, scheduled_at, duration_minutes, capacity, location, room_id, rooms (id, name), status, instructor_name')
+        .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
         .gte('scheduled_at', startOfWeek.toISOString())
         .lt('scheduled_at', endOfWeek.toISOString())
         .order('scheduled_at', { ascending: true }),
       
-      // Get today's classes
+      // Get today's classes - include classes where instructor is primary OR in multiple instructors list
       supabase
         .from('classes')
-        .select('id, title, class_type, scheduled_at, duration_minutes, capacity, location, room_id, rooms (id, name), status')
-        .eq('instructor_id', instructorId)
+        .select('id, title, class_type, scheduled_at, duration_minutes, capacity, location, room_id, rooms (id, name), status, instructor_name')
+        .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
         .gte('scheduled_at', startOfDay.toISOString())
         .lt('scheduled_at', endOfDay.toISOString())
         .order('scheduled_at', { ascending: true }),
       
-      // Get upcoming classes count
+      // Get upcoming classes count - include classes where instructor is primary OR in multiple instructors list
       supabase
         .from('classes')
         .select('id', { count: 'exact', head: true })
-        .eq('instructor_id', instructorId)
+        .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
         .gte('scheduled_at', now.toISOString())
         .eq('status', 'scheduled'),
       
-      // Get next class
+      // Get next class - include classes where instructor is primary OR in multiple instructors list
       supabase
         .from('classes')
         .select('scheduled_at')
-        .eq('instructor_id', instructorId)
+        .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
         .gte('scheduled_at', now.toISOString())
         .eq('status', 'scheduled')
         .order('scheduled_at', { ascending: true })
         .limit(1)
         .single(),
       
-      // Get all class IDs for this instructor (for booking stats)
+      // Get all class IDs for this instructor (for booking stats) - include classes where instructor is primary OR in multiple instructors list
       supabase
         .from('classes')
         .select('id, class_type')
-        .eq('instructor_id', instructorId),
+        .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`),
     ])
 
     const profile = profileResult.data
@@ -182,13 +191,27 @@ export async function GET(request: NextRequest) {
 
     // Format today's classes with booking info and room name
     const todayClassesWithBookings = todayClasses.map(cls => {
-      const roomName = (cls.rooms && Array.isArray(cls.rooms) && cls.rooms.length > 0)
-        ? cls.rooms[0].name
-        : (cls.location || null);
+      // Get room name from joined rooms table or fall back to location field
+      let roomName = null;
+      
+      // Handle rooms join - can be array, object, or null
+      if (cls.rooms) {
+        if (Array.isArray(cls.rooms) && cls.rooms.length > 0) {
+          roomName = (cls.rooms[0] as any).name;
+        } else if (typeof cls.rooms === 'object' && !Array.isArray(cls.rooms) && (cls.rooms as any).name) {
+          roomName = (cls.rooms as any).name;
+        }
+      }
+      
+      // Fall back to location field if no room name found
+      if (!roomName && cls.location) {
+        roomName = cls.location;
+      }
       
       return {
         ...cls,
         room_name: roomName,
+        location: cls.location || null, // Ensure location is always included
         bookedCount: (bookingCounts[cls.id]?.confirmed || 0) + (bookingCounts[cls.id]?.attended || 0),
         checkedInCount: bookingCounts[cls.id]?.attended || 0,
       };

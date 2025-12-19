@@ -64,7 +64,25 @@ export async function apiRequest<T = unknown>(
     // Get session token if auth is required
     let authToken: string | undefined
     if (requireAuth) {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      // Add timeout to session retrieval to prevent hanging
+      let sessionData: { data: { session: any }; error: any }
+      try {
+        const sessionPromise = supabase.auth.getSession()
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Session retrieval timed out')), 3000)
+        )
+        sessionData = await Promise.race([sessionPromise, timeoutPromise]) as any
+      } catch (timeoutError) {
+        console.error('[API Client] Session retrieval timed out:', timeoutError)
+        return {
+          error: {
+            message: 'Session check timed out',
+            code: 'AUTHENTICATION_TIMEOUT',
+          },
+        }
+      }
+
+      const { data: { session }, error: sessionError } = sessionData
       
       if (sessionError) {
         console.error('[API Client] Session error:', sessionError)

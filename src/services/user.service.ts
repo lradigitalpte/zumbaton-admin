@@ -541,6 +541,22 @@ export async function createUser(
     newValues: { email: data.email, name: data.name, role: data.role },
   })
 
+  // Send welcome notification to new user
+  try {
+    const { sendNotification } = await import('./notification.service')
+    await sendNotification({
+      userId: authData.user.id,
+      type: 'welcome',
+      channel: 'in_app',
+      data: {
+        user_name: data.name,
+        message: `Welcome to Zumbaton, ${data.name}! We're excited to have you. Start exploring classes and book your first session!`,
+      },
+    })
+  } catch (notificationError) {
+    console.error('[UserService] Error sending welcome notification:', notificationError)
+  }
+
   return toUserProfile(profileData)
 }
 

@@ -26,6 +26,10 @@ export const ClassSchema = BaseTimestampsSchema.extend({
   tokenCost: z.number().int().positive().default(1),
   location: z.string().max(200).nullable(),
   status: ClassStatusSchema.default('scheduled'),
+  recurrenceType: z.enum(['single', 'recurring', 'course']).optional(),
+  recurrencePattern: z.record(z.unknown()).nullable().optional(),
+  roomId: UuidSchema.nullable().optional(),
+  categoryId: UuidSchema.nullable().optional(),
 })
 export type Class = z.infer<typeof ClassSchema>
 
@@ -45,6 +49,7 @@ export const CreateClassRequestSchema = z.object({
   classType: ClassTypeSchema,
   level: ClassLevelSchema.default('all_levels'),
   instructorId: UuidSchema.optional(),
+  instructorIds: z.array(UuidSchema).optional(), // Multiple instructor IDs
   scheduledAt: z.string().datetime('Invalid datetime format'),
   durationMinutes: z.number().int().positive().default(60),
   capacity: z.number().int().positive('Capacity must be at least 1'),
@@ -69,12 +74,18 @@ export const UpdateClassRequestSchema = z.object({
   classType: ClassTypeSchema.optional(),
   level: ClassLevelSchema.optional(),
   instructorId: UuidSchema.nullable().optional(),
+  instructorIds: z.array(UuidSchema).optional(),
   scheduledAt: z.string().datetime().optional(),
   durationMinutes: z.number().int().positive().optional(),
   capacity: z.number().int().positive().optional(),
   tokenCost: z.number().int().positive().optional(),
+  dropInTokenCost: z.number().int().positive().nullable().optional(),
   location: z.string().max(200).nullable().optional(),
   status: ClassStatusSchema.optional(),
+  roomId: UuidSchema.nullable().optional(),
+  categoryId: UuidSchema.nullable().optional(),
+  recurrenceType: z.enum(['single', 'recurring', 'course']).optional(),
+  recurrencePattern: z.record(z.any()).nullable().optional(),
 })
 export type UpdateClassRequest = z.infer<typeof UpdateClassRequestSchema>
 

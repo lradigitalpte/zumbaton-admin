@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
+import { useToast as useAdminToast } from '@/components/ui/Toast'
+import { handleApiResponse, handleMutationError, createToastAdapter } from '@/lib/toast-helper'
 
 export interface UserProfile {
   id: string
@@ -107,6 +109,8 @@ export function useProfile() {
 
 export function useUpdateProfile() {
   const queryClient = useQueryClient()
+  const adminToast = useAdminToast()
+  const toast = createToastAdapter(adminToast)
 
   return useMutation({
     mutationFn: updateProfile,
@@ -114,13 +118,30 @@ export function useUpdateProfile() {
       // Invalidate profile and auth queries
       queryClient.invalidateQueries({ queryKey: ['user-profile'] })
       queryClient.invalidateQueries({ queryKey: ['auth'] })
+      handleApiResponse({ success: true, message: 'Profile updated successfully' }, toast, {
+        successTitle: 'Profile Updated'
+      })
     },
+    onError: (error: Error) => {
+      handleMutationError(error, toast, 'Update')
+    }
   })
 }
 
 export function useChangePassword() {
+  const adminToast = useAdminToast()
+  const toast = createToastAdapter(adminToast)
+  
   return useMutation({
     mutationFn: changePassword,
+    onSuccess: () => {
+      handleApiResponse({ success: true, message: 'Password changed successfully' }, toast, {
+        successTitle: 'Password Changed'
+      })
+    },
+    onError: (error: Error) => {
+      handleMutationError(error, toast, 'Password change')
+    }
   })
 }
 

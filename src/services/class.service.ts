@@ -110,6 +110,8 @@ export async function createClass(data: CreateClassRequest & {
   categoryId?: string;
   recurrenceType?: 'single' | 'recurring' | 'course';
   recurrencePattern?: Record<string, unknown>;
+  allowDropIn?: boolean;
+  dropInTokenCost?: number;
 }): Promise<ClassResponse> {
   // Use admin client to bypass RLS for admin operations
   const adminClient = getSupabaseAdminClient()
@@ -119,15 +121,32 @@ export async function createClass(data: CreateClassRequest & {
     throw new ApiError('VALIDATION_ERROR', 'Class must be scheduled in the future', 400)
   }
 
-  // Get instructor name if instructorId provided
+  // Get instructor names - handle both single and multiple instructors
   let instructorName: string | null = null
-  if (data.instructorId) {
+  let primaryInstructorId: string | null = null
+  
+  // Handle multiple instructors (instructorIds takes precedence)
+  if (data.instructorIds && data.instructorIds.length > 0) {
+    const { data: instructors } = await adminClient
+      .from('user_profiles')
+      .select('id, name')
+      .in('id', data.instructorIds)
+    
+    if (instructors && instructors.length > 0) {
+      // Store comma-separated names
+      instructorName = instructors.map(i => i.name).join(', ')
+      // Use first instructor as primary for backward compatibility
+      primaryInstructorId = instructors[0].id
+    }
+  } else if (data.instructorId) {
+    // Single instructor (backward compatibility)
     const { data: instructor } = await adminClient
       .from('user_profiles')
       .select('name')
       .eq('id', data.instructorId)
       .single()
     instructorName = instructor?.name || null
+    primaryInstructorId = data.instructorId
   }
 
   const recurrenceType = data.recurrenceType || 'single'
@@ -142,8 +161,8 @@ export async function createClass(data: CreateClassRequest & {
     description: data.description || null,
     class_type: data.classType,
     level: data.level || 'all_levels',
-    instructor_id: data.instructorId || null,
-    instructor_name: instructorName,
+    instructor_id: primaryInstructorId, // Primary instructor (first one for backward compatibility)
+    instructor_name: instructorName, // Comma-separated names for multiple instructors
     duration_minutes: data.durationMinutes || 60,
     capacity: data.capacity,
     token_cost: data.tokenCost || 1,
@@ -153,6 +172,9 @@ export async function createClass(data: CreateClassRequest & {
     recurrence_type: recurrenceType,
     recurrence_pattern: data.recurrencePattern || null,
     status: 'scheduled' as const,
+    // Walk-in/drop-in settings
+    allow_drop_in: data.allowDropIn || false,
+    drop_in_token_cost: data.dropInTokenCost || null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
@@ -186,7 +208,7 @@ export async function createClass(data: CreateClassRequest & {
   }
 
   // For recurring and course classes, create parent class and all occurrences
-  // First create the parent/template class
+  // First create the parent/template class (this is just a template, not an actual occurrence)
   const { data: parentClass, error: parentError } = await adminClient
     .from(TABLES.CLASSES)
     .insert({
@@ -202,13 +224,16 @@ export async function createClass(data: CreateClassRequest & {
     throw new ApiError('SERVER_ERROR', 'Failed to create parent class', 500, parentError)
   }
 
-  // Create all occurrence classes
-  const occurrenceClasses = occurrences.slice(1).map(occurrenceDate => ({
+  // Create ALL occurrence classes including the first one
+  // Each occurrence should have the same token_cost from baseClassData
+  const occurrenceClasses = occurrences.map(occurrenceDate => ({
     ...baseClassData,
     title: `${data.title} - ${occurrenceDate.toLocaleDateString()}`,
     scheduled_at: occurrenceDate.toISOString(),
     parent_class_id: parentClass.id,
     occurrence_date: occurrenceDate.toISOString().split('T')[0],
+    // Explicitly set token_cost to ensure it's not overridden by defaults
+    token_cost: data.tokenCost || 1,
   }))
 
   if (occurrenceClasses.length > 0) {
@@ -247,12 +272,14 @@ export async function getClass(classId: string): Promise<ClassResponse> {
     throw new ApiError('NOT_FOUND_ERROR', 'Class not found', 404)
   }
 
-  // Get booking count
-  const { count: bookedCount } = await supabase
+  // Get booking count (count both confirmed and attended as enrolled)
+  // Use admin client to bypass RLS and read all bookings
+  const adminClient = getSupabaseAdminClient()
+  const { count: bookedCount } = await adminClient
     .from(TABLES.BOOKINGS)
     .select('*', { count: 'exact', head: true })
     .eq('class_id', classId)
-    .eq('status', 'confirmed')
+    .in('status', ['confirmed', 'attended'])
 
   // Get waitlist count
   const { count: waitlistCount } = await supabase
@@ -396,9 +423,25 @@ export async function updateClass(
   if (data.tokenCost !== undefined) updateData.token_cost = data.tokenCost
   if (data.location !== undefined) updateData.location = data.location
   if (data.status !== undefined) updateData.status = data.status
+  if (data.roomId !== undefined) updateData.room_id = data.roomId
+  if (data.categoryId !== undefined) updateData.category_id = data.categoryId
+  if (data.recurrenceType !== undefined) updateData.recurrence_type = data.recurrenceType
+  if (data.recurrencePattern !== undefined) updateData.recurrence_pattern = data.recurrencePattern
 
   // Handle instructor update
-  if (data.instructorId !== undefined) {
+    // Handle multiple instructors (instructorIds takes precedence over instructorId)
+    if (data.instructorIds !== undefined && data.instructorIds.length > 0) {
+      const { data: instructors } = await adminClient
+        .from('user_profiles')
+        .select('id, name')
+        .in('id', data.instructorIds)
+      
+      if (instructors && instructors.length > 0) {
+        updateData.instructor_name = instructors.map(i => i.name).join(', ')
+        updateData.instructor_id = instructors[0].id // Primary instructor
+      }
+    } else if (data.instructorId !== undefined) {
+      // Single instructor (backward compatibility)
     updateData.instructor_id = data.instructorId
     if (data.instructorId) {
       const { data: instructor } = await adminClient
@@ -412,6 +455,14 @@ export async function updateClass(
     }
   }
 
+  // Check if this is a parent class (recurring or course)
+  const isParentClass = !currentClass.parent_class_id && 
+    (currentClass.recurrence_type === 'recurring' || currentClass.recurrence_type === 'course')
+  
+  // Check if this is an individual instance
+  const isIndividualInstance = currentClass.parent_class_id !== null
+
+  // Update the main class
   const { data: classData, error } = await adminClient
     .from(TABLES.CLASSES)
     .update(updateData)
@@ -421,6 +472,44 @@ export async function updateClass(
 
   if (error) {
     throw new ApiError('SERVER_ERROR', 'Failed to update class', 500, error)
+  }
+
+  // If updating a parent class, also update all child instances
+  // Only update fields that should be consistent across the series
+  if (isParentClass) {
+    const childUpdateData: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    }
+
+    // Fields that should be updated across all instances
+    if (data.tokenCost !== undefined) childUpdateData.token_cost = data.tokenCost
+    if (data.capacity !== undefined) childUpdateData.capacity = data.capacity
+    if (data.durationMinutes !== undefined) childUpdateData.duration_minutes = data.durationMinutes
+    if (data.level !== undefined) childUpdateData.level = data.level
+    if (data.classType !== undefined) childUpdateData.class_type = data.classType
+    if (data.description !== undefined) childUpdateData.description = data.description
+    if (data.location !== undefined) childUpdateData.location = data.location
+    if (data.roomId !== undefined) childUpdateData.room_id = data.roomId
+    if (data.categoryId !== undefined) childUpdateData.category_id = data.categoryId
+
+    // Handle instructor update for children
+    if (data.instructorId !== undefined) {
+      childUpdateData.instructor_id = data.instructorId
+      childUpdateData.instructor_name = updateData.instructor_name
+    }
+
+    // Update all child instances
+    if (Object.keys(childUpdateData).length > 1) { // More than just updated_at
+      const { error: childUpdateError } = await adminClient
+        .from(TABLES.CLASSES)
+        .update(childUpdateData)
+        .eq('parent_class_id', classId)
+
+      if (childUpdateError) {
+        console.error('Failed to update child instances:', childUpdateError)
+        // Don't throw - parent update succeeded, child updates are best effort
+      }
+    }
   }
 
   // Get updated availability
@@ -515,6 +604,37 @@ export async function cancelClass(classId: string): Promise<{
     .eq('class_id', classId)
     .eq('status', 'waiting')
 
+  // Send cancellation notifications to all affected users
+  if (refundedBookings > 0) {
+    try {
+      const { sendNotification } = await import('./notification.service')
+      const { data: cancelledBookings } = await adminClient
+        .from(TABLES.BOOKINGS)
+        .select('user_id')
+        .eq('class_id', classId)
+        .eq('status', 'cancelled')
+
+      if (cancelledBookings) {
+        const uniqueUserIds = [...new Set(cancelledBookings.map(b => b.user_id as string))]
+        for (const userId of uniqueUserIds) {
+          await sendNotification({
+            userId,
+            type: 'class_cancelled',
+            channel: 'in_app',
+            data: {
+              class_title: classData.title,
+              class_date: new Date(classData.scheduled_at).toLocaleDateString(),
+              refunded: true,
+            },
+          })
+        }
+      }
+    } catch (notificationError) {
+      console.error('[Class Service] Error sending cancellation notifications:', notificationError)
+      // Don't fail the cancellation if notifications fail
+    }
+  }
+
   return {
     success: true,
     message: `Class cancelled. ${refundedBookings} booking(s) refunded.`,
@@ -592,20 +712,37 @@ export async function getUpcomingClasses(limit: number = 10): Promise<ClassListR
 }
 
 // Helper: Get booking counts for multiple classes
+// Counts both 'confirmed' and 'attended' bookings as enrolled (they both take up capacity)
+// Excludes cancelled bookings (cancelled, cancelled-late) and no-show
+// Uses admin client to bypass RLS and read all bookings
 async function getBookingCounts(classIds: string[]): Promise<Record<string, number>> {
   if (classIds.length === 0) return {}
 
-  const { data } = await supabase
+  const adminClient = getSupabaseAdminClient()
+  
+  const { data, error } = await adminClient
     .from(TABLES.BOOKINGS)
     .select('class_id')
     .in('class_id', classIds)
-    .eq('status', 'confirmed')
+    .in('status', ['confirmed', 'attended']) // Count both confirmed and attended as enrolled
+
+  if (error) {
+    console.error('[Class Service] Error fetching booking counts:', error)
+    return {}
+  }
 
   const counts: Record<string, number> = {}
   for (const booking of data || []) {
     const classId = booking.class_id as string
     counts[classId] = (counts[classId] || 0) + 1
   }
+  
+  // Debug logging
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[Class Service] Booking counts for', classIds.length, 'classes:', counts)
+    console.log('[Class Service] Found', data?.length || 0, 'bookings')
+  }
+  
   return counts
 }
 
@@ -643,6 +780,10 @@ function mapClassToSchema(row: Record<string, unknown>): Class {
     tokenCost: row.token_cost as number,
     location: row.location as string | null,
     status: row.status as 'scheduled',
+    recurrenceType: (row.recurrence_type as 'single' | 'recurring' | 'course' | undefined) || 'single',
+    recurrencePattern: (row.recurrence_pattern as Record<string, unknown> | null) || null,
+    roomId: row.room_id as string | null | undefined,
+    categoryId: row.category_id as string | null | undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }

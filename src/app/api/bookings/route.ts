@@ -2,7 +2,7 @@
 // Handles booking operations
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createBooking, getUserBookings } from '@/services/booking.service'
+import { createBooking, createBatchBooking, getUserBookings } from '@/services/booking.service'
 import { UuidSchema } from '@/api/schemas'
 import { ApiError } from '@/lib/api-error'
 import { z } from 'zod'
@@ -11,6 +11,12 @@ import { z } from 'zod'
 const CreateBookingSchema = z.object({
   userId: UuidSchema,
   classId: UuidSchema,
+})
+
+// Batch booking schema - for booking multiple classes at once (all-or-nothing)
+const BatchBookingSchema = z.object({
+  userId: UuidSchema,
+  classIds: z.array(UuidSchema).min(1, 'At least one class ID is required'),
 })
 
 // GET /api/bookings - List bookings (by user)
@@ -48,21 +54,31 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/bookings - Create a new booking
+// POST /api/bookings - Create a new booking or batch bookings
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    // Validate request body
-    const validatedData = CreateBookingSchema.parse(body)
-
-    // Create booking
-    const result = await createBooking(validatedData)
-
-    return NextResponse.json({
-      success: true,
-      data: result,
-    }, { status: 201 })
+    // Check if this is a batch booking (multiple classIds) or single booking (single classId)
+    if (body.classIds && Array.isArray(body.classIds)) {
+      // Batch booking
+      const validatedData = BatchBookingSchema.parse(body)
+      const result = await createBatchBooking(validatedData)
+      return NextResponse.json({
+        success: true,
+        data: result,
+      }, { status: 201 })
+    } else if (body.classId) {
+      // Single booking
+      const validatedData = CreateBookingSchema.parse(body)
+      const result = await createBooking(validatedData)
+      return NextResponse.json({
+        success: true,
+        data: result,
+      }, { status: 201 })
+    } else {
+      throw new ApiError('VALIDATION_ERROR', 'Either classId (single booking) or classIds (batch booking) is required', 400)
+    }
   } catch (error) {
     return handleApiError(error)
   }

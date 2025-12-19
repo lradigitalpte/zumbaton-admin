@@ -219,16 +219,23 @@ export async function markNoShow(params: {
     throw new ApiError('VALIDATION_ERROR', 'Cannot mark as no-show before class starts', 400)
   }
 
-  // 3. Consume tokens
-  const tokenResult = await consumeTokens({
-    userId: booking.user_id,
-    userPackageId: booking.user_package_id,
-    bookingId,
-    tokensToConsume: booking.tokens_used,
-    transactionType: 'no-show-consume',
-    description: `No-show for class ${booking.class.title}`,
-    performedBy: markedBy,
-  })
+  // 3. Consume tokens (best effort - don't fail if token consumption fails)
+  let tokenResult = { newBalance: 0 }
+  try {
+    tokenResult = await consumeTokens({
+      userId: booking.user_id,
+      userPackageId: booking.user_package_id,
+      bookingId,
+      tokensToConsume: booking.tokens_used,
+      transactionType: 'no-show-consume',
+      description: `No-show for class ${booking.class.title}`,
+      performedBy: markedBy,
+    })
+  } catch (tokenError) {
+    console.error('[AttendanceService] Token consumption failed for no-show:', tokenError)
+    // Log but don't fail - we still want to mark as no-show even if token consumption fails
+    console.warn('[AttendanceService] Continuing with no-show marking despite token error')
+  }
 
   // 4. Update booking status
   const { error: updateError } = await adminClient
@@ -253,7 +260,98 @@ export async function markNoShow(params: {
   const noShowCount = (userStats?.length || 0)
   const userFlagged = noShowCount >= 3
 
-  // TODO: If userFlagged, create notification/flag in user profile
+  console.log(`[AttendanceService] Updating no-show count for user ${booking.user_id}: ${noShowCount} no-shows, flagged: ${userFlagged}`)
+
+  // 5a. Update user_profiles with the new no-show count
+  const { error: profileUpdateError } = await adminClient
+    .from('user_profiles')
+    .update({ 
+      no_show_count: noShowCount,
+      is_flagged: userFlagged
+    })
+    .eq('id', booking.user_id)
+
+  if (profileUpdateError) {
+    console.error('[AttendanceService] Failed to update user_profiles:', JSON.stringify(profileUpdateError))
+  } else {
+    console.log('[AttendanceService] Successfully updated user_profiles')
+  }
+
+  // 5b. Update user_stats with the new no-show count
+  const { error: statsUpdateError } = await adminClient
+    .from('user_stats')
+    .update({ 
+      total_no_shows: noShowCount,
+      updated_at: new Date().toISOString()
+    })
+    .eq('user_id', booking.user_id)
+
+  if (statsUpdateError) {
+    console.error('[AttendanceService] Failed to update user_stats:', JSON.stringify(statsUpdateError))
+  } else {
+    console.log('[AttendanceService] Successfully updated user_stats')
+  }
+
+  // 6. Send no-show warning notification to user
+  try {
+    const { sendNotification } = await import('./notification.service')
+    
+    // Get user profile
+    const { data: userProfile } = await adminClient
+      .from('user_profiles')
+      .select('name, email')
+      .eq('id', booking.user_id)
+      .single()
+
+    const classDate = new Date(booking.class.scheduled_at)
+    const formattedDate = classDate.toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    })
+    const formattedTime = classDate.toLocaleTimeString('en-US', { 
+      hour: 'numeric', 
+      minute: '2-digit' 
+    })
+
+    // Send in-app notification
+    await sendNotification({
+      userId: booking.user_id,
+      type: 'no_show_warning',
+      channel: 'in_app',
+      data: {
+        user_name: userProfile?.name || 'User',
+        class_title: booking.class.title,
+        class_date: formattedDate,
+        class_time: formattedTime,
+        tokens_consumed: booking.tokens_used,
+        no_show_count: noShowCount,
+        is_flagged: userFlagged,
+        message: userFlagged
+          ? `You missed "${booking.class.title}" on ${formattedDate}. This is your ${noShowCount}${noShowCount === 1 ? 'st' : noShowCount === 2 ? 'nd' : noShowCount === 3 ? 'rd' : 'th'} no-show. Your account has been flagged.`
+          : `You missed "${booking.class.title}" on ${formattedDate}. ${booking.tokens_used} token(s) have been consumed.`,
+      },
+    })
+
+    // Send email notification
+    await sendNotification({
+      userId: booking.user_id,
+      type: 'no_show_warning',
+      channel: 'email',
+      data: {
+        user_name: userProfile?.name || 'User',
+        class_title: booking.class.title,
+        class_date: formattedDate,
+        class_time: formattedTime,
+        tokens_consumed: booking.tokens_used,
+        no_show_count: noShowCount,
+        is_flagged: userFlagged,
+      },
+    })
+  } catch (notificationError) {
+    console.error('[AttendanceService] Error sending no-show notification:', notificationError)
+  }
 
   return {
     bookingId,
@@ -270,8 +368,10 @@ export async function markNoShow(params: {
 export async function processNoShows(): Promise<{
   processed: number
   failed: number
+  errors?: string[]
 }> {
   const adminClient = getSupabaseAdminClient()
+  const errors: string[] = []
   
   // Find bookings for classes that ended more than 30 minutes ago
   // and are still in 'confirmed' status
@@ -282,7 +382,11 @@ export async function processNoShows(): Promise<{
     .select(`
       id,
       user_id,
+      user_package_id,
+      tokens_used,
       class:${TABLES.CLASSES}!inner(
+        id,
+        title,
         scheduled_at,
         duration_minutes
       )
@@ -291,14 +395,14 @@ export async function processNoShows(): Promise<{
 
   if (error) {
     console.error('[AttendanceService] Failed to fetch bookings for no-show processing:', error)
-    return { processed: 0, failed: 0 }
+    return { processed: 0, failed: 0, errors: ['Failed to fetch bookings: ' + error.message] }
   }
 
   let processed = 0
   let failed = 0
 
   for (const booking of bookings || []) {
-    const classData = (booking.class as unknown) as { scheduled_at: string; duration_minutes: number }
+    const classData = (booking.class as unknown) as { id: string; title: string; scheduled_at: string; duration_minutes: number }
     const classEndTime = new Date(
       new Date(classData.scheduled_at).getTime() +
       classData.duration_minutes * 60 * 1000
@@ -307,18 +411,26 @@ export async function processNoShows(): Promise<{
 
     if (new Date() > graceEndTime) {
       try {
+        console.log(`[AttendanceService] Processing no-show for booking ${booking.id} (class: ${classData.title})`)
         await markNoShow({
           bookingId: booking.id,
           markedBy: 'system',
           notes: 'Auto-processed no-show',
         })
+        console.log(`[AttendanceService] Successfully marked booking ${booking.id} as no-show`)
         processed++
       } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err)
         console.error(`[AttendanceService] Failed to process no-show for booking ${booking.id}:`, err)
+        errors.push(`Booking ${booking.id}: ${errorMsg}`)
         failed++
       }
     }
   }
 
-  return { processed, failed }
+  if (errors.length > 0) {
+    console.error('[AttendanceService] No-show processing had errors:', errors)
+  }
+
+  return { processed, failed, errors: errors.length > 0 ? errors : undefined }
 }

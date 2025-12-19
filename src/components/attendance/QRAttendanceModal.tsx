@@ -83,18 +83,21 @@ export default function QRAttendanceModal({
     prevEnrolledRef.current = enrolled;
     prevClassInfoEnrolledRef.current = classInfo.enrolled;
     
-    if (realAttendees && realAttendees.length > 0) {
+    // Always use real attendees if provided (even if empty array)
+    // Only use demo data if realAttendees is explicitly undefined/null (not provided)
+    if (realAttendees !== undefined && realAttendees !== null) {
       // Convert real attendees to student format
+      // If checkedInAt exists, they're checked in; otherwise pending
       const realStudents: Student[] = realAttendees.map(attendee => ({
         id: attendee.id,
         name: attendee.name,
         avatar: attendee.avatar,
         checkedInAt: attendee.checkedInAt,
-        status: "checked-in" as const,
+        status: attendee.checkedInAt ? "checked-in" as const : "pending" as const,
       }));
       setStudents(realStudents);
     } else {
-      // Generate demo students - only if no real data
+      // Generate demo students - only if realAttendees was not provided at all
       const demoStudents: Student[] = [
         { id: "1", name: "Maria Santos", status: "pending" },
         { id: "2", name: "Juan Rodriguez", status: "pending" },
@@ -147,7 +150,8 @@ export default function QRAttendanceModal({
 
   // Simulate students checking in (demo only - skip if real attendees provided)
   useEffect(() => {
-    if (!isOpen || (realAttendees && realAttendees.length > 0)) return;
+    // Only simulate if realAttendees was not provided at all (not just empty)
+    if (!isOpen || (realAttendees !== undefined && realAttendees !== null)) return;
 
     const simulateCheckIn = () => {
       setStudents((prev) => {

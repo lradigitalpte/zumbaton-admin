@@ -10,22 +10,22 @@ export const dynamic = 'force-dynamic'
 // Default granular preferences structure
 const DEFAULT_GRANULAR_PREFERENCES = {
   // Booking notifications
-  new_booking: { email: true, push: true, sms: false },
-  booking_cancelled: { email: true, push: true, sms: false },
-  waitlist_promotion: { email: true, push: true, sms: false },
-  no_show: { email: true, push: false, sms: false },
+  booking_confirmation: { email: true, push: true, sms: false },   // When you/someone books a class
+  booking_cancelled: { email: true, push: true, sms: false },      // When you/someone cancels a booking
+  booking_reminder: { email: true, push: true, sms: false },       // Class reminder 2 hours before
+  waitlist_promotion: { email: true, push: true, sms: false },     // When promoted from waitlist
+  no_show_warning: { email: true, push: false, sms: false },       // After a no-show
+  class_cancelled: { email: true, push: true, sms: false },        // When admin cancels a class
   
   // Token notifications
-  token_purchase: { email: true, push: true, sms: false },
-  low_token_alert: { email: true, push: false, sms: false },
-  token_expiry: { email: true, push: true, sms: false },
-  token_adjustment: { email: true, push: false, sms: false },
+  token_purchase: { email: true, push: false, sms: false },        // When tokens are purchased
+  token_balance_low: { email: true, push: false, sms: false },     // When token balance is low
+  package_expiring: { email: true, push: true, sms: false },       // When package is about to expire
   
   // System notifications
-  new_user: { email: true, push: false, sms: false },
-  flagged_user: { email: true, push: true, sms: true },
-  daily_summary: { email: true, push: false, sms: false },
-  weekly_report: { email: true, push: false, sms: false },
+  welcome: { email: true, push: false, sms: false },               // Welcome notification on signup
+  payment_successful: { email: true, push: false, sms: false },    // After successful payment
+  general: { email: true, push: false, sms: false },               // General announcements
 }
 
 // GET /api/notifications/preferences - Get current user's notification preferences
