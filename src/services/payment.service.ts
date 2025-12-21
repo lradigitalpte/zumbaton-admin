@@ -5,7 +5,7 @@ import { purchasePackage } from './user-package.service'
 import { sendPaymentSuccessful } from './notification.service'
 import {
   createPaymentRequest as hitpayCreatePaymentRequest,
-  createRefund as hitpayCreateRefund,
+  hitpayCreateRefund,
   getWebhookUrl,
   getRedirectUrl,
   centsToAmount,

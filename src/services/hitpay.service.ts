@@ -273,9 +273,9 @@ export async function deletePaymentRequest(
 }
 
 /**
- * Create a refund
+ * Create a refund (HitPay API)
  */
-export async function createRefund(
+export async function hitpayCreateRefund(
   request: HitPayRefundRequest
 ): Promise<HitPayRefundResponse> {
   const payload: Record<string, string> = {
