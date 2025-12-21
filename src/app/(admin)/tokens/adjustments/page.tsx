@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import Input from "@/components/form/input/InputField";
 import { 
@@ -14,6 +14,7 @@ import {
   AdjustmentStatus,
 } from "@/hooks/useTokenAdjustments";
 import { useAuth } from "@/context/AuthContext";
+import { useUsers, type User } from "@/hooks/useUsers";
 
 const typeConfig: Record<AdjustmentType, { label: string; color: string; bg: string }> = {
   credit: { label: "Credit", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/30" },
@@ -49,6 +50,24 @@ export default function TokenAdjustmentsPage() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [showCreatePanel, setShowCreatePanel] = useState(false);
   const [selectedAdjustment, setSelectedAdjustment] = useState<TokenAdjustment | null>(null);
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const userSearchRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userSearchRef.current && !userSearchRef.current.contains(event.target as Node)) {
+        setShowUserDropdown(false);
+      }
+    };
+
+    if (showUserDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showUserDropdown]);
 
   // Fetch adjustments from API
   const { data, isLoading, error } = useTokenAdjustments({
@@ -56,6 +75,17 @@ export default function TokenAdjustmentsPage() {
     type: typeFilter,
     search: searchQuery || undefined,
   });
+
+  // Search users for adjustment form
+  const { data: userSearchResults } = useUsers(
+    { 
+      search: userSearchQuery || undefined,
+      pageSize: 10,
+      role: 'user',
+      isActive: true,
+    },
+    { enabled: userSearchQuery.length >= 2 && showCreatePanel }
+  );
 
   // Mutations
   const createMutation = useCreateAdjustment();
@@ -66,8 +96,6 @@ export default function TokenAdjustmentsPage() {
   // New adjustment form state
   const [newAdjustment, setNewAdjustment] = useState({
     userId: "",
-    userName: "",
-    userEmail: "",
     type: "credit" as AdjustmentType,
     amount: "",
     reason: "",
@@ -134,10 +162,19 @@ export default function TokenAdjustmentsPage() {
         requestedBy: user?.id,
       });
       setShowCreatePanel(false);
-      setNewAdjustment({ userId: "", userName: "", userEmail: "", type: "credit", amount: "", reason: "", notes: "" });
+      setNewAdjustment({ userId: "", type: "credit", amount: "", reason: "", notes: "" });
+      setSelectedUser(null);
+      setUserSearchQuery("");
     } catch (err) {
       console.error('Failed to create adjustment:', err);
     }
+  };
+
+  const handleUserSelect = (selected: User) => {
+    setSelectedUser(selected);
+    setNewAdjustment({ ...newAdjustment, userId: selected.id });
+    setUserSearchQuery(selected.name || selected.email);
+    setShowUserDropdown(false);
   };
 
   const handleApprove = async (id: string) => {
@@ -570,24 +607,72 @@ export default function TokenAdjustmentsPage() {
             </div>
 
             <div className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">User Name *</label>
+              <div className="relative" ref={userSearchRef}>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">User *</label>
                 <Input
                   type="text"
-                  placeholder="Enter user name"
-                  value={newAdjustment.userName}
-                  onChange={(e) => setNewAdjustment({ ...newAdjustment, userName: e.target.value })}
+                  placeholder="Search by name or email..."
+                  value={userSearchQuery}
+                  onChange={(e) => {
+                    setUserSearchQuery(e.target.value);
+                    setShowUserDropdown(true);
+                    if (!e.target.value) {
+                      setSelectedUser(null);
+                      setNewAdjustment({ ...newAdjustment, userId: "" });
+                    }
+                  }}
+                  onFocus={() => setShowUserDropdown(true)}
                 />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">User Email</label>
-                <Input
-                  type="email"
-                  placeholder="Enter user email"
-                  value={newAdjustment.userEmail}
-                  onChange={(e) => setNewAdjustment({ ...newAdjustment, userEmail: e.target.value })}
-                />
+                {showUserDropdown && userSearchQuery.length >= 2 && userSearchResults?.users && (
+                  <div className="absolute z-50 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800 max-h-60 overflow-y-auto">
+                    {userSearchResults.users.length === 0 ? (
+                      <div className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">No users found</div>
+                    ) : (
+                      userSearchResults.users.map((u: User) => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => handleUserSelect(u)}
+                          className="w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`flex h-8 w-8 items-center justify-center rounded-full ${getAvatarColor(u.name)} text-white text-xs font-semibold`}>
+                              {getInitials(u.name)}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900 dark:text-white">{u.name}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">{u.email}</p>
+                            </div>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+                {selectedUser && (
+                  <div className="mt-2 flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-700/50">
+                    <div className={`flex h-8 w-8 items-center justify-center rounded-full ${getAvatarColor(selectedUser.name)} text-white text-xs font-semibold`}>
+                      {getInitials(selectedUser.name)}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">{selectedUser.name}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{selectedUser.email}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedUser(null);
+                        setUserSearchQuery("");
+                        setNewAdjustment({ ...newAdjustment, userId: "" });
+                      }}
+                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -643,15 +728,15 @@ export default function TokenAdjustmentsPage() {
               </div>
 
               {/* Preview */}
-              {newAdjustment.userName && newAdjustment.amount && (
+              {selectedUser && newAdjustment.amount && (
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/50">
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Preview</p>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-full ${getAvatarColor(newAdjustment.userName)} text-white text-xs font-semibold`}>
-                        {getInitials(newAdjustment.userName)}
+                      <div className={`flex h-8 w-8 items-center justify-center rounded-full ${getAvatarColor(selectedUser.name)} text-white text-xs font-semibold`}>
+                        {getInitials(selectedUser.name)}
                       </div>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">{newAdjustment.userName}</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{selectedUser.name}</span>
                     </div>
                     <span className={`text-lg font-bold ${
                       newAdjustment.type === "debit" ? "text-red-600" : "text-emerald-600"
@@ -672,7 +757,7 @@ export default function TokenAdjustmentsPage() {
               </button>
               <button
                 onClick={handleCreateAdjustment}
-                disabled={!newAdjustment.userName || !newAdjustment.amount || !newAdjustment.reason}
+                disabled={!newAdjustment.userId || !newAdjustment.amount || !newAdjustment.reason}
                 className="flex-1 rounded-xl bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Submit Adjustment
