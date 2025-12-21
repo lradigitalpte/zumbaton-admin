@@ -3,11 +3,21 @@ import { ApiError } from '@/lib/api-error'
 import { createAuditLog, requirePermission } from './rbac.service'
 import { purchasePackage } from './user-package.service'
 import { sendPaymentSuccessful } from './notification.service'
+import {
+  createPaymentRequest as hitpayCreatePaymentRequest,
+  createRefund as hitpayCreateRefund,
+  getWebhookUrl,
+  getRedirectUrl,
+  centsToAmount,
+  isHitPayConfigured,
+} from './hitpay.service'
 import type {
   Payment,
   Refund,
   Invoice,
   PaymentStatus,
+  CreatePaymentRequest,
+  CreatePaymentResponse,
   CreatePaymentIntentRequest,
   CreatePaymentIntentResponse,
   CreateRefundRequest,
@@ -18,10 +28,24 @@ import type {
   PaymentMethod,
   PaymentMethodListResponse,
   AdminPaymentListQuery,
+  HitPayPaymentMethod,
 } from '@/api/schemas'
 
 // =====================================================
-// STRIPE CLIENT (lazy loaded)
+// APP BASE URL
+// =====================================================
+
+function getBaseUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000'
+  )
+}
+
+// =====================================================
+// STRIPE CLIENT (legacy support - lazy loaded)
 // =====================================================
 
 let stripeClient: import('stripe').default | null = null
@@ -55,9 +79,16 @@ function toPayment(row: Record<string, unknown>): Payment {
     currency: row.currency as string,
     status: row.status as PaymentStatus,
     paymentMethod: row.payment_method as string | null,
+    provider: (row.provider as 'hitpay' | 'stripe' | 'manual') || 'hitpay',
+    // HitPay fields
+    hitpayPaymentRequestId: row.hitpay_payment_request_id as string | null,
+    hitpayPaymentId: row.hitpay_payment_id as string | null,
+    hitpayPaymentUrl: row.hitpay_payment_url as string | null,
+    // Stripe fields (legacy)
     stripePaymentIntentId: row.stripe_payment_intent_id as string | null,
     stripeCustomerId: row.stripe_customer_id as string | null,
     stripeChargeId: row.stripe_charge_id as string | null,
+    // Common fields
     receiptUrl: row.receipt_url as string | null,
     failureReason: row.failure_reason as string | null,
     metadata: (row.metadata as Record<string, unknown>) || {},
@@ -134,7 +165,212 @@ async function getOrCreateStripeCustomer(userId: string): Promise<string> {
 }
 
 // =====================================================
-// CREATE PAYMENT INTENT
+// CREATE PAYMENT (HitPay - Primary)
+// =====================================================
+
+export async function createPayment(
+  userId: string,
+  request: CreatePaymentRequest
+): Promise<CreatePaymentResponse> {
+  const { packageId, paymentMethods } = request
+
+  // Verify HitPay is configured
+  if (!isHitPayConfigured()) {
+    throw new ApiError('SERVER_ERROR', 'Payment gateway is not configured', 500)
+  }
+
+  // Get package details
+  const { data: pkg } = await getSupabaseAdminClient()
+    .from('packages')
+    .select('*')
+    .eq('id', packageId)
+    .eq('is_active', true)
+    .single()
+
+  if (!pkg) {
+    throw new ApiError('NOT_FOUND_ERROR', 'Package not found or inactive', 404)
+  }
+
+  // Get user details
+  const { data: user } = await getSupabaseAdminClient()
+    .from('user_profiles')
+    .select('email, name')
+    .eq('id', userId)
+    .single()
+
+  if (!user) {
+    throw new ApiError('NOT_FOUND_ERROR', 'User not found', 404)
+  }
+
+  const baseUrl = getBaseUrl()
+  const currency = pkg.currency || 'SGD' // Default to SGD for Singapore
+
+  // Create HitPay payment request
+  const hitpayResponse = await hitpayCreatePaymentRequest({
+    amount: centsToAmount(pkg.price_cents),
+    currency: currency,
+    email: user.email,
+    name: user.name || 'Customer',
+    purpose: `Purchase: ${pkg.name} (${pkg.token_count} tokens)`,
+    reference_number: `${userId}-${packageId}-${Date.now()}`,
+    redirect_url: getRedirectUrl(baseUrl, 'success'),
+    webhook: getWebhookUrl(baseUrl),
+    payment_methods: paymentMethods as string[] | undefined,
+    send_email: true,
+  })
+
+  // Create payment record in database
+  const { data: payment, error } = await getSupabaseAdminClient()
+    .from('payments')
+    .insert({
+      user_id: userId,
+      package_id: packageId,
+      amount_cents: pkg.price_cents,
+      currency: currency,
+      status: 'pending',
+      provider: 'hitpay',
+      hitpay_payment_request_id: hitpayResponse.id,
+      hitpay_payment_url: hitpayResponse.url,
+      metadata: {
+        package_name: pkg.name,
+        token_count: pkg.token_count,
+        hitpay_reference: hitpayResponse.reference_number,
+      },
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('[Payment] Failed to create payment record:', error)
+    throw new ApiError('SERVER_ERROR', 'Failed to create payment', 500)
+  }
+
+  return {
+    paymentRequestId: hitpayResponse.id,
+    paymentUrl: hitpayResponse.url,
+    amountCents: pkg.price_cents,
+    currency: currency,
+    expiresAt: hitpayResponse.expiry_date,
+  }
+}
+
+// =====================================================
+// HANDLE HITPAY WEBHOOK: Payment Succeeded
+// =====================================================
+
+export async function handleHitPayPaymentSucceeded(
+  paymentRequestId: string,
+  hitpayPaymentId: string,
+  amountCents: number
+): Promise<void> {
+  // Get payment record by HitPay payment request ID
+  const { data: payment, error: fetchError } = await getSupabaseAdminClient()
+    .from('payments')
+    .select('*')
+    .eq('hitpay_payment_request_id', paymentRequestId)
+    .single()
+
+  if (fetchError || !payment) {
+    console.error('[HitPay] Payment not found for request:', paymentRequestId)
+    return
+  }
+
+  const userId = payment.user_id
+  const packageId = payment.package_id
+
+  if (!userId || !packageId) {
+    console.error('[HitPay] Missing user or package ID in payment:', payment.id)
+    return
+  }
+
+  // Update payment record
+  const { error: updateError } = await getSupabaseAdminClient()
+    .from('payments')
+    .update({
+      status: 'succeeded',
+      hitpay_payment_id: hitpayPaymentId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', payment.id)
+
+  if (updateError) {
+    console.error('[HitPay] Failed to update payment:', updateError)
+    return
+  }
+
+  // Create user package with tokens
+  await purchasePackage({
+    userId,
+    packageId,
+    paymentId: payment.id,
+  })
+
+  // Create invoice
+  await createInvoice(userId, payment.id, payment.amount_cents)
+
+  // Get user and package info for notification
+  const { data: user } = await getSupabaseAdminClient()
+    .from('user_profiles')
+    .select('name')
+    .eq('id', userId)
+    .single()
+
+  const { data: pkg } = await getSupabaseAdminClient()
+    .from('packages')
+    .select('name, token_count')
+    .eq('id', packageId)
+    .single()
+
+  // Send payment confirmation email
+  if (user && pkg) {
+    await sendPaymentSuccessful(userId, {
+      userName: user.name,
+      packageName: pkg.name,
+      tokenCount: pkg.token_count,
+      amount: (payment.amount_cents / 100).toFixed(2),
+    })
+  }
+
+  // Audit log
+  await createAuditLog({
+    userId,
+    action: 'payment.succeeded',
+    resourceType: 'payments',
+    resourceId: payment.id,
+    newValues: {
+      amount_cents: payment.amount_cents,
+      package_id: packageId,
+      provider: 'hitpay',
+    },
+  })
+
+  console.log('[HitPay] Payment succeeded:', payment.id)
+}
+
+// =====================================================
+// HANDLE HITPAY WEBHOOK: Payment Failed
+// =====================================================
+
+export async function handleHitPayPaymentFailed(
+  paymentRequestId: string,
+  failureReason?: string
+): Promise<void> {
+  const { error } = await getSupabaseAdminClient()
+    .from('payments')
+    .update({
+      status: 'failed',
+      failure_reason: failureReason || 'Payment failed',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('hitpay_payment_request_id', paymentRequestId)
+
+  if (error) {
+    console.error('[HitPay] Failed to update payment status:', error)
+  }
+}
+
+// =====================================================
+// CREATE PAYMENT INTENT (Stripe - Legacy Support)
 // =====================================================
 
 export async function createPaymentIntent(
@@ -191,6 +427,7 @@ export async function createPaymentIntent(
       amount_cents: pkg.price_cents,
       currency: pkg.currency || 'USD',
       status: 'pending',
+      provider: 'stripe',
       stripe_payment_intent_id: paymentIntent.id,
       stripe_customer_id: customerId,
       metadata: {
@@ -317,7 +554,7 @@ export async function handlePaymentFailed(
 }
 
 // =====================================================
-// CREATE REFUND
+// CREATE REFUND (Supports both HitPay and Stripe)
 // =====================================================
 
 export async function createRefund(
@@ -343,13 +580,35 @@ export async function createRefund(
     throw new ApiError('VALIDATION_ERROR', 'Can only refund succeeded payments', 400)
   }
 
+  const refundAmount = amountCents || payment.amount_cents
+  const provider = payment.provider || 'hitpay'
+
+  let externalRefundId: string | null = null
+  let refundStatus: 'pending' | 'succeeded' | 'failed' = 'pending'
+
+  if (provider === 'hitpay') {
+    // HitPay refund
+    if (!payment.hitpay_payment_id) {
+      throw new ApiError('VALIDATION_ERROR', 'Payment has no HitPay payment ID', 400)
+    }
+
+    try {
+      const hitpayRefund = await hitpayCreateRefund({
+        payment_id: payment.hitpay_payment_id,
+        amount: refundAmount ? centsToAmount(refundAmount) : undefined,
+      })
+      externalRefundId = hitpayRefund.id
+      refundStatus = hitpayRefund.status === 'succeeded' ? 'succeeded' : 'pending'
+    } catch (error) {
+      console.error('[HitPay] Refund failed:', error)
+      throw new ApiError('SERVER_ERROR', 'Failed to create refund with HitPay', 500)
+    }
+  } else if (provider === 'stripe') {
+    // Stripe refund (legacy)
   if (!payment.stripe_payment_intent_id) {
     throw new ApiError('VALIDATION_ERROR', 'Payment has no Stripe intent', 400)
   }
 
-  const refundAmount = amountCents || payment.amount_cents
-
-  // Create Stripe refund
   const stripe = await getStripe()
   const stripeRefund = await stripe.refunds.create({
     payment_intent: payment.stripe_payment_intent_id,
@@ -360,6 +619,11 @@ export async function createRefund(
       reason: reason || 'Refund requested',
     },
   })
+    externalRefundId = stripeRefund.id
+    refundStatus = stripeRefund.status === 'succeeded' ? 'succeeded' : 'pending'
+  } else {
+    throw new ApiError('VALIDATION_ERROR', 'Unknown payment provider', 400)
+  }
 
   // Create refund record
   const { data: refund, error } = await getSupabaseAdminClient()
@@ -368,8 +632,8 @@ export async function createRefund(
       payment_id: paymentId,
       amount_cents: refundAmount,
       reason,
-      stripe_refund_id: stripeRefund.id,
-      status: stripeRefund.status === 'succeeded' ? 'succeeded' : 'pending',
+      stripe_refund_id: externalRefundId, // Using same field for both providers
+      status: refundStatus,
       processed_by: requesterId,
     })
     .select()
@@ -396,6 +660,7 @@ export async function createRefund(
       payment_id: paymentId,
       amount_cents: refundAmount,
       reason,
+      provider,
     },
   })
 

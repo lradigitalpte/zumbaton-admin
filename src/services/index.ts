@@ -15,5 +15,6 @@ export * from './user.service'
 // Notification service
 export * from './notification.service'
 
-// Payment service
+// Payment services
 export * from './payment.service'
+export * from './hitpay.service'

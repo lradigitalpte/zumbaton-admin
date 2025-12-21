@@ -56,20 +56,32 @@ export async function GET(request: NextRequest) {
         .eq('role', 'user')
         .lt('created_at', startOfMonth.toISOString()),
       
-      // Tokens sold this month (from token transactions)
+      // Tokens sold this month (from user_packages - more reliable than token_transactions)
       supabase
-        .from(TABLES.TOKEN_TRANSACTIONS)
-        .select('amount')
-        .eq('type', 'purchase')
-        .gte('created_at', startOfMonth.toISOString()),
+        .from(TABLES.USER_PACKAGES)
+        .select(`
+          tokens_remaining,
+          purchased_at,
+          packages (
+            token_count
+          )
+        `)
+        .gte('purchased_at', startOfMonth.toISOString())
+        .eq('status', 'active'),
       
       // Tokens sold last month
       supabase
-        .from(TABLES.TOKEN_TRANSACTIONS)
-        .select('amount')
-        .eq('type', 'purchase')
-        .gte('created_at', startOfLastMonth.toISOString())
-        .lt('created_at', startOfMonth.toISOString()),
+        .from(TABLES.USER_PACKAGES)
+        .select(`
+          tokens_remaining,
+          purchased_at,
+          packages (
+            token_count
+          )
+        `)
+        .gte('purchased_at', startOfLastMonth.toISOString())
+        .lt('purchased_at', startOfMonth.toISOString())
+        .eq('status', 'active'),
       
       // Today's classes
       supabase
@@ -162,6 +174,7 @@ export async function GET(request: NextRequest) {
           user_id,
           amount_cents,
           created_at,
+          metadata,
           packages (
             id,
             name,
@@ -199,9 +212,15 @@ export async function GET(request: NextRequest) {
       ? ((newMembersThisMonth / membersLastMonth) * 100)
       : 0
 
-    // Tokens sold
-    const tokensThisMonth = (tokensSoldThisMonth.data || []).reduce((sum, t) => sum + Math.abs(t.amount || 0), 0)
-    const tokensLastMonth = (tokensSoldLastMonth.data || []).reduce((sum, t) => sum + Math.abs(t.amount || 0), 0)
+    // Tokens sold (from user_packages - use package token_count for accuracy)
+    const tokensThisMonth = (tokensSoldThisMonth.data || []).reduce((sum, up) => {
+      const pkg = Array.isArray(up.packages) ? up.packages[0] : up.packages
+      return sum + (pkg?.token_count || up.tokens_remaining || 0)
+    }, 0)
+    const tokensLastMonth = (tokensSoldLastMonth.data || []).reduce((sum, up) => {
+      const pkg = Array.isArray(up.packages) ? up.packages[0] : up.packages
+      return sum + (pkg?.token_count || up.tokens_remaining || 0)
+    }, 0)
     const tokensChange = tokensLastMonth > 0
       ? ((tokensThisMonth - tokensLastMonth) / tokensLastMonth * 100)
       : 0
@@ -323,11 +342,16 @@ export async function GET(request: NextRequest) {
     for (const p of recentPayments.data || []) {
       const packagesData = p.packages as { name?: string; token_count?: number } | { name?: string; token_count?: number }[] | null
       const pkg = Array.isArray(packagesData) ? packagesData[0] : packagesData
+      // Use metadata first (what was stored at payment time), then fallback to package join
+      const metadata = p.metadata as { package_name?: string; token_count?: number } | null
+      const packageName = metadata?.package_name || pkg?.name || 'package'
+      // Prioritize metadata token_count (actual purchase) over package token_count (current value)
+      const tokenCount = metadata?.token_count ?? pkg?.token_count ?? 0
       activities.push({
         id: `purchase-${p.id}`,
         type: 'purchase',
         user: userMap[p.user_id] || 'Unknown',
-        description: `Purchased ${pkg?.name || 'package'}${pkg?.token_count ? ` (${pkg.token_count} tokens)` : ''}`,
+        description: `Purchased ${packageName}${tokenCount ? ` (${tokenCount} tokens)` : ''}`,
         time: getRelativeTime(new Date(p.created_at)),
         timestamp: new Date(p.created_at).getTime(),
       })
