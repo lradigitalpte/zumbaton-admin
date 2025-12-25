@@ -16,6 +16,14 @@ export const ClassTypeSchema = z.enum([
 ])
 export type ClassType = z.infer<typeof ClassTypeSchema>
 
+// Package type enum
+export const PackageTypeSchema = z.enum(['adult', 'kid', 'all'])
+export type PackageType = z.infer<typeof PackageTypeSchema>
+
+// Age requirement enum
+export const AgeRequirementSchema = z.enum(['all', '5-12', '13+'])
+export type AgeRequirement = z.infer<typeof AgeRequirementSchema>
+
 // Package entity - matches Supabase 'packages' table
 export const PackageSchema = BaseTimestampsSchema.extend({
   id: UuidSchema,
@@ -23,9 +31,11 @@ export const PackageSchema = BaseTimestampsSchema.extend({
   description: z.string().max(500).nullable(),
   tokenCount: z.number().int().positive(),
   priceCents: z.number().int().nonnegative(),
-  currency: z.string().length(3).default('USD'),
+  currency: z.string().length(3).default('SGD'),
   validityDays: z.number().int().positive(),
   classTypes: z.array(ClassTypeSchema).default(['all']),
+  packageType: PackageTypeSchema.default('adult'),
+  ageRequirement: AgeRequirementSchema.default('all'),
   isActive: z.boolean().default(true),
 })
 export type Package = z.infer<typeof PackageSchema>
@@ -36,9 +46,11 @@ export const CreatePackageRequestSchema = z.object({
   description: z.string().max(500).optional(),
   tokenCount: z.number().int().positive('Token count must be positive'),
   priceCents: z.number().int().nonnegative('Price cannot be negative'),
-  currency: z.string().length(3).default('USD'),
+  currency: z.string().length(3).default('SGD'),
   validityDays: z.number().int().positive('Validity must be at least 1 day'),
   classTypes: z.array(ClassTypeSchema).default(['all']),
+  packageType: PackageTypeSchema.default('adult'),
+  ageRequirement: AgeRequirementSchema.default('all').optional(),
   isActive: z.boolean().default(true),
 })
 export type CreatePackageRequest = z.infer<typeof CreatePackageRequestSchema>
@@ -52,6 +64,8 @@ export const UpdatePackageRequestSchema = z.object({
   currency: z.string().length(3).optional(),
   validityDays: z.number().int().positive().optional(),
   classTypes: z.array(ClassTypeSchema).optional(),
+  packageType: PackageTypeSchema.optional(),
+  ageRequirement: AgeRequirementSchema.optional(),
   isActive: z.boolean().optional(),
 })
 export type UpdatePackageRequest = z.infer<typeof UpdatePackageRequestSchema>
@@ -78,5 +92,6 @@ export const PackageListQuerySchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(20),
   isActive: z.boolean().optional(),
   classType: ClassTypeSchema.optional(),
+  packageType: PackageTypeSchema.optional(),
 })
 export type PackageListQuery = z.infer<typeof PackageListQuerySchema>
