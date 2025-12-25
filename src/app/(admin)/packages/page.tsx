@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import { 
   usePackages, 
@@ -22,6 +22,8 @@ export default function PackagesPage() {
     tokens: "",
     price: "",
     validityDays: "",
+    packageType: "adult" as "adult" | "kid" | "all",
+    ageRequirement: "all" as "all" | "5-12" | "13+",
     isFeatured: false,
   });
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
@@ -48,7 +50,7 @@ export default function PackagesPage() {
 
   const openNewPackagePanel = () => {
     setEditingPackage(null);
-    setFormData({ name: "", description: "", tokens: "", price: "", validityDays: "", isFeatured: false });
+    setFormData({ name: "", description: "", tokens: "", price: "", validityDays: "", packageType: "adult", ageRequirement: "all", isFeatured: false });
     setShowPanel(true);
   };
 
@@ -60,6 +62,8 @@ export default function PackagesPage() {
       tokens: pkg.tokenCount.toString(),
       price: (pkg.priceCents / 100).toString(),
       validityDays: pkg.validityDays.toString(),
+      packageType: (pkg.packageType as "adult" | "kid" | "all") || "adult",
+      ageRequirement: (pkg.ageRequirement as "all" | "5-12" | "13+") || "all",
       isFeatured: false, // Note: isFeatured is not in the schema, keeping for UI
     });
     setShowPanel(true);
@@ -73,6 +77,9 @@ export default function PackagesPage() {
         tokenCount: parseInt(formData.tokens),
         priceCents: Math.round(parseFloat(formData.price) * 100),
         validityDays: parseInt(formData.validityDays),
+        packageType: formData.packageType,
+        ageRequirement: formData.packageType === "kid" ? formData.ageRequirement : "all",
+        currency: "SGD",
       };
 
       if (editingPackage) {
@@ -102,6 +109,29 @@ export default function PackagesPage() {
       console.error('Error toggling package status:', err);
     }
   };
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (showPanel) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [showPanel]);
+
+  // Handle escape key to close modal
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && showPanel) {
+        setShowPanel(false);
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [showPanel]);
 
   // Helper to get a consistent color for a package based on index
   const getPackageColor = (index: number): string => {
@@ -318,8 +348,16 @@ export default function PackagesPage() {
               {/* Header with gradient */}
               <div className={`bg-linear-to-br ${getColorClasses(color, pkg.isActive)} p-6 text-white`}>
                 <div className="mb-4">
-                  <h3 className="text-xl font-bold">{pkg.name}</h3>
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className="text-xl font-bold">{pkg.name}</h3>
+                    <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full uppercase">
+                      {pkg.packageType === 'kid' ? 'Kids' : pkg.packageType === 'all' ? 'All' : 'Adults'}
+                    </span>
+                  </div>
                   <p className="mt-1 text-sm text-white/80">{pkg.description}</p>
+                  {pkg.packageType === 'kid' && pkg.ageRequirement && (
+                    <p className="mt-2 text-xs text-white/70 italic">{pkg.ageRequirement}</p>
+                  )}
                 </div>
                 <div className="flex items-baseline gap-1">
                   <span className="text-4xl font-bold">${price.toFixed(2)}</span>
@@ -509,29 +547,36 @@ export default function PackagesPage() {
         </div>
       )}
 
-      {/* Add/Edit Panel */}
+      {/* Add/Edit Panel - Modal Overlay */}
       {showPanel && (
-        <>
+        <div className="fixed inset-0 z-99999 flex items-center justify-center overflow-y-auto">
+          {/* Backdrop */}
           <div
-            className="fixed inset-0 z-40 bg-black/50 transition-opacity"
+            className="fixed inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity"
             onClick={() => setShowPanel(false)}
           />
-          <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-white shadow-xl dark:bg-gray-900">
-            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {editingPackage ? "Edit Package" : "New Package"}
-              </h2>
-              <button
-                onClick={() => setShowPanel(false)}
-                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+          
+          {/* Modal Content */}
+          <div 
+            className="relative w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col bg-white shadow-2xl rounded-2xl dark:bg-gray-900 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+              <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-900 z-10">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                  {editingPackage ? "Edit Package" : "New Package"}
+                </h2>
+                <button
+                  onClick={() => setShowPanel(false)}
+                  className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors"
+                  aria-label="Close"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
 
-            <div className="flex-1 overflow-y-auto p-6">
+              <div className="flex-1 overflow-y-auto p-6">
               <div className="space-y-6">
                 <div>
                   <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-white">
@@ -603,6 +648,41 @@ export default function PackagesPage() {
                   />
                 </div>
 
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-white">
+                    Package Type *
+                  </label>
+                  <select
+                    value={formData.packageType}
+                    onChange={(e) => setFormData({ ...formData, packageType: e.target.value as "adult" | "kid" | "all" })}
+                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                  >
+                    <option value="adult">Adult</option>
+                    <option value="kid">Kid</option>
+                    <option value="all">All (Adult & Kid)</option>
+                  </select>
+                </div>
+
+                {formData.packageType === "kid" && (
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-white">
+                      Age Requirement *
+                    </label>
+                    <select
+                      value={formData.ageRequirement}
+                      onChange={(e) => setFormData({ ...formData, ageRequirement: e.target.value as "all" | "5-12" | "13+" })}
+                      className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                    >
+                      <option value="all">All Ages</option>
+                      <option value="5-12">5-12 Years Old</option>
+                      <option value="13+">13+ Years Old</option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Note: Kids must be accompanied by a parent/guardian
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-3">
                   <input
                     type="checkbox"
@@ -634,21 +714,21 @@ export default function PackagesPage() {
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowPanel(false)}
-                  className="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                  className="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSave}
                   disabled={!formData.name || !formData.tokens || !formData.price || !formData.validityDays}
-                  className="flex-1 rounded-xl bg-brand-500 px-4 py-3 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex-1 rounded-xl bg-brand-500 px-4 py-3 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
                 >
                   {editingPackage ? "Save Changes" : "Create Package"}
                 </button>
               </div>
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

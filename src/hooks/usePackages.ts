@@ -18,6 +18,8 @@ export interface Package {
   currency: string
   validityDays: number
   classTypes: ClassType[]
+  packageType: 'adult' | 'kid' | 'all'
+  ageRequirement: 'all' | '5-12' | '13+'
   isActive: boolean
   createdAt: string
   updatedAt: string
@@ -43,6 +45,8 @@ export interface CreatePackageData {
   currency?: string
   validityDays: number
   classTypes?: ClassType[]
+  packageType?: 'adult' | 'kid' | 'all'
+  ageRequirement?: 'all' | '5-12' | '13+'
   isActive?: boolean
 }
 
@@ -54,6 +58,8 @@ export interface UpdatePackageData {
   currency?: string
   validityDays?: number
   classTypes?: ClassType[]
+  packageType?: 'adult' | 'kid' | 'all'
+  ageRequirement?: 'all' | '5-12' | '13+'
   isActive?: boolean
 }
 

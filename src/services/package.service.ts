@@ -36,9 +36,11 @@ export async function createPackage(data: CreatePackageRequest): Promise<Package
       description: data.description || null,
       token_count: data.tokenCount,
       price_cents: data.priceCents,
-      currency: data.currency || 'USD',
+      currency: data.currency || 'SGD',
       validity_days: data.validityDays,
       class_types: data.classTypes || ['all'],
+      package_type: data.packageType || 'adult',
+      age_requirement: data.packageType === 'kid' ? (data.ageRequirement || 'all') : 'all',
       is_active: data.isActive !== false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -79,7 +81,7 @@ export async function getPackage(packageId: string): Promise<PackageResponse> {
 // List packages with filtering and pagination
 export async function listPackages(query: PackageListQuery): Promise<PackageListResponse> {
   const supabase = getSupabaseAdminClient();
-  const { page = 1, pageSize = 20, isActive, classType } = query
+  const { page = 1, pageSize = 20, isActive, classType, packageType } = query
 
   let dbQuery = supabase
     .from(TABLES.PACKAGES)
@@ -92,6 +94,10 @@ export async function listPackages(query: PackageListQuery): Promise<PackageList
 
   if (classType) {
     dbQuery = dbQuery.contains('class_types', [classType])
+  }
+
+  if (packageType) {
+    dbQuery = dbQuery.eq('package_type', packageType)
   }
 
   const from = (page - 1) * pageSize
@@ -116,7 +122,7 @@ export async function listPackages(query: PackageListQuery): Promise<PackageList
 // List packages with sales statistics
 export async function listPackagesWithStats(query: PackageListQuery): Promise<PackageListWithStatsResponse> {
   const supabase = getSupabaseAdminClient();
-  const { page = 1, pageSize = 20, isActive, classType } = query
+  const { page = 1, pageSize = 20, isActive, classType, packageType } = query
 
   let dbQuery = supabase
     .from(TABLES.PACKAGES)
@@ -129,6 +135,10 @@ export async function listPackagesWithStats(query: PackageListQuery): Promise<Pa
 
   if (classType) {
     dbQuery = dbQuery.contains('class_types', [classType])
+  }
+
+  if (packageType) {
+    dbQuery = dbQuery.eq('package_type', packageType)
   }
 
   const from = (page - 1) * pageSize
@@ -202,6 +212,19 @@ export async function updatePackage(
   if (data.currency !== undefined) updateData.currency = data.currency
   if (data.validityDays !== undefined) updateData.validity_days = data.validityDays
   if (data.classTypes !== undefined) updateData.class_types = data.classTypes
+  if (data.packageType !== undefined) {
+    updateData.package_type = data.packageType
+    // If changing to non-kid package, reset age_requirement to 'all'
+    if (data.packageType !== 'kid' && data.ageRequirement === undefined) {
+      updateData.age_requirement = 'all'
+    }
+  }
+  if (data.ageRequirement !== undefined) {
+    updateData.age_requirement = data.ageRequirement
+  } else if (data.packageType === 'kid' && updateData.age_requirement === undefined) {
+    // If changing to kid package and no age requirement provided, default to 'all'
+    updateData.age_requirement = 'all'
+  }
   if (data.isActive !== undefined) updateData.is_active = data.isActive
 
   const { data: pkg, error } = await supabase
@@ -281,6 +304,8 @@ function mapPackageToSchema(row: Record<string, unknown>): Package {
     currency: row.currency as string,
     validityDays: row.validity_days as number,
     classTypes: row.class_types as ('zumba' | 'yoga' | 'pilates' | 'hiit' | 'spinning' | 'boxing' | 'dance' | 'strength' | 'cardio' | 'all')[],
+    packageType: (row.package_type as 'adult' | 'kid' | 'all') || 'adult',
+    ageRequirement: (row.age_requirement as 'all' | '5-12' | '13+' | null) || 'all',
     isActive: row.is_active as boolean,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
