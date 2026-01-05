@@ -1,0 +1,29 @@
+-- Migration: Storage setup documentation for user avatars
+-- 
+-- IMPORTANT: Storage buckets must be created via Supabase Dashboard or Storage API
+-- This file documents the setup process. See STORAGE_SETUP.md for detailed instructions.
+--
+-- Steps to set up avatar storage:
+-- 1. Go to Supabase Dashboard → Storage → Create Bucket
+-- 2. Bucket name: 'avatars'
+-- 3. Public bucket: true (for public URLs)
+-- 4. File size limit: 5MB
+-- 5. Allowed MIME types: image/jpeg, image/png, image/webp, image/gif
+--
+-- Storage policies (set via Dashboard → Storage → Policies):
+--
+-- INSERT Policy: Users can upload their own avatars
+-- USING: (bucket_id = 'avatars'::text) AND (auth.uid()::text = (storage.foldername(name))[1])
+--
+-- UPDATE Policy: Users can update their own avatars  
+-- USING: (bucket_id = 'avatars'::text) AND (auth.uid()::text = (storage.foldername(name))[1])
+--
+-- SELECT Policy: Anyone can view avatars (since bucket is public)
+-- USING: bucket_id = 'avatars'::text
+--
+-- DELETE Policy: Users can delete their own avatars
+-- USING: (bucket_id = 'avatars'::text) AND (auth.uid()::text = (storage.foldername(name))[1])
+--
+-- File path format: avatars/{userId}-{timestamp}.{ext}
+--
+-- See STORAGE_SETUP.md for complete setup instructions.
