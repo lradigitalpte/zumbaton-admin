@@ -133,7 +133,9 @@ export interface TutorStats {
     studentsChange: number
     attendanceRateChange: number
   }
-  byClassType: Record<string, number>
+  byClassType: Record<string, { classes: number; students: number; attendance: number; attendanceRate: number }>
+  topStudents: Array<{ name: string; classes: number; attendance: number }>
+  monthlyPerformance: Array<{ month: string; classes: number; students: number; attendance: number }>
 }
 
 export interface TimeSlot {

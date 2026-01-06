@@ -66,16 +66,16 @@ export default function TutorSchedulePage() {
       days.push({
         date: dateStr,
         dayName: dayNames[i],
-        classes: classes.map(c => ({
-          id: c.id,
-          name: c.title,
-          type: c.classType,
-          time: c.time,
-          duration: c.duration,
-          room: c.location || 'TBD',
-          enrolled: c.booked,
-          capacity: c.capacity,
-        }))
+          classes: classes.map(c => ({
+            id: c.id,
+            name: c.title,
+            type: c.classType,
+            time: c.time,
+            duration: c.duration,
+            room: c.location || 'TBD',
+            enrolled: c.booked,
+            capacity: c.capacity,
+          }))
       });
     }
     return days;

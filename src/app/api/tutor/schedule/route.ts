@@ -27,6 +27,15 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseAdminClient()
     const instructorId = user.id
 
+    // Get instructor's name to check for multiple instructor classes
+    const { data: instructorProfile } = await supabase
+      .from('user_profiles')
+      .select('name')
+      .eq('id', instructorId)
+      .single()
+    
+    const instructorName = instructorProfile?.name || ''
+
     // Parse query params
     const { searchParams } = new URL(request.url)
     const view = searchParams.get('view') || 'week' // 'week' or 'month'
@@ -49,7 +58,7 @@ export async function GET(request: NextRequest) {
       endDate.setHours(23, 59, 59, 999)
     }
 
-    // Get classes in date range
+    // Get classes in date range - include classes where instructor is primary OR in multiple instructors list
     const { data: classes, error } = await supabase
       .from('classes')
       .select(`
@@ -67,7 +76,7 @@ export async function GET(request: NextRequest) {
         ),
         status
       `)
-      .eq('instructor_id', instructorId)
+      .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
       .gte('scheduled_at', startDate.toISOString())
       .lte('scheduled_at', endDate.toISOString())
       .order('scheduled_at', { ascending: true })
@@ -110,22 +119,30 @@ export async function GET(request: NextRequest) {
       capacity: number
     }>> = {}
 
-    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-
     for (const cls of classes || []) {
       const date = new Date(cls.scheduled_at)
-      const dayKey = view === 'month' 
-        ? date.toISOString().split('T')[0] 
-        : dayNames[date.getDay()]
+      // Always use ISO date string (YYYY-MM-DD) for grouping, regardless of view
+      const dayKey = date.toISOString().split('T')[0]
 
       if (!schedule[dayKey]) {
         schedule[dayKey] = []
       }
 
       // Get room name from joined rooms table or fall back to location
-      const roomName = (cls.rooms && Array.isArray(cls.rooms) && cls.rooms.length > 0)
-        ? cls.rooms[0].name
-        : (cls.location || null);
+      // Handle rooms join - can be array, object, or null
+      let roomName = null;
+      if (cls.rooms) {
+        if (Array.isArray(cls.rooms) && cls.rooms.length > 0) {
+          roomName = (cls.rooms[0] as any).name;
+        } else if (typeof cls.rooms === 'object' && !Array.isArray(cls.rooms) && (cls.rooms as any).name) {
+          roomName = (cls.rooms as any).name;
+        }
+      }
+      
+      // Fall back to location field if no room name found
+      if (!roomName && cls.location) {
+        roomName = cls.location;
+      }
       
       schedule[dayKey].push({
         id: cls.id,
