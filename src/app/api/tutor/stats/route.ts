@@ -28,11 +28,20 @@ export async function GET(request: NextRequest) {
     const instructorId = user.id
     const now = new Date()
 
-    // Get all classes for this instructor
+    // Get instructor's name to check for multiple instructor classes
+    const { data: instructorProfile } = await supabase
+      .from('user_profiles')
+      .select('name')
+      .eq('id', instructorId)
+      .single()
+    
+    const instructorName = instructorProfile?.name || ''
+
+    // Get all classes for this instructor - include classes where instructor is primary OR in multiple instructors list
     const { data: allClasses } = await supabase
       .from('classes')
       .select('id, class_type, scheduled_at, capacity, status')
-      .eq('instructor_id', instructorId)
+      .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
 
     const classIds = (allClasses || []).map(c => c.id)
     const totalClasses = classIds.length
@@ -139,10 +148,38 @@ export async function GET(request: NextRequest) {
       ? Math.round(((monthStudents > 0 ? Math.round((monthAttendance / monthStudents) * 100) : 0) - lastMonthAttendanceRate))
       : (monthStudents > 0 ? Math.round((monthAttendance / monthStudents) * 100) : 0) > 0 ? 100 : 0
 
-    // Calculate classes by type
-    const classesByType: Record<string, number> = {}
+    // Calculate classes by type with detailed stats
+    const classesByType: Record<string, { classes: number; students: number; attendance: number; attendanceRate: number }> = {}
+    const classTypeClassIds: Record<string, string[]> = {}
+    
     for (const cls of allClasses || []) {
-      classesByType[cls.class_type] = (classesByType[cls.class_type] || 0) + 1
+      if (!classesByType[cls.class_type]) {
+        classesByType[cls.class_type] = { classes: 0, students: 0, attendance: 0, attendanceRate: 0 }
+        classTypeClassIds[cls.class_type] = []
+      }
+      classesByType[cls.class_type].classes++
+      classTypeClassIds[cls.class_type].push(cls.id)
+    }
+
+    // Get booking stats per class type
+    for (const [type, classIds] of Object.entries(classTypeClassIds)) {
+      if (classIds.length > 0) {
+        const { data: typeBookings } = await supabase
+          .from('bookings')
+          .select('status')
+          .in('class_id', classIds)
+          .in('status', ['confirmed', 'attended'])
+
+        const typeStudents = (typeBookings || []).length
+        const typeAttendance = (typeBookings || []).filter(b => b.status === 'attended').length
+        const typeAttendanceRate = typeStudents > 0 
+          ? Math.round((typeAttendance / typeStudents) * 100) 
+          : 0
+
+        classesByType[type].students = typeStudents
+        classesByType[type].attendance = typeAttendance
+        classesByType[type].attendanceRate = typeAttendanceRate
+      }
     }
 
     // Calculate average class size
@@ -160,6 +197,92 @@ export async function GET(request: NextRequest) {
     const capacityUtilization = totalCapacity > 0
       ? Math.round((totalStudents / totalCapacity) * 100)
       : 0
+
+    // Get top students (students with most bookings)
+    const topStudents: Array<{ name: string; classes: number; attendance: number }> = []
+    if (classIds.length > 0) {
+      const { data: studentBookings } = await supabase
+        .from('bookings')
+        .select('user_id, status')
+        .in('class_id', classIds)
+        .in('status', ['confirmed', 'attended'])
+
+      // Count bookings per student
+      const studentStats: Record<string, { total: number; attended: number }> = {}
+      for (const booking of studentBookings || []) {
+        const userId = booking.user_id
+        if (!studentStats[userId]) {
+          studentStats[userId] = { total: 0, attended: 0 }
+        }
+        studentStats[userId].total++
+        if (booking.status === 'attended') {
+          studentStats[userId].attended++
+        }
+      }
+
+      // Get user profiles for student names
+      const userIds = Object.keys(studentStats)
+      let userProfiles: Record<string, string> = {}
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('user_profiles')
+          .select('id, name')
+          .in('id', userIds)
+
+        if (profiles) {
+          profiles.forEach(profile => {
+            userProfiles[profile.id] = profile.name || 'Unknown'
+          })
+        }
+      }
+
+      const sortedStudents = Object.entries(studentStats)
+        .map(([userId, stats]) => ({
+          name: userProfiles[userId] || 'Unknown',
+          classes: stats.total,
+          attendance: stats.total > 0 ? Math.round((stats.attended / stats.total) * 100) : 0
+        }))
+        .sort((a, b) => b.classes - a.classes)
+        .slice(0, 5)
+
+      topStudents.push(...sortedStudents)
+    }
+
+    // Calculate 6-month monthly performance
+    const monthlyPerformance: Array<{ month: string; classes: number; students: number; attendance: number }> = []
+    for (let i = 5; i >= 0; i--) {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1)
+      const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 23, 59, 59, 999)
+      
+      const monthClasses = (allClasses || []).filter(c => {
+        const classDate = new Date(c.scheduled_at)
+        return classDate >= monthStart && classDate <= monthEnd
+      })
+      const monthClassIds = monthClasses.map(c => c.id)
+
+      let monthStudents = 0
+      let monthAttendance = 0
+
+      if (monthClassIds.length > 0) {
+        const { data: monthBookings } = await supabase
+          .from('bookings')
+          .select('status')
+          .in('class_id', monthClassIds)
+          .in('status', ['confirmed', 'attended'])
+
+        monthStudents = (monthBookings || []).length
+        monthAttendance = (monthBookings || []).filter(b => b.status === 'attended').length
+      }
+
+      const monthName = monthDate.toLocaleDateString('en-US', { month: 'short' })
+      monthlyPerformance.push({
+        month: monthName,
+        classes: monthClasses.length,
+        students: monthStudents,
+        attendance: monthStudents > 0 ? Math.round((monthAttendance / monthStudents) * 100) : 0
+      })
+    }
 
     return NextResponse.json({
       success: true,
@@ -188,6 +311,8 @@ export async function GET(request: NextRequest) {
           attendanceRateChange,
         },
         byClassType: classesByType,
+        topStudents,
+        monthlyPerformance,
       }
     })
   } catch (error) {

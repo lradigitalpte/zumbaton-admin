@@ -42,8 +42,6 @@ export default function TutorStatsPage() {
     uniqueStudents: data?.overview?.uniqueStudents || 0,
     avgClassSize: Math.round(data?.overview?.avgClassSize || 0),
     avgAttendance: Math.round(data?.overview?.attendanceRate || 0),
-    rating: 4.9, // Not tracked in DB yet
-    totalReviews: 0, // Not tracked in DB yet
   };
 
   const changes = {
@@ -53,26 +51,18 @@ export default function TutorStatsPage() {
   };
 
   // Convert byClassType to array for display
-  const classTypeStats = Object.entries(data?.byClassType || {}).map(([type, count]) => ({
+  const classTypeStats = Object.entries(data?.byClassType || {}).map(([type, stats]: [string, any]) => ({
     type: type.charAt(0).toUpperCase() + type.slice(1),
-    classes: count as number,
-    students: 0, // Would need additional query
-    avgAttendance: stats.avgAttendance,
+    classes: stats.classes || 0,
+    students: stats.students || 0,
+    avgAttendance: stats.attendanceRate || 0,
     color: type === 'zumba' ? 'amber' : type === 'hiit' ? 'red' : type === 'dance' ? 'purple' : 'blue'
   }));
 
-  const topStudents = [
-    { name: "Top Student 1", classes: 0, attendance: 0 },
-  ];
+  const topStudents = data?.topStudents || [];
 
-  const recentReviews = [
-    { student: "Student", rating: 5, comment: "No reviews yet", date: "N/A" },
-  ];
-
-  // Monthly data - using current month stats
-  const monthlyData = [
-    { month: "This Month", classes: data?.thisMonth?.classes || 0, students: data?.thisMonth?.students || 0, attendance: data?.thisMonth?.attendanceRate || 0 },
-  ];
+  // Monthly data - from API
+  const monthlyData = data?.monthlyPerformance || [];
 
   const maxStudents = Math.max(...monthlyData.map(d => d.students), 1);
 
@@ -85,7 +75,7 @@ export default function TutorStatsPage() {
       </div>
 
       {/* Key Stats */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between mb-3">
             <div className="h-10 w-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
@@ -149,18 +139,6 @@ export default function TutorStatsPage() {
           <p className="text-sm text-gray-500 dark:text-gray-400">Avg Attendance</p>
         </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between mb-3">
-            <div className="h-10 w-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-              <svg className="h-5 w-5 text-purple-600 dark:text-purple-400" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-              </svg>
-            </div>
-            <span className="text-xs text-gray-500 dark:text-gray-400">{stats.totalReviews} reviews</span>
-          </div>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.rating}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Average Rating</p>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -207,35 +185,38 @@ export default function TutorStatsPage() {
         <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Top Students</h3>
           <div className="space-y-3">
-            {topStudents.map((student, idx) => (
-              <div key={student.name} className="flex items-center gap-3">
-                <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                  idx === 0 ? "bg-amber-100 text-amber-700" :
-                  idx === 1 ? "bg-gray-200 text-gray-700" :
-                  idx === 2 ? "bg-orange-100 text-orange-700" :
-                  "bg-gray-100 text-gray-500"
-                }`}>
-                  {idx + 1}
-                </span>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">{student.name}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{student.classes} classes</p>
+            {topStudents.length > 0 ? (
+              topStudents.map((student, idx) => (
+                <div key={`${student.name}-${idx}`} className="flex items-center gap-3">
+                  <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                    idx === 0 ? "bg-amber-100 text-amber-700" :
+                    idx === 1 ? "bg-gray-200 text-gray-700" :
+                    idx === 2 ? "bg-orange-100 text-orange-700" :
+                    "bg-gray-100 text-gray-500"
+                  }`}>
+                    {idx + 1}
+                  </span>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{student.name}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{student.classes} classes</p>
+                  </div>
+                  <span className={`text-sm font-semibold ${
+                    student.attendance >= 90 ? "text-emerald-600" :
+                    student.attendance >= 80 ? "text-amber-600" : "text-red-600"
+                  }`}>
+                    {student.attendance}%
+                  </span>
                 </div>
-                <span className={`text-sm font-semibold ${
-                  student.attendance >= 90 ? "text-emerald-600" :
-                  student.attendance >= 80 ? "text-amber-600" : "text-red-600"
-                }`}>
-                  {student.attendance}%
-                </span>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No students yet</p>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Class Type Performance */}
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
+      {/* Class Type Performance */}
+      <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Performance by Class Type</h3>
           <div className="space-y-4">
             {classTypeStats.map((type) => (
@@ -266,40 +247,6 @@ export default function TutorStatsPage() {
             ))}
           </div>
         </div>
-
-        {/* Recent Reviews */}
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Reviews</h3>
-            <div className="flex items-center gap-1">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <svg key={star} className="h-4 w-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                </svg>
-              ))}
-              <span className="ml-1 text-sm font-semibold text-gray-900 dark:text-white">{stats.rating}</span>
-            </div>
-          </div>
-          <div className="space-y-4">
-            {recentReviews.map((review, idx) => (
-              <div key={idx} className="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium text-gray-900 dark:text-white">{review.student}</span>
-                  <div className="flex items-center gap-0.5">
-                    {[...Array(review.rating)].map((_, i) => (
-                      <svg key={i} className="h-3 w-3 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                      </svg>
-                    ))}
-                  </div>
-                </div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">&ldquo;{review.comment}&rdquo;</p>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">{review.date}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

@@ -45,11 +45,6 @@ const navItems: NavItem[] = [
     path: "/tutor/schedule",
   },
   {
-    icon: <CalenderIcon />,
-    name: "My Availability",
-    path: "/tutor/availability",
-  },
-  {
     icon: <PieChartIcon />,
     name: "My Stats",
     path: "/tutor/stats",
