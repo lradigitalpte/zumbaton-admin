@@ -334,21 +334,31 @@ export async function markNoShow(params: {
       },
     })
 
-    // Send email notification
-    await sendNotification({
-      userId: booking.user_id,
-      type: 'no_show_warning',
-      channel: 'email',
-      data: {
-        user_name: userProfile?.name || 'User',
-        class_title: booking.class.title,
-        class_date: formattedDate,
-        class_time: formattedTime,
-        tokens_consumed: booking.tokens_used,
-        no_show_count: noShowCount,
-        is_flagged: userFlagged,
-      },
-    })
+    // Send email notification via web app API
+    if (userProfile?.email) {
+      const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+      const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+
+      await fetch(`${webAppUrl}/api/email/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'no-show-warning',
+          secret: emailApiSecret,
+          data: {
+            userEmail: userProfile.email,
+            userName: userProfile.name || 'User',
+            className: booking.class.title,
+            classDate: formattedDate,
+            classTime: formattedTime,
+            tokensConsumed: booking.tokens_used,
+            noShowCount,
+            isFlagged: userFlagged,
+          },
+        }),
+      })
+      console.log(`[AttendanceService] No-show warning email sent to ${userProfile.email}`)
+    }
   } catch (notificationError) {
     console.error('[AttendanceService] Error sending no-show notification:', notificationError)
   }

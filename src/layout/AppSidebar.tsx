@@ -18,6 +18,8 @@ import {
 } from "../icons/index";
 import SidebarWidget from "./SidebarWidget";
 import { useAuth } from "../context/AuthContext";
+import { isRoleAtLeast } from "../services/rbac.service";
+import type { UserRole } from "@/api/schemas";
 
 type NavItem = {
   name: string;
@@ -26,7 +28,7 @@ type NavItem = {
   subItems?: { name: string; path: string; pro?: boolean; new?: boolean }[];
 };
 
-const navItems: NavItem[] = [
+const getNavItems = (user: { role: string } | null): NavItem[] => [
   {
     icon: <GridIcon />,
     name: "Dashboard",
@@ -39,7 +41,6 @@ const navItems: NavItem[] = [
       { name: "All Classes", path: "/classes", pro: false },
       { name: "Add New Class", path: "/classes/new", pro: false },
       { name: "Rooms & Studios", path: "/rooms", pro: false },
-      { name: "Schedule", path: "/calendar", pro: false },
     ],
   },
   {
@@ -75,6 +76,7 @@ const navItems: NavItem[] = [
       { name: "Overview", path: "/reports", pro: false },
       { name: "Revenue", path: "/reports/revenue", pro: false },
       { name: "Attendance", path: "/reports/attendance", pro: false },
+      ...(user && isRoleAtLeast(user.role as UserRole, 'admin') ? [{ name: "Audits", path: "/reports/audits", pro: false }] : []),
     ],
   },
 ];
@@ -90,20 +92,13 @@ const othersItems: NavItem[] = [
       { name: "Cron Jobs", path: "/settings/cron-jobs", pro: false },
     ],
   },
-  {
-    icon: <UserCircleIcon />,
-    name: "Portals",
-    subItems: [
-      { name: "Tutor Dashboard", path: "/tutor", pro: false },
-    ],
-  },
 ];
 
 const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
   const pathname = usePathname();
   const sidebarRef = useRef<HTMLElement>(null);
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
 
   const [openSubmenu, setOpenSubmenu] = useState<{
     type: "main" | "others";
@@ -237,6 +232,8 @@ const AppSidebar: React.FC = () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [openSubmenu]);
+
+  const navItems = getNavItems(user);
 
   const renderMenuItems = (
     navItems: NavItem[],

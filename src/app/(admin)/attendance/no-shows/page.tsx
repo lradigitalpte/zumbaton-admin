@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
+import Pagination from "@/components/tables/Pagination";
 import { useAuth } from "@/context/AuthContext";
 import {
   useAttendanceIssues,
@@ -37,6 +38,73 @@ export default function NoShowsPage() {
   const resolveIssue = useResolveIssue();
 
   const issues = data?.issues || [];
+
+  // Export to CSV function
+  const handleExportReport = () => {
+    if (issues.length === 0) {
+      alert('No data to export');
+      return;
+    }
+
+    // Prepare CSV headers
+    const headers = [
+      'Member Name',
+      'Email',
+      'Phone',
+      'Class Name',
+      'Class Date',
+      'Class Time',
+      'Instructor',
+      'Issue Type',
+      'Status',
+      'No-Show Count',
+      'Token Refunded',
+      'Penalty Applied',
+      'Notes',
+      'Created At',
+      'Resolved At',
+    ];
+
+    // Convert issues to CSV rows
+    const csvRows = [
+      headers.join(','),
+      ...issues.map(issue => [
+        `"${issue.userName.replace(/"/g, '""')}"`,
+        `"${issue.userEmail.replace(/"/g, '""')}"`,
+        `"${(issue.userPhone || '').replace(/"/g, '""')}"`,
+        `"${issue.className.replace(/"/g, '""')}"`,
+        `"${issue.classDate}"`,
+        `"${issue.classTime}"`,
+        `"${issue.instructor.replace(/"/g, '""')}"`,
+        `"${getIssueTypeLabel(issue.issueType)}"`,
+        `"${issue.status}"`,
+        issue.noShowCount.toString(),
+        issue.tokenRefunded ? 'Yes' : 'No',
+        issue.penaltyApplied ? 'Yes' : 'No',
+        `"${(issue.notes || '').replace(/"/g, '""')}"`,
+        `"${new Date(issue.createdAt).toLocaleString()}"`,
+        issue.resolvedAt ? `"${new Date(issue.resolvedAt).toLocaleString()}"` : '',
+      ].join(','))
+    ];
+
+    // Create CSV content
+    const csvContent = csvRows.join('\n');
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `attendance-issues-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    URL.revokeObjectURL(url);
+  };
   const stats = data?.stats || {
     pending: 0,
     noShows: 0,
@@ -177,7 +245,11 @@ export default function NoShowsPage() {
             </svg>
             Check-In Station
           </Link>
-          <button className="flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600">
+          <button 
+            onClick={handleExportReport}
+            disabled={issues.length === 0}
+            className="flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
@@ -460,27 +532,20 @@ export default function NoShowsPage() {
         )}
 
         {/* Pagination */}
-        {pagination.total > itemsPerPage && (
+        {pagination.totalPages > 0 && (
           <div className="flex items-center justify-between border-t border-gray-200 px-6 py-4 dark:border-gray-800">
             <div className="text-sm text-gray-500 dark:text-gray-400">
-              Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, pagination.total)} of {pagination.total}
+              Showing {(currentPage - 1) * pagination.limit + 1} to {Math.min(currentPage * pagination.limit, pagination.total)} of {pagination.total}
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setCurrentPage(currentPage + 1)}
-                disabled={currentPage === pagination.totalPages}
-                className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
-              >
-                Next
-              </button>
-            </div>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={pagination.totalPages}
+              onPageChange={(page) => {
+                setCurrentPage(page);
+                // Scroll to top of table when page changes
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+            />
           </div>
         )}
       </div>

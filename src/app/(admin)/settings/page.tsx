@@ -3,10 +3,10 @@
 import { useState, useEffect } from "react";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import Input from "@/components/form/input/InputField";
-import { useSettings, useUpdateSettings, BusinessSettings, BookingSettings, TokenSettings, AppearanceSettings } from "@/hooks/useSettings";
+import { useSettings, useUpdateSettings, BusinessSettings, BookingSettings } from "@/hooks/useSettings";
 
 export default function GeneralSettingsPage() {
-  const [activeTab, setActiveTab] = useState<"business" | "booking" | "tokens" | "appearance">("business");
+  const [activeTab, setActiveTab] = useState<"business" | "booking">("business");
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const { data: settings, isLoading, error } = useSettings();
@@ -18,9 +18,9 @@ export default function GeneralSettingsPage() {
     phone: "",
     address: "",
     city: "",
-    country: "United States",
-    timezone: "America/Los_Angeles",
-    currency: "USD",
+    country: "Singapore",
+    timezone: "Asia/Singapore",
+    currency: "SGD",
     language: "en",
   });
 
@@ -34,27 +34,11 @@ export default function GeneralSettingsPage() {
     reminderHoursBefore: 2,
   });
 
-  const [tokenSettings, setTokenSettings] = useState<TokenSettings>({
-    tokenExpiryDays: 90,
-    allowTokenTransfer: false,
-    minPurchaseTokens: 1,
-    maxPurchaseTokens: 100,
-  });
-
-  const [appearance, setAppearance] = useState<AppearanceSettings>({
-    primaryColor: "#6366f1",
-    accentColor: "#10b981",
-    logoUrl: "",
-    darkModeDefault: false,
-  });
-
   // Load settings from API
   useEffect(() => {
     if (settings) {
       if (settings.business) setBusinessSettings(settings.business);
       if (settings.booking) setBookingSettings(settings.booking);
-      if (settings.tokens) setTokenSettings(settings.tokens);
-      if (settings.appearance) setAppearance(settings.appearance);
     }
   }, [settings]);
 
@@ -63,8 +47,6 @@ export default function GeneralSettingsPage() {
       await updateSettings.mutateAsync({
         business: businessSettings,
         booking: bookingSettings,
-        tokens: tokenSettings,
-        appearance: appearance,
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -82,16 +64,6 @@ export default function GeneralSettingsPage() {
     { id: "booking", label: "Booking Rules", icon: (
       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-      </svg>
-    )},
-    { id: "tokens", label: "Token System", icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    )},
-    { id: "appearance", label: "Appearance", icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
       </svg>
     )},
   ];
@@ -227,6 +199,7 @@ export default function GeneralSettingsPage() {
                       onChange={(e) => setBusinessSettings({ ...businessSettings, country: e.target.value })}
                       className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
                     >
+                      <option value="Singapore">Singapore</option>
                       <option value="United States">United States</option>
                       <option value="Canada">Canada</option>
                       <option value="United Kingdom">United Kingdom</option>
@@ -245,6 +218,7 @@ export default function GeneralSettingsPage() {
                       onChange={(e) => setBusinessSettings({ ...businessSettings, timezone: e.target.value })}
                       className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
                     >
+                      <option value="Asia/Singapore">Singapore Time (SGT)</option>
                       <option value="America/Los_Angeles">Pacific Time (PT)</option>
                       <option value="America/Denver">Mountain Time (MT)</option>
                       <option value="America/Chicago">Central Time (CT)</option>
@@ -261,6 +235,7 @@ export default function GeneralSettingsPage() {
                       onChange={(e) => setBusinessSettings({ ...businessSettings, currency: e.target.value })}
                       className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
                     >
+                      <option value="SGD">SGD (S$)</option>
                       <option value="USD">USD ($)</option>
                       <option value="EUR">EUR (E)</option>
                       <option value="GBP">GBP (#)</option>
@@ -382,176 +357,6 @@ export default function GeneralSettingsPage() {
               </div>
             )}
 
-            {/* Token System Tab */}
-            {activeTab === "tokens" && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Token System</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Configure token behavior and limits</p>
-                </div>
-
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Token Expiry (days)</label>
-                    <Input
-                      type="number"
-                      value={tokenSettings.tokenExpiryDays}
-                      onChange={(e) => setTokenSettings({ ...tokenSettings, tokenExpiryDays: Number(e.target.value) })}
-                    />
-                    <p className="mt-1 text-xs text-gray-500">Days until purchased tokens expire (0 = never)</p>
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Min Purchase Amount</label>
-                    <Input
-                      type="number"
-                      value={tokenSettings.minPurchaseTokens}
-                      onChange={(e) => setTokenSettings({ ...tokenSettings, minPurchaseTokens: Number(e.target.value) })}
-                    />
-                    <p className="mt-1 text-xs text-gray-500">Minimum tokens per purchase</p>
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Max Purchase Amount</label>
-                    <Input
-                      type="number"
-                      value={tokenSettings.maxPurchaseTokens}
-                      onChange={(e) => setTokenSettings({ ...tokenSettings, maxPurchaseTokens: Number(e.target.value) })}
-                    />
-                    <p className="mt-1 text-xs text-gray-500">Maximum tokens per purchase</p>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                  <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                    <div>
-                      <p className="font-medium text-gray-900 dark:text-white">Allow Token Transfer</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Let users transfer tokens to other users</p>
-                    </div>
-                    <button
-                      onClick={() => setTokenSettings({ ...tokenSettings, allowTokenTransfer: !tokenSettings.allowTokenTransfer })}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        tokenSettings.allowTokenTransfer ? "bg-indigo-600" : "bg-gray-300 dark:bg-gray-600"
-                      }`}
-                    >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        tokenSettings.allowTokenTransfer ? "translate-x-6" : "translate-x-1"
-                      }`} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Token Info Box */}
-                <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                  <div className="flex items-start gap-3">
-                    <svg className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <div>
-                      <p className="text-sm font-medium text-blue-800 dark:text-blue-300">Token Packages</p>
-                      <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
-                        To manage token packages and pricing, visit the <a href="/packages" className="underline hover:no-underline">Token Packages</a> page.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Appearance Tab */}
-            {activeTab === "appearance" && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Appearance</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Customize the look and feel</p>
-                </div>
-
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Primary Color</label>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="color"
-                        value={appearance.primaryColor}
-                        onChange={(e) => setAppearance({ ...appearance, primaryColor: e.target.value })}
-                        className="h-10 w-14 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer"
-                      />
-                      <Input
-                        type="text"
-                        value={appearance.primaryColor}
-                        onChange={(e) => setAppearance({ ...appearance, primaryColor: e.target.value })}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Accent Color</label>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="color"
-                        value={appearance.accentColor}
-                        onChange={(e) => setAppearance({ ...appearance, accentColor: e.target.value })}
-                        className="h-10 w-14 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer"
-                      />
-                      <Input
-                        type="text"
-                        value={appearance.accentColor}
-                        onChange={(e) => setAppearance({ ...appearance, accentColor: e.target.value })}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Logo URL</label>
-                    <Input
-                      type="text"
-                      placeholder="https://example.com/logo.png"
-                      value={appearance.logoUrl}
-                      onChange={(e) => setAppearance({ ...appearance, logoUrl: e.target.value })}
-                    />
-                    <p className="mt-1 text-xs text-gray-500">URL to your custom logo image</p>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                  <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                    <div>
-                      <p className="font-medium text-gray-900 dark:text-white">Dark Mode by Default</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Use dark theme as default for new users</p>
-                    </div>
-                    <button
-                      onClick={() => setAppearance({ ...appearance, darkModeDefault: !appearance.darkModeDefault })}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        appearance.darkModeDefault ? "bg-indigo-600" : "bg-gray-300 dark:bg-gray-600"
-                      }`}
-                    >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        appearance.darkModeDefault ? "translate-x-6" : "translate-x-1"
-                      }`} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Preview */}
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Color Preview</p>
-                  <div className="flex gap-4">
-                    <div 
-                      className="h-20 w-32 rounded-xl shadow-lg flex items-center justify-center text-white text-sm font-medium"
-                      style={{ backgroundColor: appearance.primaryColor }}
-                    >
-                      Primary
-                    </div>
-                    <div 
-                      className="h-20 w-32 rounded-xl shadow-lg flex items-center justify-center text-white text-sm font-medium"
-                      style={{ backgroundColor: appearance.accentColor }}
-                    >
-                      Accent
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Save Button */}
             <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">

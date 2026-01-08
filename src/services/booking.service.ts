@@ -157,15 +157,46 @@ export async function createBooking(params: CreateBookingParams): Promise<Bookin
       },
     })
 
-    // Send email notification
-    if (userProfile?.name) {
-      await sendBookingConfirmation(userId, {
-        userName: userProfile.name,
-        classTitle: classData.title,
-        classDate: formattedDate,
-        classTime: formattedTime,
-        classLocation: classData.location || 'TBA',
-      })
+    // Send email notification via web app email API
+    if (userProfile?.email && userProfile?.name) {
+      try {
+        const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+        const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+        
+        // Get instructor name if available
+        let instructorName: string | undefined
+        if (classData.instructor_id) {
+          const { data: instructor } = await supabase
+            .from('user_profiles')
+            .select('name')
+            .eq('id', classData.instructor_id)
+            .single()
+          instructorName = instructor?.name
+        }
+        
+        await fetch(`${webAppUrl}/api/email/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'booking-confirmation',
+            secret: emailApiSecret,
+            data: {
+              userEmail: userProfile.email,
+              userName: userProfile.name,
+              className: classData.title,
+              classDate: formattedDate,
+              classTime: formattedTime,
+              classLocation: classData.location || 'TBA',
+              tokensUsed: classData.token_cost,
+              instructorName,
+            },
+          }),
+        })
+        console.log(`[Booking] Booking confirmation email sent to ${userProfile.email}`)
+      } catch (emailError) {
+        console.error(`[Booking] Failed to send booking confirmation email to ${userProfile.email}:`, emailError)
+        // Don't fail booking if email fails
+      }
     }
 
     // Send notification to the instructor/tutor
@@ -444,15 +475,16 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
     throw new ApiError('SERVER_ERROR', 'Failed to cancel booking', 500, updateError)
   }
 
-  // 4. Send cancellation notification
+  // 4. Send cancellation notification (in-app and email)
   try {
     const { sendNotification } = await import('./notification.service')
     const { data: userProfile } = await supabase
       .from('user_profiles')
-      .select('name')
+      .select('name, email')
       .eq('id', userId)
       .single()
 
+    // In-app notification
     await sendNotification({
       userId,
       type: 'booking_cancelled',
@@ -464,6 +496,44 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
         penalty: isPenalty,
       },
     })
+
+    // Email notification via web app API
+    if (userProfile?.email && userProfile?.name) {
+      const classDate = new Date(classData.scheduled_at as string)
+      const formattedDate = classDate.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+      const formattedTime = classDate.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+
+      const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+      const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+
+      await fetch(`${webAppUrl}/api/email/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'booking-cancellation',
+          secret: emailApiSecret,
+          data: {
+            userEmail: userProfile.email,
+            userName: userProfile.name,
+            className: classData.title as string,
+            classDate: formattedDate,
+            classTime: formattedTime,
+            tokensRefunded,
+            penalty: isPenalty,
+            reason: reason || undefined,
+          },
+        }),
+      })
+      console.log(`[BookingService] Cancellation email sent to ${userProfile.email}`)
+    }
 
     // Notify the instructor/tutor about the cancellation
     if (classData.instructor_id) {

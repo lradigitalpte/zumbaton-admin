@@ -166,6 +166,29 @@ export async function listUsers(
 
   const total = count || 0
 
+  // Fetch last_sign_in_at from auth.users for all user IDs using Admin API
+  const userIds = (data || []).map((row: Record<string, unknown>) => row.id as string)
+  const lastLoginMap: Record<string, string | null> = {}
+  
+  if (userIds.length > 0) {
+    try {
+      // Use Admin API to list users and get their last_sign_in_at
+      const { data: authUsersData, error: authError } = await getSupabaseAdminClient().auth.admin.listUsers()
+      
+      if (!authError && authUsersData?.users) {
+        // Filter to only the users we need and create a map
+        for (const authUser of authUsersData.users) {
+          if (userIds.includes(authUser.id)) {
+            lastLoginMap[authUser.id] = authUser.last_sign_in_at || null
+          }
+        }
+      }
+    } catch (error) {
+      // If fetching last login fails, continue without it (non-critical)
+      console.warn('Failed to fetch last login times:', error)
+    }
+  }
+
   // Map from view data (already has stats + balances) to UserProfile with stats
   const users = (data || []).map((row: Record<string, unknown>) => {
     const profile = toUserProfile(row)
@@ -197,6 +220,7 @@ export async function listUsers(
       currentAvailableTokens: (row.current_available_tokens as number) || 0,
       totalClassesBooked: (row.total_classes_booked as number) || 0,
       totalNoShows: (row.total_no_shows as number) || 0,
+      lastLogin: lastLoginMap[row.id as string] || null,
     }
   })
 
@@ -541,7 +565,7 @@ export async function createUser(
     newValues: { email: data.email, name: data.name, role: data.role },
   })
 
-  // Send welcome notification to new user
+  // Send welcome notification to new user (in-app)
   try {
     const { sendNotification } = await import('./notification.service')
     await sendNotification({
@@ -555,6 +579,38 @@ export async function createUser(
     })
   } catch (notificationError) {
     console.error('[UserService] Error sending welcome notification:', notificationError)
+  }
+
+  // Send welcome email to new user (admin-created)
+  try {
+    // Get admin name who created the user
+    const { data: adminProfile } = await getSupabaseAdminClient()
+      .from('user_profiles')
+      .select('name')
+      .eq('id', requesterId)
+      .single()
+
+    const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+    const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+
+    await fetch(`${webAppUrl}/api/email/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'admin-created-user',
+        secret: emailApiSecret,
+        data: {
+          userEmail: data.email,
+          userName: data.name,
+          temporaryPassword: data.password, // Include password if provided
+          createdBy: adminProfile?.name,
+        },
+      }),
+    })
+    console.log(`[UserService] Admin-created user email sent to ${data.email}`)
+  } catch (emailError) {
+    console.error('[UserService] Failed to send admin-created user email:', emailError)
+    // Don't fail user creation if email fails
   }
 
   return toUserProfile(profileData)

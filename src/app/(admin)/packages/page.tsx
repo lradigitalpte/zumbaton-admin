@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
+import { useAuth } from "@/context/AuthContext";
 import { 
   usePackages, 
   useCreatePackage, 
@@ -14,6 +15,9 @@ import {
 const packageColors = ["blue", "emerald", "amber", "purple", "pink", "brand"] as const;
 
 export default function PackagesPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  
   const [showPanel, setShowPanel] = useState(false);
   const [editingPackage, setEditingPackage] = useState<PackageWithStats | null>(null);
   const [formData, setFormData] = useState({
@@ -237,15 +241,17 @@ export default function PackagesPage() {
             </button>
           </div>
 
-          <button
-            onClick={openNewPackagePanel}
-            className="flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Package
-          </button>
+          {isAdmin && (
+            <button
+              onClick={openNewPackagePanel}
+              className="flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Package
+            </button>
+          )}
         </div>
       </div>
 
@@ -408,24 +414,26 @@ export default function PackagesPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => openEditPanel(pkg)}
-                    className="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => togglePackageStatus(pkg.id, pkg.isActive)}
-                    className={`flex-1 rounded-xl px-4 py-2 text-sm font-medium ${
-                      pkg.isActive
-                        ? "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                        : "bg-emerald-500 text-white hover:bg-emerald-600"
-                    }`}
-                  >
-                    {pkg.isActive ? "Deactivate" : "Activate"}
-                  </button>
-                </div>
+                {isAdmin && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => openEditPanel(pkg)}
+                      className="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => togglePackageStatus(pkg.id, pkg.isActive)}
+                      className={`flex-1 rounded-xl px-4 py-2 text-sm font-medium ${
+                        pkg.isActive
+                          ? "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                          : "bg-emerald-500 text-white hover:bg-emerald-600"
+                      }`}
+                    >
+                      {pkg.isActive ? "Deactivate" : "Activate"}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )})}
@@ -463,9 +471,11 @@ export default function PackagesPage() {
                   <th className="whitespace-nowrap px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                     Status
                   </th>
-                  <th className="whitespace-nowrap px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Actions
-                  </th>
+                  {isAdmin && (
+                    <th className="whitespace-nowrap px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      Actions
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
@@ -520,24 +530,28 @@ export default function PackagesPage() {
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => openEditPanel(pkg)}
-                          className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => togglePackageStatus(pkg.id, pkg.isActive)}
-                          className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                            pkg.isActive
-                              ? "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
-                              : "text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
-                          }`}
-                        >
-                          {pkg.isActive ? "Deactivate" : "Activate"}
-                        </button>
-                      </div>
+                      {isAdmin ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => openEditPanel(pkg)}
+                            className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => togglePackageStatus(pkg.id, pkg.isActive)}
+                            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                              pkg.isActive
+                                ? "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                                : "text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
+                            }`}
+                          >
+                            {pkg.isActive ? "Deactivate" : "Activate"}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-400 dark:text-gray-500">—</span>
+                      )}
                     </td>
                   </tr>
                 )})}

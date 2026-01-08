@@ -360,13 +360,36 @@ export async function processWaitlistForClass(classId: string): Promise<{
           },
         })
 
-        // Send email notification
-        await sendWaitlistSpotAvailable(entry.user_id, {
-          userName: userProfile.name,
-          classTitle: classData.title,
-          classDate: formattedDate,
-          confirmUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/bookings/waitlist/${entry.id}/confirm`,
-        })
+        // Send email notification via web app API
+        const { data: userEmailData } = await supabase
+          .from('user_profiles')
+          .select('email')
+          .eq('id', entry.user_id)
+          .single()
+
+        if (userEmailData?.email) {
+          const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+          const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+          const confirmUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/bookings/waitlist/${entry.id}/confirm`
+
+          await fetch(`${webAppUrl}/api/email/send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'waitlist-promotion',
+              secret: emailApiSecret,
+              data: {
+                userEmail: userEmailData.email,
+                userName: userProfile.name,
+                className: classData.title,
+                classDate: formattedDate,
+                confirmUrl,
+                expiresIn: expiresAt ? `In ${Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60))} minutes` : undefined,
+              },
+            }),
+          })
+          console.log(`[WaitlistService] Waitlist promotion email sent to ${userEmailData.email}`)
+        }
       }
     } catch (notificationError) {
       // Log but don't fail waitlist processing if notification fails

@@ -35,3 +35,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# documentation with credentials
+*_SECRET_SETUP.md
+VERCEL_ENV_SETUP.md

@@ -63,6 +63,45 @@ async function handleResetPassword(
       newValues: { passwordReset: true },
     })
 
+    // Send email notification to user
+    try {
+      const { data: userProfile } = await supabaseAdmin
+        .from('user_profiles')
+        .select('email, name')
+        .eq('id', userId)
+        .single()
+
+      const { data: adminProfile } = await supabaseAdmin
+        .from('user_profiles')
+        .select('name')
+        .eq('id', context.user.id)
+        .single()
+
+      if (userProfile?.email && userProfile?.name) {
+        const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+        const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+
+        await fetch(`${webAppUrl}/api/email/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'password-reset',
+            secret: emailApiSecret,
+            data: {
+              userEmail: userProfile.email,
+              userName: userProfile.name,
+              newPassword: password,
+              resetBy: adminProfile?.name,
+            },
+          }),
+        })
+        console.log(`[PasswordReset] Password reset email sent to ${userProfile.email}`)
+      }
+    } catch (emailError) {
+      console.error('[PasswordReset] Failed to send password reset email:', emailError)
+      // Don't fail password reset if email fails
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Password reset successfully',

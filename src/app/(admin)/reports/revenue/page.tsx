@@ -121,7 +121,7 @@ export default function RevenueReportPage() {
   const [dateRange, setDateRange] = useState<"week" | "month" | "quarter" | "year">("month");
 
   // Fetch real data from API
-  const { data, isLoading, error } = useRevenueReport(dateRange);
+  const { data, isLoading, isFetching, error } = useRevenueReport(dateRange);
   
   // Use API data or defaults
   const summary = data?.summary || defaultSummary;
@@ -130,13 +130,119 @@ export default function RevenueReportPage() {
   const topCustomers = data?.topCustomers || [];
   const recentTransactions = data?.recentTransactions || [];
 
+  // Show loading when fetching (even if we have cached data)
+  const showLoading = isLoading || isFetching;
+
   const totalRevenue = summary.totalRevenue;
   const totalTransactions = summary.totalTransactions;
   const avgMonthlyRevenue = summary.avgMonthlyRevenue;
   const maxRevenue = monthlyRevenue.length > 0 ? Math.max(...monthlyRevenue.map(m => m.total)) : 1;
   const lastMonth = monthlyRevenue[monthlyRevenue.length - 1] || { total: 0 };
   const prevMonth = monthlyRevenue[monthlyRevenue.length - 2] || { total: 0 };
-  const growth = summary.growth.toFixed(1);
+  
+  // Format growth properly (handle edge cases)
+  const growth = isNaN(summary.growth) || !isFinite(summary.growth) 
+    ? 0 
+    : summary.growth > 1000 
+      ? 1000 
+      : summary.growth;
+
+  // Get dynamic period label
+  const getPeriodLabel = () => {
+    switch (dateRange) {
+      case 'week': return 'This week';
+      case 'quarter': return `Last ${monthlyRevenue.length} months`;
+      case 'year': return 'Last 12 months';
+      default: return `Last ${monthlyRevenue.length} months`;
+    }
+  };
+
+  // Export to CSV function
+  const handleExportReport = () => {
+    if (!data) {
+      alert('No data to export');
+      return;
+    }
+
+    // Prepare CSV content
+    const csvRows: string[] = [];
+
+    // Add header section
+    csvRows.push('Revenue Report Export');
+    csvRows.push(`Generated: ${new Date().toLocaleString()}`);
+    csvRows.push(`Date Range: ${dateRange.charAt(0).toUpperCase() + dateRange.slice(1)}`);
+    csvRows.push('');
+
+    // Summary Section
+    csvRows.push('SUMMARY');
+    csvRows.push('Metric,Value');
+    csvRows.push(`Total Revenue,$${totalRevenue.toLocaleString()}`);
+    csvRows.push(`Total Transactions,${totalTransactions}`);
+    csvRows.push(`Average Monthly Revenue,$${avgMonthlyRevenue.toLocaleString()}`);
+    csvRows.push(`Average Order Value,$${summary.avgOrderValue.toLocaleString()}`);
+    csvRows.push(`Growth,${growth.toFixed(1)}%`);
+    csvRows.push(`This Month,$${summary.thisMonth.toLocaleString()}`);
+    csvRows.push(`Last Month,$${summary.lastMonth.toLocaleString()}`);
+    csvRows.push('');
+
+    // Monthly Breakdown Section
+    csvRows.push('MONTHLY BREAKDOWN');
+    csvRows.push('Month,Packages,Classes,Total,Transactions,Avg Order');
+    monthlyRevenue.forEach(row => {
+      csvRows.push(
+        `"${row.month}",$${row.packages.toLocaleString()},$${row.classes.toLocaleString()},$${row.total.toLocaleString()},${row.transactions},$${row.avgOrder}`
+      );
+    });
+    csvRows.push('');
+
+    // Package Sales Section
+    csvRows.push('PACKAGE SALES');
+    csvRows.push('Package Name,Sales,Revenue,Percentage');
+    packageSales.forEach(pkg => {
+      csvRows.push(
+        `"${pkg.name.replace(/"/g, '""')}",${pkg.sales},$${pkg.revenue.toLocaleString()},${pkg.percentage}%`
+      );
+    });
+    csvRows.push('');
+
+    // Top Customers Section
+    csvRows.push('TOP CUSTOMERS');
+    csvRows.push('Rank,Name,Email,Purchases,Tokens,Spent');
+    topCustomers.forEach((customer, index) => {
+      csvRows.push(
+        `${index + 1},"${customer.name.replace(/"/g, '""')}","${customer.email.replace(/"/g, '""')}",${customer.purchases},${customer.tokens},$${customer.spent}`
+      );
+    });
+    csvRows.push('');
+
+    // Recent Transactions Section
+    csvRows.push('RECENT TRANSACTIONS');
+    csvRows.push('User,Package,Amount,Method,Date');
+    recentTransactions.forEach(tx => {
+      csvRows.push(
+        `"${tx.user.replace(/"/g, '""')}","${tx.package.replace(/"/g, '""')}",$${tx.amount},"${tx.method}","${formatDate(tx.date)}"`
+      );
+    });
+
+    // Create CSV content
+    const csvContent = csvRows.join('\n');
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    const rangeLabel = dateRange.charAt(0).toUpperCase() + dateRange.slice(1);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `revenue-report-${rangeLabel.toLowerCase()}-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    URL.revokeObjectURL(url);
+  };
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString("en-US", {
@@ -155,7 +261,20 @@ export default function RevenueReportPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Loading Overlay */}
+      {showLoading && data && (
+        <div className="absolute inset-0 bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm z-50 flex items-center justify-center rounded-2xl">
+          <div className="flex flex-col items-center gap-3 bg-white dark:bg-gray-800 rounded-xl shadow-lg px-6 py-4 border border-gray-200 dark:border-gray-700">
+            <svg className="h-6 w-6 animate-spin text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Loading data...</p>
+          </div>
+        </div>
+      )}
+      
       <PageBreadCrumb pageTitle="Revenue Report" />
 
       {/* Header */}
@@ -170,28 +289,48 @@ export default function RevenueReportPage() {
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Revenue Report</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Detailed financial analytics and trends
-              {isLoading && <span className="ml-2 text-emerald-500">(Loading...)</span>}
+              {showLoading && (
+                <span className="ml-2 inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                  <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Loading...
+                </span>
+              )}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
+          <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden relative">
+            {showLoading && (
+              <div className="absolute inset-0 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
+                <svg className="h-4 w-4 animate-spin text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              </div>
+            )}
             {(["week", "month", "quarter", "year"] as const).map((range) => (
               <button
                 key={range}
                 onClick={() => setDateRange(range)}
-                disabled={isLoading}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                disabled={showLoading}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors relative ${
                   dateRange === range
                     ? "bg-emerald-600 text-white"
                     : "bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                }`}
+                } ${showLoading ? "opacity-50 cursor-not-allowed" : ""}`}
               >
                 {range.charAt(0).toUpperCase() + range.slice(1)}
               </button>
             ))}
           </div>
-          <button className="inline-flex items-center gap-2 rounded-xl bg-linear-to-r from-emerald-500 to-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:shadow-xl">
+          <button 
+            onClick={handleExportReport}
+            disabled={showLoading || !data}
+            className="inline-flex items-center gap-2 rounded-xl bg-linear-to-r from-emerald-500 to-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
@@ -201,7 +340,7 @@ export default function RevenueReportPage() {
       </div>
 
       {/* Key Metrics */}
-      {isLoading ? (
+      {showLoading && !data ? (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <MetricCardSkeleton />
           <MetricCardSkeleton />
@@ -217,17 +356,19 @@ export default function RevenueReportPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-              </svg>
-              {growth}%
-            </span>
+            {growth > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                </svg>
+                {growth > 1000 ? '1000%+' : `${growth.toFixed(1)}%`}
+              </span>
+            )}
           </div>
           <div className="mt-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white">${totalRevenue.toLocaleString()}</p>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Last 7 months</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{getPeriodLabel()}</p>
           </div>
         </div>
 
@@ -242,7 +383,7 @@ export default function RevenueReportPage() {
           <div className="mt-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">Transactions</p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white">{totalTransactions}</p>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Avg ${(totalRevenue / totalTransactions).toFixed(0)}/order</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Avg ${totalTransactions > 0 ? (totalRevenue / totalTransactions).toFixed(0) : 0}/order</p>
           </div>
         </div>
 
@@ -255,9 +396,16 @@ export default function RevenueReportPage() {
             </div>
           </div>
           <div className="mt-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Avg Monthly</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {dateRange === 'week' ? 'Avg Daily' : 'Avg Monthly'}
+            </p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white">${avgMonthlyRevenue.toLocaleString()}</p>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Based on 7 months</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {dateRange === 'week' 
+                ? `Based on ${monthlyRevenue.length} ${monthlyRevenue.length === 1 ? 'day' : 'days'}`
+                : `Based on ${monthlyRevenue.length} ${monthlyRevenue.length === 1 ? 'month' : 'months'}`
+              }
+            </p>
           </div>
         </div>
 
@@ -270,16 +418,25 @@ export default function RevenueReportPage() {
             </div>
           </div>
           <div className="mt-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400">This Month</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {dateRange === 'week' ? 'This Week' : 
+               dateRange === 'quarter' ? 'This Quarter' : 
+               dateRange === 'year' ? 'This Year' : 
+               'This Month'}
+            </p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white">${lastMonth.total.toLocaleString()}</p>
-            <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">+${(lastMonth.total - prevMonth.total).toLocaleString()} vs last month</p>
+            {prevMonth.total > 0 && (
+              <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                +${(lastMonth.total - prevMonth.total).toLocaleString()} vs {dateRange === 'week' ? 'last week' : dateRange === 'quarter' ? 'last quarter' : dateRange === 'year' ? 'last year' : 'last month'}
+              </p>
+            )}
           </div>
         </div>
       </div>
       )}
 
       {/* Revenue Chart & Package Breakdown */}
-      {isLoading ? (
+      {showLoading && !data ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <ChartSkeleton />
           <ListSkeleton />
@@ -290,7 +447,9 @@ export default function RevenueReportPage() {
         <div className="lg:col-span-2 rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Monthly Revenue</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {dateRange === 'week' ? 'Daily Revenue' : 'Monthly Revenue'}
+              </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">Package sales vs class fees</p>
             </div>
             <div className="flex items-center gap-4 text-sm">
@@ -306,32 +465,46 @@ export default function RevenueReportPage() {
           </div>
 
           <div className="space-y-3">
-            {monthlyRevenue.map((data) => (
-              <div key={data.month} className="group">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-gray-600 dark:text-gray-400">{data.month}</span>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">${data.total.toLocaleString()}</span>
-                </div>
-                <div className="flex h-6 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
-                  <div 
-                    className="bg-linear-to-r from-emerald-400 to-emerald-500 transition-all duration-500 flex items-center justify-end pr-2"
-                    style={{ width: `${(data.packages / data.total) * (data.total / maxRevenue) * 100}%` }}
-                  >
-                    <span className="text-xs font-medium text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                      ${(data.packages / 1000).toFixed(1)}k
-                    </span>
+            {monthlyRevenue.map((data) => {
+              const packagesWidth = data.total > 0 ? (data.packages / maxRevenue) * 100 : 0;
+              const classesWidth = data.total > 0 ? (data.classes / maxRevenue) * 100 : 0;
+              const formatAmount = (amount: number) => {
+                if (amount === 0) return '$0';
+                if (amount >= 1000) return `$${(amount / 1000).toFixed(1)}k`;
+                return `$${amount.toLocaleString()}`;
+              };
+              
+              return (
+                <div key={data.month} className="group">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">{data.month}</span>
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white">${data.total.toLocaleString()}</span>
                   </div>
-                  <div 
-                    className="bg-linear-to-r from-blue-400 to-blue-500 transition-all duration-500 flex items-center justify-end pr-2"
-                    style={{ width: `${(data.classes / data.total) * (data.total / maxRevenue) * 100}%` }}
-                  >
-                    <span className="text-xs font-medium text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                      ${(data.classes / 1000).toFixed(1)}k
-                    </span>
+                  <div className="flex h-6 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
+                    {data.packages > 0 && (
+                      <div 
+                        className="bg-linear-to-r from-emerald-400 to-emerald-500 transition-all duration-500 flex items-center justify-end pr-2"
+                        style={{ width: `${packagesWidth}%` }}
+                      >
+                        <span className="text-xs font-medium text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                          {formatAmount(data.packages)}
+                        </span>
+                      </div>
+                    )}
+                    {data.classes > 0 && (
+                      <div 
+                        className="bg-linear-to-r from-blue-400 to-blue-500 transition-all duration-500 flex items-center justify-end pr-2"
+                        style={{ width: `${classesWidth}%` }}
+                      >
+                        <span className="text-xs font-medium text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                          {formatAmount(data.classes)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Summary */}
@@ -339,19 +512,29 @@ export default function RevenueReportPage() {
             <div className="text-center p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">
               <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Package Revenue</p>
               <p className="text-xl font-bold text-emerald-700 dark:text-emerald-300">
-                ${(monthlyRevenue.reduce((sum, d) => sum + d.packages, 0) / 1000).toFixed(1)}k
+                {(() => {
+                  const total = monthlyRevenue.reduce((sum, d) => sum + d.packages, 0);
+                  if (total === 0) return '$0';
+                  if (total >= 1000) return `$${(total / 1000).toFixed(1)}k`;
+                  return `$${total.toLocaleString()}`;
+                })()}
               </p>
             </div>
             <div className="text-center p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20">
               <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">Class Fees</p>
               <p className="text-xl font-bold text-blue-700 dark:text-blue-300">
-                ${(monthlyRevenue.reduce((sum, d) => sum + d.classes, 0) / 1000).toFixed(1)}k
+                {(() => {
+                  const total = monthlyRevenue.reduce((sum, d) => sum + d.classes, 0);
+                  if (total === 0) return '$0';
+                  if (total >= 1000) return `$${(total / 1000).toFixed(1)}k`;
+                  return `$${total.toLocaleString()}`;
+                })()}
               </p>
             </div>
             <div className="text-center p-3 rounded-xl bg-gray-100 dark:bg-gray-700">
               <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Avg Order Value</p>
               <p className="text-xl font-bold text-gray-700 dark:text-gray-300">
-                ${Math.round(monthlyRevenue.reduce((sum, d) => sum + d.avgOrder, 0) / monthlyRevenue.length)}
+                ${monthlyRevenue.length > 0 ? Math.round(monthlyRevenue.reduce((sum, d) => sum + d.avgOrder, 0) / monthlyRevenue.length) : 0}
               </p>
             </div>
           </div>
@@ -388,7 +571,7 @@ export default function RevenueReportPage() {
       )}
 
       {/* Top Customers & Recent Transactions */}
-      {isLoading ? (
+      {showLoading && !data ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <CustomerSkeleton />
           <CustomerSkeleton />
@@ -459,19 +642,25 @@ export default function RevenueReportPage() {
       )}
 
       {/* Monthly Breakdown Table */}
-      {isLoading ? (
+      {showLoading && !data ? (
         <TableSkeleton />
       ) : (
       <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Monthly Breakdown</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Detailed revenue by month</p>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            {dateRange === 'week' ? 'Daily Breakdown' : 'Monthly Breakdown'}
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {dateRange === 'week' ? 'Detailed revenue by day' : 'Detailed revenue by month'}
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800/50">
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Month</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  {dateRange === 'week' ? 'Day' : 'Month'}
+                </th>
                 <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Packages</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Classes</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Total</th>
@@ -482,8 +671,18 @@ export default function RevenueReportPage() {
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {monthlyRevenue.map((row, index) => {
-                const prevRevenue = index > 0 ? monthlyRevenue[index - 1].total : row.total;
-                const growthPct = ((row.total - prevRevenue) / prevRevenue * 100).toFixed(1);
+                const prevRevenue = index > 0 ? monthlyRevenue[index - 1].total : 0;
+                let growthPct = 0;
+                if (index > 0) {
+                  if (prevRevenue > 0) {
+                    growthPct = ((row.total - prevRevenue) / prevRevenue) * 100;
+                    // Cap at reasonable values
+                    growthPct = Math.min(growthPct, 1000);
+                  } else if (row.total > 0) {
+                    // If previous was 0 but current has revenue, show 100% growth
+                    growthPct = 100;
+                  }
+                }
                 return (
                   <tr key={row.month} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900 dark:text-white">{row.month}</td>
@@ -495,11 +694,11 @@ export default function RevenueReportPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       {index > 0 && (
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          Number(growthPct) >= 0
+                          growthPct >= 0
                             ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                             : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                         }`}>
-                          {Number(growthPct) >= 0 ? "+" : ""}{growthPct}%
+                          {growthPct >= 0 ? "+" : ""}{growthPct > 1000 ? "1000%+" : `${growthPct.toFixed(1)}%`}
                         </span>
                       )}
                     </td>
@@ -514,7 +713,7 @@ export default function RevenueReportPage() {
                 <td className="px-6 py-4 text-right text-gray-900 dark:text-white">${monthlyRevenue.reduce((sum, d) => sum + d.classes, 0).toLocaleString()}</td>
                 <td className="px-6 py-4 text-right text-emerald-600 dark:text-emerald-400">${totalRevenue.toLocaleString()}</td>
                 <td className="px-6 py-4 text-right text-gray-900 dark:text-white">{totalTransactions}</td>
-                <td className="px-6 py-4 text-right text-gray-900 dark:text-white">${Math.round(totalRevenue / totalTransactions)}</td>
+                <td className="px-6 py-4 text-right text-gray-900 dark:text-white">${totalTransactions > 0 ? Math.round(totalRevenue / totalTransactions) : 0}</td>
                 <td className="px-6 py-4 text-right"></td>
               </tr>
             </tfoot>
