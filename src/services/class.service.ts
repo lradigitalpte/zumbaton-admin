@@ -604,29 +604,75 @@ export async function cancelClass(classId: string): Promise<{
     .eq('class_id', classId)
     .eq('status', 'waiting')
 
-  // Send cancellation notifications to all affected users
+  // Send cancellation notifications to all affected users (in-app and email)
   if (refundedBookings > 0) {
     try {
       const { sendNotification } = await import('./notification.service')
       const { data: cancelledBookings } = await adminClient
         .from(TABLES.BOOKINGS)
-        .select('user_id')
+        .select('user_id, tokens_used')
         .eq('class_id', classId)
         .eq('status', 'cancelled')
 
       if (cancelledBookings) {
         const uniqueUserIds = [...new Set(cancelledBookings.map(b => b.user_id as string))]
+        const classDate = new Date(classData.scheduled_at)
+        const formattedDate = classDate.toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })
+        const formattedTime = classDate.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+        })
+
+        const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+        const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+
         for (const userId of uniqueUserIds) {
+          // In-app notification
           await sendNotification({
             userId,
             type: 'class_cancelled',
             channel: 'in_app',
             data: {
               class_title: classData.title,
-              class_date: new Date(classData.scheduled_at).toLocaleDateString(),
+              class_date: formattedDate,
               refunded: true,
             },
           })
+
+          // Email notification
+          const { data: userProfile } = await adminClient
+            .from('user_profiles')
+            .select('email, name')
+            .eq('id', userId)
+            .single()
+
+          const userBooking = cancelledBookings.find(b => b.user_id === userId)
+          const tokensRefunded = userBooking?.tokens_used || 0
+
+          if (userProfile?.email && userProfile?.name) {
+            await fetch(`${webAppUrl}/api/email/send`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'class-cancellation',
+                secret: emailApiSecret,
+                data: {
+                  userEmail: userProfile.email,
+                  userName: userProfile.name,
+                  className: classData.title,
+                  classDate: formattedDate,
+                  classTime: formattedTime,
+                  tokensRefunded,
+                },
+              }),
+            })
+            console.log(`[ClassService] Class cancellation email sent to ${userProfile.email}`)
+          }
         }
       }
     } catch (notificationError) {

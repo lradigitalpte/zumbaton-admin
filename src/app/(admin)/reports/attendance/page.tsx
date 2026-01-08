@@ -94,7 +94,7 @@ export default function AttendanceReportPage() {
   const [viewMode, setViewMode] = useState<"overview" | "classes" | "users">("overview");
 
   // Fetch real data from API
-  const { data, isLoading, error } = useAttendanceReport(dateRange);
+  const { data, isLoading, isFetching, error } = useAttendanceReport(dateRange);
   
   // Use API data or defaults
   const totals = data?.totals || defaultTotals;
@@ -104,10 +104,128 @@ export default function AttendanceReportPage() {
   const frequentNoShows = data?.frequentNoShows || [];
   const monthlyTrends = data?.monthlyTrends || [];
 
+  // Show loading when fetching (even if we have cached data)
+  const showLoading = isLoading || isFetching;
+
   const overallRate = totals.overallRate;
   const noShowRate = totals.noShowRate;
 
   const maxAttendance = weeklyData.length > 0 ? Math.max(...weeklyData.map(d => d.booked)) : 1;
+
+  // Get best and worst time slots (only consider slots with actual bookings/attendance)
+  const slotsWithData = timeSlotData.filter(slot => slot.avgAttendance > 0 || slot.rate > 0);
+  const bestTimeSlot = slotsWithData.length > 0 
+    ? slotsWithData.reduce((best, current) => {
+        // Prefer higher rate, but if rates are equal, prefer more classes
+        if (current.rate > best.rate) return current;
+        if (current.rate === best.rate && current.classes > best.classes) return current;
+        return best;
+      })
+    : null;
+  const worstTimeSlot = slotsWithData.length > 0 
+    ? slotsWithData.reduce((worst, current) => {
+        // Prefer lower rate, but if rates are equal, prefer fewer classes
+        if (current.rate < worst.rate) return current;
+        if (current.rate === worst.rate && current.classes < worst.classes) return current;
+        return worst;
+      })
+    : null;
+
+  // Export to CSV function
+  const handleExportReport = () => {
+    if (!data) {
+      alert('No data to export');
+      return;
+    }
+
+    // Prepare CSV content
+    const csvRows: string[] = [];
+
+    // Add header section
+    csvRows.push('Attendance Report Export');
+    csvRows.push(`Generated: ${new Date().toLocaleString()}`);
+    csvRows.push(`Date Range: ${dateRange.charAt(0).toUpperCase() + dateRange.slice(1)}`);
+    csvRows.push('');
+
+    // Totals Section
+    csvRows.push('TOTALS');
+    csvRows.push('Metric,Value');
+    csvRows.push(`Total Bookings,${totals.totalBooked}`);
+    csvRows.push(`Attended,${totals.totalAttended}`);
+    csvRows.push(`No-Shows,${totals.totalNoShows}`);
+    csvRows.push(`Cancelled,${totals.totalCancelled}`);
+    csvRows.push(`Attendance Rate,${totals.overallRate}%`);
+    csvRows.push(`No-Show Rate,${totals.noShowRate}%`);
+    csvRows.push('');
+
+    // Weekly Breakdown Section
+    csvRows.push('WEEKLY BREAKDOWN');
+    csvRows.push('Day,Classes,Booked,Attended,No-Shows,Cancelled,Rate');
+    weeklyData.forEach(day => {
+      csvRows.push(
+        `"${day.day}",${day.classes},${day.booked},${day.attended},${day.noShows},${day.cancelled},${day.rate}%`
+      );
+    });
+    csvRows.push('');
+
+    // Time Slot Performance Section
+    csvRows.push('TIME SLOT PERFORMANCE');
+    csvRows.push('Time Slot,Classes,Avg Attendance,Rate');
+    timeSlotData.forEach(slot => {
+      csvRows.push(
+        `"${slot.slot}",${slot.classes},${slot.avgAttendance},${slot.rate}%`
+      );
+    });
+    csvRows.push('');
+
+    // Class Performance Section
+    csvRows.push('CLASS PERFORMANCE');
+    csvRows.push('Class Name,Instructor,Total Classes,Avg Attendance,Capacity,Fill Rate,No-Show Rate');
+    classPerformance.forEach(cls => {
+      csvRows.push(
+        `"${cls.name.replace(/"/g, '""')}","${cls.instructor.replace(/"/g, '""')}",${cls.totalClasses},${cls.avgAttendance},${cls.capacity},${cls.rate}%,${cls.noShowRate}%`
+      );
+    });
+    csvRows.push('');
+
+    // Frequent No-Shows Section
+    csvRows.push('FREQUENT NO-SHOWS');
+    csvRows.push('Name,Email,No-Shows,Total Bookings,Rate,Last No-Show');
+    frequentNoShows.forEach(user => {
+      csvRows.push(
+        `"${user.name.replace(/"/g, '""')}","${user.email.replace(/"/g, '""')}",${user.noShows},${user.totalBookings},${user.rate}%,"${user.lastNoShow}"`
+      );
+    });
+    csvRows.push('');
+
+    // Monthly Trends Section
+    csvRows.push('MONTHLY TRENDS');
+    csvRows.push('Month,Attended,No-Shows,Cancelled,Rate');
+    monthlyTrends.forEach(month => {
+      csvRows.push(
+        `"${month.month}",${month.attendance},${month.noShows},${month.cancellations},${month.rate}%`
+      );
+    });
+
+    // Create CSV content
+    const csvContent = csvRows.join('\n');
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    const rangeLabel = dateRange.charAt(0).toUpperCase() + dateRange.slice(1);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `attendance-report-${rangeLabel.toLowerCase()}-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    URL.revokeObjectURL(url);
+  };
 
   const getInitials = (name: string) => name.split(" ").map(n => n[0]).join("").toUpperCase();
   
@@ -131,7 +249,20 @@ export default function AttendanceReportPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Loading Overlay */}
+      {showLoading && data && (
+        <div className="absolute inset-0 bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm z-50 flex items-center justify-center rounded-2xl">
+          <div className="flex flex-col items-center gap-3 bg-white dark:bg-gray-800 rounded-xl shadow-lg px-6 py-4 border border-gray-200 dark:border-gray-700">
+            <svg className="h-6 w-6 animate-spin text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Loading data...</p>
+          </div>
+        </div>
+      )}
+      
       <PageBreadCrumb pageTitle="Attendance Report" />
 
       {/* Header */}
@@ -146,28 +277,48 @@ export default function AttendanceReportPage() {
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Attendance Report</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Class attendance analytics and patterns
-              {isLoading && <span className="ml-2 text-blue-500">(Loading...)</span>}
+              {showLoading && (
+                <span className="ml-2 inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                  <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Loading...
+                </span>
+              )}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
+          <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden relative">
+            {showLoading && (
+              <div className="absolute inset-0 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
+                <svg className="h-4 w-4 animate-spin text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              </div>
+            )}
             {(["week", "month", "quarter", "year"] as const).map((range) => (
               <button
                 key={range}
                 onClick={() => setDateRange(range)}
-                disabled={isLoading}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                disabled={showLoading}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors relative ${
                   dateRange === range
                     ? "bg-blue-600 text-white"
                     : "bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                } ${isLoading ? "opacity-50 cursor-not-allowed" : ""}`}
+                } ${showLoading ? "opacity-50 cursor-not-allowed" : ""}`}
               >
                 {range.charAt(0).toUpperCase() + range.slice(1)}
               </button>
             ))}
           </div>
-          <button className="inline-flex items-center gap-2 rounded-xl bg-linear-to-r from-blue-500 to-cyan-600 px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:shadow-xl">
+          <button 
+            onClick={handleExportReport}
+            disabled={showLoading || !data}
+            className="inline-flex items-center gap-2 rounded-xl bg-linear-to-r from-blue-500 to-cyan-600 px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
@@ -177,7 +328,7 @@ export default function AttendanceReportPage() {
       </div>
 
       {/* Key Metrics */}
-      {isLoading ? (
+      {showLoading && !data ? (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           {[...Array(5)].map((_, i) => <MetricCardSkeleton key={i} />)}
         </div>
@@ -279,7 +430,7 @@ export default function AttendanceReportPage() {
       {viewMode === "overview" && (
         <>
           {/* Weekly Breakdown & Time Slots */}
-          {isLoading ? (
+          {showLoading && !data ? (
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               <ChartSkeleton />
               <ListSkeleton />
@@ -353,39 +504,53 @@ export default function AttendanceReportPage() {
             <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Peak Times</h3>
               <div className="space-y-3">
-                {timeSlotData.slice(0, 6).map((slot) => (
-                  <div key={slot.slot} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-16 text-sm font-medium text-gray-600 dark:text-gray-400">{slot.slot}</div>
-                      <div className="flex -space-x-1">
-                        {[...Array(Math.min(slot.classes, 4))].map((_, i) => (
-                          <div key={i} className="h-2 w-2 rounded-full bg-blue-400 border border-white dark:border-gray-800"></div>
-                        ))}
-                        {slot.classes > 4 && (
-                          <span className="text-xs text-gray-400 ml-1">+{slot.classes - 4}</span>
-                        )}
+                {timeSlotData.length === 0 ? (
+                  <div className="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
+                    No time slot data available for the selected period
+                  </div>
+                ) : (
+                  timeSlotData.slice(0, 6).map((slot) => (
+                    <div key={slot.slot} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className="w-24 text-sm font-medium text-gray-600 dark:text-gray-400">{slot.slot}</div>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {slot.classes} {slot.classes === 1 ? 'class' : 'classes'}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className={`text-sm font-semibold ${getRateColor(slot.rate)}`}>{slot.rate}%</span>
+                        <p className="text-xs text-gray-400">avg {slot.avgAttendance} per class</p>
                       </div>
                     </div>
-                    <span className={`text-sm font-semibold ${getRateColor(slot.rate)}`}>{slot.rate}%</span>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
-              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">Best time</span>
-                  <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">5:00 PM - 93%</span>
+              {timeSlotData.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  {bestTimeSlot && bestTimeSlot.rate > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">Best time</span>
+                      <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                        {bestTimeSlot.slot} - {bestTimeSlot.rate}%
+                      </span>
+                    </div>
+                  )}
+                  {worstTimeSlot && worstTimeSlot.rate < (bestTimeSlot?.rate || 100) && worstTimeSlot.rate >= 0 && (
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">Needs improvement</span>
+                      <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">
+                        {worstTimeSlot.slot} - {worstTimeSlot.rate}%
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center justify-between mt-2">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">Needs improvement</span>
-                  <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">6:00 AM - 86%</span>
-                </div>
-              </div>
+              )}
             </div>
           </div>
           )}
 
           {/* Monthly Trends */}
-          {isLoading ? (
+          {showLoading && !data ? (
             <TableSkeleton />
           ) : (
           <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
@@ -405,7 +570,7 @@ export default function AttendanceReportPage() {
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                   {monthlyTrends.map((month, index) => (
                     <tr key={month.month} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                      <td className="py-3 font-medium text-gray-900 dark:text-white">{month.month} 2024</td>
+                      <td className="py-3 font-medium text-gray-900 dark:text-white">{month.month} {month.year || new Date().getFullYear()}</td>
                       <td className="py-3 text-right text-emerald-600 dark:text-emerald-400 font-semibold">{month.attendance.toLocaleString()}</td>
                       <td className="py-3 text-right text-red-500">{month.noShows}</td>
                       <td className="py-3 text-right text-amber-500">{month.cancellations}</td>
@@ -433,7 +598,7 @@ export default function AttendanceReportPage() {
       )}
 
       {viewMode === "classes" && (
-        isLoading ? (
+        showLoading && !data ? (
           <TableSkeleton />
         ) : (
         <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
@@ -491,14 +656,19 @@ export default function AttendanceReportPage() {
       )}
 
       {viewMode === "users" && (
-        isLoading ? (
+        showLoading && !data ? (
           <TableSkeleton />
         ) : (
         <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Frequent No-Shows</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Users with highest no-show rates</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Users with highest no-show rates ({dateRange === 'week' ? 'this week' : 
+                dateRange === 'quarter' ? 'this quarter' : 
+                dateRange === 'year' ? 'this year' : 
+                'this month'})
+              </p>
             </div>
             <button className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400">Export list</button>
           </div>
@@ -538,20 +708,6 @@ export default function AttendanceReportPage() {
                 </button>
               </div>
             ))}
-          </div>
-          <div className="mt-6 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-            <div className="flex items-start gap-3">
-              <svg className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <div>
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Recommendation</p>
-                <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                  Consider implementing a warning system for users with no-show rates above 25%. 
-                  You may also want to require prepaid bookings for repeat offenders.
-                </p>
-              </div>
-            </div>
           </div>
         </div>
         )

@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createPackage, listPackagesWithStats, updatePackage, deactivatePackage } from '@/services/package.service'
 import { CreatePackageRequestSchema, PackageListQuerySchema, UpdatePackageRequestSchema } from '@/api/schemas'
 import { ApiError } from '@/lib/api-error'
+import { getAuthenticatedUser } from '@/middleware/rbac'
 
 // GET /api/packages - List all packages with stats
 export async function GET(request: NextRequest) {
@@ -38,6 +39,24 @@ export async function GET(request: NextRequest) {
 // POST /api/packages - Create a new package
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication and role
+    const user = await getAuthenticatedUser(request)
+    
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+        { status: 401 }
+      )
+    }
+
+    // Only admin and super_admin can create packages
+    if (!['admin', 'super_admin'].includes(user.role)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Only administrators can create packages' } },
+        { status: 403 }
+      )
+    }
+
     const body = await request.json()
 
     // Validate request body
@@ -58,6 +77,24 @@ export async function POST(request: NextRequest) {
 // PATCH /api/packages - Update a package
 export async function PATCH(request: NextRequest) {
   try {
+    // Check authentication and role
+    const user = await getAuthenticatedUser(request)
+    
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+        { status: 401 }
+      )
+    }
+
+    // Only admin and super_admin can update packages
+    if (!['admin', 'super_admin'].includes(user.role)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Only administrators can update packages' } },
+        { status: 403 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     
@@ -91,6 +128,24 @@ export async function PATCH(request: NextRequest) {
 // DELETE /api/packages - Deactivate a package (soft delete)
 export async function DELETE(request: NextRequest) {
   try {
+    // Check authentication and role
+    const user = await getAuthenticatedUser(request)
+    
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+        { status: 401 }
+      )
+    }
+
+    // Only admin and super_admin can deactivate packages
+    if (!['admin', 'super_admin'].includes(user.role)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Only administrators can deactivate packages' } },
+        { status: 403 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     

@@ -1,61 +1,99 @@
-# Admin Scripts
+# SMTP Test Script
 
-## Create Super Admin User
+This script tests your Gmail/Google Workspace SMTP configuration to verify it's working correctly.
 
-This script creates the first super_admin user for the admin dashboard.
+## Installation
 
-### Prerequisites
-
-1. Make sure you have run the database schema (`supabase/schema.sql`) in your Supabase SQL Editor
-2. Set up your `.env.local` file with Supabase credentials:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `SUPABASE_SERVICE_ROLE_KEY` (required - get this from Supabase Dashboard > Settings > API)
-
-### Usage
-
-#### Option 1: Run with default values
+First, install the required dependency:
 
 ```bash
-node scripts/create-super-admin.js
+cd zumbaton-admin
+npm install
 ```
 
-This will create a super_admin user with:
-- Email: `admin@zumbaton.com`
-- Password: `Admin@12345!`
-- Name: `Super Admin`
+## Usage
 
-#### Option 2: Run with custom values
+### Option 1: Interactive Mode (Recommended)
+
+Run the script and it will prompt you for the password and email:
 
 ```bash
-ADMIN_EMAIL=your-email@zumbaton.com ADMIN_PASSWORD=YourSecurePassword123! ADMIN_NAME="Your Name" node scripts/create-super-admin.js
+node scripts/test-smtp.js
 ```
 
-### What the script does
+The script will:
+1. Ask for your SMTP password (app-specific password from Google)
+2. Ask for the test email address to send to
+3. Test SMTP connection on port 587 (TLS)
+4. If that fails, test port 465 (SSL)
+5. Send a test email
 
-1. Checks if a user with the email already exists
-2. Creates a new auth user in Supabase Auth (if needed)
-3. Creates/updates the user profile with `super_admin` role
-4. Creates notification preferences
-5. Creates user stats record
+### Option 2: Environment Variables
 
-### Security Notes
+You can also set the password and email as environment variables:
 
-- The script requires the `SUPABASE_SERVICE_ROLE_KEY` which bypasses RLS
-- **IMPORTANT**: Change the default password after first login
-- Only run this script once to create the initial super_admin
-- Future admin users should be created through the admin dashboard by the super_admin
+**Windows (PowerShell):**
+```powershell
+$env:SMTP_PASSWORD="your_app_specific_password"
+$env:TEST_EMAIL="your-email@example.com"
+node scripts/test-smtp.js
+```
 
-### Troubleshooting
+**Windows (CMD):**
+```cmd
+set SMTP_PASSWORD=your_app_specific_password
+set TEST_EMAIL=your-email@example.com
+node scripts/test-smtp.js
+```
 
-**Error: Missing Supabase environment variables**
-- Make sure `.env.local` exists and has the correct values
-- The script looks for `.env.local` in the project root
+**Mac/Linux:**
+```bash
+SMTP_PASSWORD="your_app_specific_password" TEST_EMAIL="your-email@example.com" node scripts/test-smtp.js
+```
 
-**Error: Failed to create auth user**
-- Check that `SUPABASE_SERVICE_ROLE_KEY` is correct
-- Verify the Supabase project is active
+## What the Script Tests
 
-**Error: Failed to create/update profile**
-- Make sure the database schema has been run
-- Check that RLS policies allow service role inserts (should be handled by SECURITY DEFINER functions)
+1. **SMTP Connection**: Verifies you can connect to `smtp.gmail.com`
+2. **Authentication**: Tests your credentials (username and app-specific password)
+3. **Email Sending**: Actually sends a test email to verify everything works
 
+## Expected Output
+
+### Success:
+```
+✅ SUCCESS! SMTP is working correctly on port 587 (TLS)
+
+📧 Check your inbox at: your-email@example.com
+   (Also check spam folder if not in inbox)
+```
+
+### Failure:
+The script will show detailed error messages and suggest fixes.
+
+## Troubleshooting
+
+If the test fails:
+
+1. **"Authentication failed"**
+   - Make sure you're using an **app-specific password**, not your regular Gmail password
+   - Generate a new app-specific password: https://myaccount.google.com/apppasswords
+   - Remove spaces when entering the password
+
+2. **"Connection timeout"**
+   - Check your firewall settings
+   - Try port 465 (SSL) instead of 587 (TLS)
+
+3. **"Invalid credentials"**
+   - Verify 2-Step Verification is enabled on your Google account
+   - Regenerate the app-specific password
+
+## Notes
+
+- The script uses the same SMTP settings as Supabase:
+  - Host: `smtp.gmail.com`
+  - Username: `hello@zumbaton.sg`
+  - Port: 587 (TLS) or 465 (SSL)
+
+- If this script works, your Supabase SMTP configuration should work too!
+
+- The password you enter is only used for testing and is not saved anywhere.

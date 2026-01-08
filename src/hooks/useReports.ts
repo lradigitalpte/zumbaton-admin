@@ -4,6 +4,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query'
+import { api } from '@/lib/api-client'
 
 // Types
 export interface ReportStats {
@@ -26,6 +27,7 @@ export interface ReportStats {
 
 export interface MonthlyData {
   month: string
+  year?: number
   revenue: number
   attendance: number
   newUsers: number
@@ -166,6 +168,7 @@ export interface FrequentNoShow {
 
 export interface MonthlyTrend {
   month: string
+  year?: number
   attendance: number
   noShows: number
   cancellations: number
@@ -179,6 +182,40 @@ export interface AttendanceReportData {
   classPerformance: ClassPerformance[]
   frequentNoShows: FrequentNoShow[]
   monthlyTrends: MonthlyTrend[]
+}
+
+// Audits types
+export interface AuditLog {
+  id: string
+  userId: string | null
+  userName: string
+  userEmail: string | null
+  userRole: string | null
+  action: string
+  resourceType: string
+  resourceId: string | null
+  oldValues: Record<string, unknown> | null
+  newValues: Record<string, unknown> | null
+  ipAddress: string | null
+  userAgent: string | null
+  createdAt: string
+}
+
+export interface AuditStats {
+  totalLogs: number
+  todayLogs: number
+  uniqueUsers: number
+  uniqueActions: number
+  uniqueResources: number
+}
+
+export interface AuditReportData {
+  logs: AuditLog[]
+  stats: AuditStats
+  total: number
+  page: number
+  pageSize: number
+  hasMore: boolean
 }
 
 type DateRange = 'week' | 'month' | 'quarter' | 'year'
@@ -220,12 +257,63 @@ async function fetchAttendanceReport(range: DateRange): Promise<AttendanceReport
   return json.data
 }
 
+async function fetchAuditReport(params: {
+  action?: string
+  resourceType?: string
+  startDate?: string
+  endDate?: string
+  search?: string
+  page?: number
+  pageSize?: number
+}): Promise<AuditReportData> {
+  const queryParams = new URLSearchParams()
+  if (params.action) queryParams.append('action', params.action)
+  if (params.resourceType) queryParams.append('resourceType', params.resourceType)
+  if (params.startDate) queryParams.append('startDate', params.startDate)
+  if (params.endDate) queryParams.append('endDate', params.endDate)
+  if (params.search) queryParams.append('search', params.search)
+  if (params.page) queryParams.append('page', params.page.toString())
+  if (params.pageSize) queryParams.append('pageSize', params.pageSize.toString())
+
+  const queryString = queryParams.toString()
+  const url = `/api/reports/audits${queryString ? `?${queryString}` : ''}`
+  
+  const response = await api.get<{ 
+    success: boolean
+    data: AuditReportData 
+  }>(url)
+  
+  if (response.error) {
+    if (response.error.code === 'FORBIDDEN' || response.error.code === 'UNAUTHORIZED') {
+      throw new Error(response.error.message || 'You do not have permission to view audit logs')
+    }
+    throw new Error(response.error.message || 'Failed to fetch audit report')
+  }
+  
+  return response.data?.data || {
+    logs: [],
+    stats: {
+      totalLogs: 0,
+      todayLogs: 0,
+      uniqueUsers: 0,
+      uniqueActions: 0,
+      uniqueResources: 0,
+    },
+    total: 0,
+    page: 1,
+    pageSize: 50,
+    hasMore: false,
+  }
+}
+
 // Hooks
 export function useReportsOverview(range: DateRange = 'month') {
   return useQuery({
     queryKey: ['reports', 'overview', range],
     queryFn: () => fetchReportsOverview(range),
     // Uses global 30-minute staleTime from react-query.tsx
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -234,6 +322,8 @@ export function useRevenueReport(range: DateRange = 'month') {
     queryKey: ['reports', 'revenue', range],
     queryFn: () => fetchRevenueReport(range),
     // Uses global 30-minute staleTime from react-query.tsx
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -241,6 +331,24 @@ export function useAttendanceReport(range: DateRange = 'month') {
   return useQuery({
     queryKey: ['reports', 'attendance', range],
     queryFn: () => fetchAttendanceReport(range),
+    // Uses global 30-minute staleTime from react-query.tsx
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
+  })
+}
+
+export function useAuditReport(params: {
+  action?: string
+  resourceType?: string
+  startDate?: string
+  endDate?: string
+  search?: string
+  page?: number
+  pageSize?: number
+} = {}) {
+  return useQuery({
+    queryKey: ['reports', 'audits', params],
+    queryFn: () => fetchAuditReport(params),
     // Uses global 30-minute staleTime from react-query.tsx
   })
 }

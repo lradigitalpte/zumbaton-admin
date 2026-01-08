@@ -48,12 +48,12 @@ INSERT INTO system_settings (setting_type, settings_data) VALUES
   ('business', '{
     "businessName": "Zumbathon Fitness Studio",
     "email": "hello@zumbathon.com",
-    "phone": "+1 (555) 123-4567",
-    "address": "123 Fitness Street",
-    "city": "Los Angeles, CA 90001",
-    "country": "United States",
-    "timezone": "America/Los_Angeles",
-    "currency": "USD",
+    "phone": "+65 6123 4567",
+    "address": "123 Orchard Road",
+    "city": "Singapore 238855",
+    "country": "Singapore",
+    "timezone": "Asia/Singapore",
+    "currency": "SGD",
     "language": "en"
   }'::jsonb),
   ('booking', '{

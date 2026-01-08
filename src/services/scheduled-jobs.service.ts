@@ -223,17 +223,30 @@ export async function sendTokenExpiryWarnings(): Promise<JobResult> {
             },
           })
 
-          // Send email notification
-          await sendNotification({
-            userId: pkg.user_id,
-            type: 'package_expiring',
-            channel: 'email',
-            data: {
-              user_name: user.name,
-              tokens_remaining: pkg.tokens_remaining,
-              expires_at: formattedDate,
-            },
-          })
+          // Send email notification via web app email API
+          try {
+            const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+            const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+            
+            await fetch(`${webAppUrl}/api/email/send`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'token-expiry',
+                secret: emailApiSecret,
+                data: {
+                  userEmail: user.email,
+                  userName: user.name,
+                  tokensRemaining: pkg.tokens_remaining,
+                  expiresAt: pkg.expires_at,
+                },
+              }),
+            })
+            console.log(`[Scheduled Jobs] Token expiry email sent to ${user.email}`)
+          } catch (emailError) {
+            console.error(`[Scheduled Jobs] Failed to send token expiry email to ${user.email}:`, emailError)
+            // Continue even if email fails
+          }
 
           notificationsSent++
         }
@@ -252,20 +265,20 @@ export async function sendClassReminders(): Promise<JobResult> {
   return runJob('sendClassReminders', async () => {
     const { supabase, TABLES } = await import('@/lib/supabase')
 
-    // Find classes starting in 2 hours
-    const twoHoursFromNow = new Date()
-    twoHoursFromNow.setHours(twoHoursFromNow.getHours() + 2)
-    const twoHoursAndFifteenMins = new Date()
-    twoHoursAndFifteenMins.setHours(twoHoursAndFifteenMins.getHours() + 2)
-    twoHoursAndFifteenMins.setMinutes(twoHoursAndFifteenMins.getMinutes() + 15)
+    // Find classes starting in 3 hours
+    const threeHoursFromNow = new Date()
+    threeHoursFromNow.setHours(threeHoursFromNow.getHours() + 3)
+    const threeHoursAndFifteenMins = new Date()
+    threeHoursAndFifteenMins.setHours(threeHoursAndFifteenMins.getHours() + 3)
+    threeHoursAndFifteenMins.setMinutes(threeHoursAndFifteenMins.getMinutes() + 15)
 
-    // Get classes in the 2h-2h15m window with instructor info
+    // Get classes in the 3h-3h15m window with instructor info
     const { data: upcomingClasses } = await supabase
       .from(TABLES.CLASSES)
       .select('id, title, scheduled_at, instructor_id, location')
       .eq('status', 'scheduled')
-      .gte('scheduled_at', twoHoursFromNow.toISOString())
-      .lt('scheduled_at', twoHoursAndFifteenMins.toISOString())
+      .gte('scheduled_at', threeHoursFromNow.toISOString())
+      .lt('scheduled_at', threeHoursAndFifteenMins.toISOString())
 
     let studentRemindersSent = 0
     let tutorRemindersSent = 0
@@ -314,7 +327,7 @@ export async function sendClassReminders(): Promise<JobResult> {
                 class_time: formattedTime,
                 class_location: classData.location || 'TBA',
                 booked_count: bookedCount || 0,
-                message: `Your class "${classData.title}" starts in 2 hours at ${formattedTime}. ${bookedCount || 0} student(s) booked.`,
+                message: `Your class "${classData.title}" starts in 3 hours at ${formattedTime}. ${bookedCount || 0} student(s) booked.`,
               },
             })
             tutorRemindersSent++
@@ -353,13 +366,44 @@ export async function sendClassReminders(): Promise<JobResult> {
               },
             })
 
-            // Send push notification (email reminder)
-            await sendBookingReminder(booking.user_id, {
-              userName: user.name,
-              classTitle: classData.title,
-              classTime: formattedTime,
-              classLocation: classData.location || 'TBA',
-            })
+            // Send email reminder via web app email API
+            try {
+              const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+              const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+              
+              // Get instructor name if available
+              let instructorName: string | undefined
+              if (classData.instructor_id) {
+                const { data: instructor } = await supabase
+                  .from('user_profiles')
+                  .select('name')
+                  .eq('id', classData.instructor_id)
+                  .single()
+                instructorName = instructor?.name
+              }
+              
+              await fetch(`${webAppUrl}/api/email/send`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  type: 'class-reminder',
+                  secret: emailApiSecret,
+                  data: {
+                    userEmail: user.email,
+                    userName: user.name,
+                    className: classData.title,
+                    classDate: formattedDate,
+                    classTime: formattedTime,
+                    classLocation: classData.location || 'TBA',
+                    instructorName,
+                  },
+                }),
+              })
+              console.log(`[Scheduled Jobs] Class reminder email sent to ${user.email}`)
+            } catch (emailError) {
+              console.error(`[Scheduled Jobs] Failed to send class reminder email to ${user.email}:`, emailError)
+              // Continue even if email fails
+            }
 
             studentRemindersSent++
           }

@@ -290,15 +290,31 @@ export async function POST(request: NextRequest) {
     // Get the booking
     const { data: booking, error: bookingError } = await adminClient
       .from(TABLES.BOOKINGS)
-      .select('*, user:user_profiles!bookings_user_id_fkey(name)')
+      .select('*')
       .eq('id', bookingId)
       .single()
 
     if (bookingError || !booking) {
+      console.error('[AttendanceIssues] Booking lookup error:', bookingError)
+      console.error('[AttendanceIssues] Booking ID:', bookingId)
       return NextResponse.json(
         { error: 'Booking not found' },
         { status: 404 }
       )
+    }
+
+    // Get user profile separately
+    let userName = 'Unknown User'
+    if (booking.user_id) {
+      const { data: userProfile } = await adminClient
+        .from(TABLES.USER_PROFILES)
+        .select('name')
+        .eq('id', booking.user_id)
+        .single()
+      
+      if (userProfile) {
+        userName = userProfile.name || 'Unknown User'
+      }
     }
 
     // Determine issue status and actions
@@ -360,52 +376,61 @@ export async function POST(request: NextRequest) {
 
     // If excusing, refund the token
     if (action === 'excuse' && booking.user_package_id) {
-      // Refund token by adding back to user_package
-      const { error: refundError } = await adminClient
+      // Get current token balance
+      const { data: pkg, error: pkgError } = await adminClient
         .from(TABLES.USER_PACKAGES)
         .select('tokens_remaining')
         .eq('id', booking.user_package_id)
         .single()
-        .then(async ({ data: pkg }) => {
-          if (pkg) {
-            return adminClient
-              .from(TABLES.USER_PACKAGES)
-              .update({ 
-                tokens_remaining: pkg.tokens_remaining + booking.tokens_used,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', booking.user_package_id)
+
+      if (pkgError) {
+        console.error('[AttendanceIssues] Error fetching user package:', pkgError)
+      } else if (pkg) {
+        // Refund token by adding back to user_package
+        const { error: refundError } = await adminClient
+          .from(TABLES.USER_PACKAGES)
+          .update({ 
+            tokens_remaining: pkg.tokens_remaining + (booking.tokens_used || 1),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', booking.user_package_id)
+
+        if (refundError) {
+          console.error('[AttendanceIssues] Error refunding token:', refundError)
+        } else {
+          // Create token transaction for audit
+          const tokensRefunded = booking.tokens_used || 1
+          const tokensBefore = pkg.tokens_remaining
+          const tokensAfter = pkg.tokens_remaining + tokensRefunded
+          
+          const { error: transactionError } = await adminClient
+            .from(TABLES.TOKEN_TRANSACTIONS)
+            .insert({
+              user_id: booking.user_id,
+              user_package_id: booking.user_package_id,
+              booking_id: bookingId,
+              transaction_type: 'refund',
+              tokens_change: tokensRefunded,
+              tokens_before: tokensBefore,
+              tokens_after: tokensAfter,
+              description: `Token refunded - issue excused: ${notes || 'No reason provided'}`,
+              performed_by: resolvedBy,
+            })
+
+          if (transactionError) {
+            console.error('[AttendanceIssues] Error creating transaction record:', transactionError)
           }
-          return { error: null }
-        })
-
-      if (refundError) {
-        console.error('[AttendanceIssues] Error refunding token:', refundError)
+        }
       }
-
-      // Create token transaction for audit
-      await adminClient
-        .from(TABLES.TOKEN_TRANSACTIONS)
-        .insert({
-          user_id: booking.user_id,
-          user_package_id: booking.user_package_id,
-          booking_id: bookingId,
-          transaction_type: 'refund',
-          tokens_change: booking.tokens_used,
-          description: `Token refunded - issue excused: ${notes || 'No reason provided'}`,
-          performed_by: resolvedBy,
-        })
     }
-
-    const user = booking.user as { name: string } | null
 
     return NextResponse.json({
       success: true,
       message: action === 'excuse' 
-        ? `Issue excused and ${booking.tokens_used} token(s) refunded to ${user?.name || 'user'}`
+        ? `Issue excused and ${booking.tokens_used} token(s) refunded to ${userName}`
         : action === 'penalize'
-        ? `Issue marked as penalized for ${user?.name || 'user'}`
-        : `Issue resolved for ${user?.name || 'user'}`,
+        ? `Issue marked as penalized for ${userName}`
+        : `Issue resolved for ${userName}`,
       issue: {
         bookingId,
         status: issueStatus,

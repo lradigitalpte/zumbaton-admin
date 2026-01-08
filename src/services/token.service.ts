@@ -559,6 +559,48 @@ export async function adminAdjustTokens(params: {
     console.log('[TokenService] Existing package updated, balance:', newBalance)
   }
 
+  // Send email notification to user about token adjustment
+  try {
+    const { data: userProfile } = await adminClient
+      .from('user_profiles')
+      .select('email, name')
+      .eq('id', userId)
+      .single()
+
+    if (userProfile?.email && userProfile?.name) {
+      // Get admin name who performed the adjustment
+      const { data: adminProfile } = await adminClient
+        .from('user_profiles')
+        .select('name')
+        .eq('id', performedBy)
+        .single()
+
+      const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+      const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+
+      await fetch(`${webAppUrl}/api/email/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'token-adjustment',
+          secret: emailApiSecret,
+          data: {
+            userEmail: userProfile.email,
+            userName: userProfile.name,
+            tokensChange,
+            newBalance,
+            reason,
+            adjustedBy: adminProfile?.name,
+          },
+        }),
+      })
+      console.log(`[TokenService] Token adjustment email sent to ${userProfile.email}`)
+    }
+  } catch (emailError) {
+    console.error('[TokenService] Failed to send token adjustment email:', emailError)
+    // Don't fail token adjustment if email fails
+  }
+
   return {
     success: true,
     userPackageId: targetPackageId!,

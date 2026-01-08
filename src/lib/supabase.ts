@@ -97,6 +97,7 @@ export const TABLES = {
   WAITLIST: 'waitlist',
   ATTENDANCE_ISSUES: 'attendance_issues',
   PAYMENTS: 'payments',
+  AUDIT_LOGS: 'audit_logs',
 } as const
 
 // Supabase error codes

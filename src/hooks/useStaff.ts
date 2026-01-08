@@ -69,7 +69,7 @@ async function fetchStaff(filters: UseStaffQueryParams): Promise<StaffMember[]> 
       avatarUrl: member.avatarUrl,
       createdAt: member.createdAt,
       updatedAt: member.updatedAt,
-      lastLogin: undefined, // TODO: Fetch from auth.users last_sign_in_at
+      lastLogin: member.lastLogin || undefined,
     }))
 
   return internalStaff

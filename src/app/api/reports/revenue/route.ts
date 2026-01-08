@@ -37,8 +37,8 @@ export async function GET(request: NextRequest) {
         monthsToShow = 7
     }
 
-    // Get monthly revenue data
-    const monthlyRevenue = await getMonthlyRevenue(supabase, monthsToShow)
+    // Get monthly revenue data (pass range to filter properly)
+    const monthlyRevenue = await getMonthlyRevenue(supabase, range, rangeStart, now)
     
     // Get package sales breakdown
     const packageSales = await getPackageSales(supabase, rangeStart)
@@ -49,17 +49,24 @@ export async function GET(request: NextRequest) {
     // Get recent transactions
     const recentTransactions = await getRecentTransactions(supabase)
 
-    // Calculate totals
+    // Calculate totals (only for periods in the selected range)
     const totalRevenue = monthlyRevenue.reduce((sum, m) => sum + m.total, 0)
     const totalTransactions = monthlyRevenue.reduce((sum, m) => sum + m.transactions, 0)
-    const avgMonthlyRevenue = monthsToShow > 0 ? Math.round(totalRevenue / monthsToShow) : 0
+    // For week range, calculate average per day; for others, average per month
+    const avgMonthlyRevenue = monthlyRevenue.length > 0 ? Math.round(totalRevenue / monthlyRevenue.length) : 0
     
-    // Calculate growth
+    // Calculate growth (handle edge cases properly)
     const lastMonth = monthlyRevenue[monthlyRevenue.length - 1]
     const prevMonth = monthlyRevenue[monthlyRevenue.length - 2]
-    const growth = prevMonth && prevMonth.total > 0
-      ? ((lastMonth.total - prevMonth.total) / prevMonth.total * 100).toFixed(1)
-      : '0'
+    let growth = 0
+    if (prevMonth && prevMonth.total > 0 && lastMonth) {
+      growth = ((lastMonth.total - prevMonth.total) / prevMonth.total) * 100
+      // Cap at reasonable values
+      growth = Math.min(growth, 1000)
+    } else if (lastMonth && lastMonth.total > 0 && (!prevMonth || prevMonth.total === 0)) {
+      // If previous was 0 but current has revenue, show 100% growth
+      growth = 100
+    }
 
     return NextResponse.json({
       success: true,
@@ -90,36 +97,133 @@ export async function GET(request: NextRequest) {
 
 async function getMonthlyRevenue(
   supabase: ReturnType<typeof getSupabaseAdminClient>,
-  monthsToShow: number
+  range: string,
+  rangeStart: Date,
+  now: Date
 ) {
   const months = []
-  const now = new Date()
   
-  for (let i = monthsToShow - 1; i >= 0; i--) {
-    const date = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const nextMonth = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
+  // Determine which months to show based on range
+  let monthsToShow: Array<{ month: number; year: number }> = []
+  
+  if (range === 'week') {
+    // For week, show daily breakdown for the last 7 days
+    // We'll return daily data instead of monthly
+    const days = []
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000)
+      const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+      const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
+      
+      // Only include if within range
+      if (dayStart >= rangeStart) {
+        // Get payments for this day
+        const { data: payments } = await supabase
+          .from(TABLES.PAYMENTS)
+          .select('id, amount_cents, package_id')
+          .gte('created_at', dayStart.toISOString())
+          .lte('created_at', dayEnd.toISOString())
+          .eq('status', 'succeeded')
+        
+        const total = (payments || []).reduce((sum, p) => sum + (p.amount_cents || 0), 0) / 100
+        const transactions = (payments || []).length
+        
+        let packagesRevenue = 0
+        let classesRevenue = 0
+        
+        for (const payment of payments || []) {
+          const amount = (payment.amount_cents || 0) / 100
+          if (payment.package_id) {
+            packagesRevenue += amount
+          } else {
+            classesRevenue += amount
+          }
+        }
+        
+        const dayName = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        days.push({
+          month: dayName,
+          packages: Math.round(packagesRevenue),
+          classes: Math.round(classesRevenue),
+          total: Math.round(total),
+          transactions,
+          avgOrder: transactions > 0 ? Math.round(total / transactions) : 0,
+        })
+      }
+    }
+    return days
+  } else if (range === 'quarter') {
+    // For quarter, show the 3 months in the quarter
+    const quarterStart = Math.floor(now.getMonth() / 3) * 3
+    for (let i = 0; i < 3; i++) {
+      monthsToShow.push({ month: quarterStart + i, year: now.getFullYear() })
+    }
+  } else if (range === 'year') {
+    // For year, show all 12 months
+    for (let i = 0; i < 12; i++) {
+      monthsToShow.push({ month: i, year: now.getFullYear() })
+    }
+  } else {
+    // For month, show last 7 months for context
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      monthsToShow.push({ month: date.getMonth(), year: date.getFullYear() })
+    }
+  }
+  
+  for (const { month, year } of monthsToShow) {
+    const date = new Date(year, month, 1)
+    const nextMonth = new Date(year, month + 1, 1)
+    const monthEnd = nextMonth > now ? now : nextMonth
+    
+    // Only include data if it's within the selected range
+    if (date < rangeStart && nextMonth <= rangeStart) {
+      // Skip months completely before the range
+      continue
+    }
     
     const monthName = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     
-    // Get payments for this month
+    // Calculate the actual date range for this month within the selected range
+    const monthStartDate = date >= rangeStart ? date : rangeStart
+    const monthEndDate = monthEnd
+    
+    // Get payments for this month (within range)
     const { data: payments } = await supabase
       .from(TABLES.PAYMENTS)
       .select('id, amount_cents, package_id')
-      .gte('created_at', date.toISOString())
-      .lt('created_at', nextMonth.toISOString())
+      .gte('created_at', monthStartDate.toISOString())
+      .lt('created_at', monthEndDate.toISOString())
       .eq('status', 'succeeded')
     
     const total = (payments || []).reduce((sum, p) => sum + (p.amount_cents || 0), 0) / 100
     const transactions = (payments || []).length
     
-    // Estimate package vs class revenue (could be more sophisticated)
-    const packagesRevenue = Math.round(total * 0.9) // 90% from packages
-    const classesRevenue = Math.round(total * 0.1) // 10% from drop-in classes
+    // Get actual package vs class revenue from payment data
+    // For now, estimate based on package_id presence
+    // If package_id exists, it's package revenue, otherwise class fee
+    let packagesRevenue = 0
+    let classesRevenue = 0
+    
+    for (const payment of payments || []) {
+      const amount = (payment.amount_cents || 0) / 100
+      if (payment.package_id) {
+        packagesRevenue += amount
+      } else {
+        classesRevenue += amount
+      }
+    }
+    
+    // If no package_id data, use estimation
+    if (packagesRevenue === 0 && classesRevenue === 0 && total > 0) {
+      packagesRevenue = Math.round(total * 0.9)
+      classesRevenue = Math.round(total * 0.1)
+    }
     
     months.push({
       month: monthName,
-      packages: packagesRevenue,
-      classes: classesRevenue,
+      packages: Math.round(packagesRevenue),
+      classes: Math.round(classesRevenue),
       total: Math.round(total),
       transactions,
       avgOrder: transactions > 0 ? Math.round(total / transactions) : 0,

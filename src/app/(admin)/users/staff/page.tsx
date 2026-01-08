@@ -208,18 +208,34 @@ export default function StaffManagementPage() {
     };
   }, [staffMembers]);
 
-  const formatLastLogin = (date: string | undefined) => {
+  const formatLastLogin = (date: string | null | undefined) => {
     if (!date) return "Never";
-    const now = new Date();
-    const loginDate = new Date(date);
-    const diffMs = now.getTime() - loginDate.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
+    try {
+      const now = new Date();
+      const loginDate = new Date(date);
+      const diffMs = now.getTime() - loginDate.getTime();
+      
+      // Handle invalid dates or future dates
+      if (isNaN(diffMs) || diffMs < 0) return "Never";
+      
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMins / 60);
+      const diffDays = Math.floor(diffHours / 24);
 
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    return `${diffDays}d ago`;
+      if (diffMins < 1) return "Just now";
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffDays < 7) return `${diffDays}d ago`;
+      
+      // For longer periods, show the date
+      return loginDate.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: loginDate.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+      });
+    } catch {
+      return "Never";
+    }
   };
 
   const handleCreateStaff = async () => {
