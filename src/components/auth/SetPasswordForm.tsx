@@ -23,13 +23,43 @@ export default function SetPasswordForm() {
   // Check if we have a valid password reset token
   useEffect(() => {
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      // If there's a token in the URL or a session, we're good
-      const token = searchParams.get('token');
-      if (token || session) {
-        setIsValidToken(true);
-      } else {
+      try {
+        // Check for hash fragments (Supabase recovery links use hash fragments)
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = hashParams.get("access_token");
+        const type = hashParams.get("type");
+        
+        // Check for query params (alternative format)
+        const token = searchParams.get('token');
+        const typeParam = searchParams.get('type');
+        
+        // If we have a recovery token in hash or query, exchange it for a session
+        if ((accessToken && type === 'recovery') || (token && typeParam === 'recovery')) {
+          if (accessToken) {
+            // Exchange hash token for session
+            const { data: { session }, error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: hashParams.get("refresh_token") || '',
+            });
+            
+            if (session && !error) {
+              setIsValidToken(true);
+              return;
+            }
+          }
+        }
+        
+        // Check existing session
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        // If there's a token in the URL or a session, we're good
+        if (token || session) {
+          setIsValidToken(true);
+        } else {
+          setIsValidToken(false);
+        }
+      } catch (error) {
+        console.error('Error checking session:', error);
         setIsValidToken(false);
       }
     };

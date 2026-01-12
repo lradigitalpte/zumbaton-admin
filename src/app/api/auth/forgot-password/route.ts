@@ -33,9 +33,16 @@ export async function POST(request: NextRequest) {
     const { email } = parseResult.data
 
     // Get the base URL for the redirect link
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
-                   process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 
-                   'http://localhost:3000'
+    // Always use production domain for production emails (unless explicitly overridden)
+    // For development, use localhost or the configured URL
+    const isDevelopment = process.env.NODE_ENV === 'development' || 
+                         process.env.NEXT_PUBLIC_APP_URL?.includes('localhost') ||
+                         process.env.NEXT_PUBLIC_APP_URL?.includes('vercel.app')
+    
+    const baseUrl = isDevelopment
+      ? (process.env.NEXT_PUBLIC_APP_URL ||
+         (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'))
+      : (process.env.NEXT_PUBLIC_APP_URL || 'https://admin.zumbaton.sg')
     
     // Construct the redirect URL - this should point to your set-password page
     const redirectTo = `${baseUrl}/set-password`
