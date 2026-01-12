@@ -15,7 +15,8 @@ export async function sendAdminEmail(
   data: Record<string, unknown>
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
-    const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+    const { getWebAppUrl } = await import('./email-url')
+    const webAppUrl = getWebAppUrl()
     const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
 
     const response = await fetch(`${webAppUrl}/api/email/send`, {
