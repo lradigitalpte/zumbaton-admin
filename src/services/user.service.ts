@@ -582,36 +582,54 @@ export async function createUser(
   }
 
   // Send welcome email to new user (admin-created)
-  try {
-    // Get admin name who created the user
-    const { data: adminProfile } = await getSupabaseAdminClient()
-      .from('user_profiles')
-      .select('name')
-      .eq('id', requesterId)
-      .single()
+  // Use fire-and-forget to avoid blocking user creation if email service is slow
+  ;(async () => {
+    try {
+      // Get admin name who created the user
+      const { data: adminProfile } = await getSupabaseAdminClient()
+        .from('user_profiles')
+        .select('name')
+        .eq('id', requesterId)
+        .single()
 
-    const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
-    const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+      const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+      const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
 
-    await fetch(`${webAppUrl}/api/email/send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'admin-created-user',
-        secret: emailApiSecret,
-        data: {
-          userEmail: data.email,
-          userName: data.name,
-          temporaryPassword: data.password, // Include password if provided
-          createdBy: adminProfile?.name,
-        },
-      }),
-    })
-    console.log(`[UserService] Admin-created user email sent to ${data.email}`)
-  } catch (emailError) {
-    console.error('[UserService] Failed to send admin-created user email:', emailError)
-    // Don't fail user creation if email fails
-  }
+      // Add timeout to prevent hanging
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+
+      try {
+        await fetch(`${webAppUrl}/api/email/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'admin-created-user',
+            secret: emailApiSecret,
+            data: {
+              userEmail: data.email,
+              userName: data.name,
+              temporaryPassword: data.password, // Include password if provided
+              createdBy: adminProfile?.name,
+            },
+          }),
+          signal: controller.signal,
+        })
+        clearTimeout(timeoutId)
+        console.log(`[UserService] Admin-created user email sent to ${data.email}`)
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId)
+        if (fetchError.name === 'AbortError') {
+          console.warn(`[UserService] Email sending timeout for ${data.email}`)
+        } else {
+          throw fetchError
+        }
+      }
+    } catch (emailError) {
+      console.error('[UserService] Failed to send admin-created user email:', emailError)
+      // Don't fail user creation if email fails
+    }
+  })()
 
   return toUserProfile(profileData)
 }
