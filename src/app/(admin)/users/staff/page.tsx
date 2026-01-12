@@ -12,6 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api-client";
 import { useStaff, useInvalidateStaff, type StaffRole, type StaffMember } from "@/hooks/useStaff";
 import { RefreshCw } from "lucide-react";
+import { useToast } from "@/components/ui/Toast";
 
 // Skeleton Components
 const StatCardSkeleton = () => (
@@ -165,6 +166,8 @@ export default function StaffManagementPage() {
   
   // Separate state for form/create errors
   const [createError, setCreateError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const toast = useToast();
 
   const [newStaff, setNewStaff] = useState({
     name: "",
@@ -172,7 +175,6 @@ export default function StaffManagementPage() {
     phone: "",
     role: "receptionist" as StaffRole,
     password: "",
-    sendInvite: true,
   });
 
   // Manual refresh function - invalidates cache and refetches
@@ -239,14 +241,20 @@ export default function StaffManagementPage() {
   };
 
   const handleCreateStaff = async () => {
-    if (!newStaff.name || !newStaff.email || (!newStaff.password && !newStaff.sendInvite)) {
+    if (!newStaff.name || !newStaff.email || !newStaff.password) {
       setCreateError("Please fill in all required fields");
       return;
     }
 
-    try {
-      setCreateError(null);
+    if (newStaff.password.length < 8) {
+      setCreateError("Password must be at least 8 characters");
+      return;
+    }
 
+    setIsCreating(true);
+    setCreateError(null);
+
+    try {
       const response = await api.post<{ data: any }>("/api/users", {
         name: newStaff.name,
         email: newStaff.email,
@@ -259,22 +267,30 @@ export default function StaffManagementPage() {
         throw new Error(response.error.message || "Failed to create staff member");
       }
 
-      // Reset form and refresh cache
+      // Show success message
+      const staffName = newStaff.name;
+      toast.showToast(`Staff member "${staffName}" created successfully! An email with their credentials has been sent to ${newStaff.email}.`, "success");
+
+      // Reset form and close modal
       setNewStaff({
         name: "",
         email: "",
         phone: "",
         role: "receptionist",
         password: "",
-        sendInvite: true,
       });
       setShowCreatePanel(false);
+      setCreateError(null);
+      
       // Invalidate and refetch staff list to show new member
       invalidateAll();
       refetch();
     } catch (err: any) {
       setCreateError(err.message || "Failed to create staff member");
       console.error("Error creating staff:", err);
+      toast.showToast(err.message || "Failed to create staff member", "error");
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -601,33 +617,18 @@ export default function StaffManagementPage() {
 
           <div>
             <Label htmlFor="password">
-              {newStaff.sendInvite ? "Temporary Password (optional)" : "Password"} <span className="text-error-500">*</span>
+              Temporary Password <span className="text-error-500">*</span>
             </Label>
             <Input
               id="password"
               type="password"
-              placeholder={newStaff.sendInvite ? "Leave empty to send invite email" : "Enter password"}
+              placeholder="Enter temporary password (min 8 characters)"
               value={newStaff.password}
               onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })}
             />
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {newStaff.sendInvite
-                ? "If left empty, an invitation email will be sent to set up their password"
-                : "Minimum 8 characters"}
+              Minimum 8 characters. An email with these credentials will be sent to the staff member. They can change their password after signing in.
             </p>
-          </div>
-
-          <div className="flex items-center gap-3 p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-            <input
-              type="checkbox"
-              id="sendInvite"
-              checked={newStaff.sendInvite}
-              onChange={(e) => setNewStaff({ ...newStaff, sendInvite: e.target.checked })}
-              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <label htmlFor="sendInvite" className="text-sm text-gray-700 dark:text-gray-300">
-              Send email invitation to set up password
-            </label>
           </div>
 
           <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -644,9 +645,9 @@ export default function StaffManagementPage() {
             <Button
               onClick={handleCreateStaff}
               className="flex-1"
-              disabled={!newStaff.name || !newStaff.email}
+              disabled={!newStaff.name || !newStaff.email || !newStaff.password || newStaff.password.length < 8 || isCreating}
             >
-              Create Staff Member
+              {isCreating ? "Creating..." : "Create Staff Member"}
             </Button>
           </div>
         </div>
