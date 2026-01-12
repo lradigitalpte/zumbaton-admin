@@ -225,7 +225,8 @@ export async function sendTokenExpiryWarnings(): Promise<JobResult> {
 
           // Send email notification via web app email API
           try {
-            const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+            const { getWebAppUrl } = await import('@/lib/email-url')
+            const webAppUrl = getWebAppUrl()
             const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
             
             await fetch(`${webAppUrl}/api/email/send`, {
@@ -368,7 +369,8 @@ export async function sendClassReminders(): Promise<JobResult> {
 
             // Send email reminder via web app email API
             try {
-              const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+              const { getWebAppUrl } = await import('@/lib/email-url')
+              const webAppUrl = getWebAppUrl()
               const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
               
               // Get instructor name if available

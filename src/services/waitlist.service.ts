@@ -368,7 +368,8 @@ export async function processWaitlistForClass(classId: string): Promise<{
           .single()
 
         if (userEmailData?.email) {
-          const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+          const { getWebAppUrl } = await import('@/lib/email-url')
+          const webAppUrl = getWebAppUrl()
           const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
           const confirmUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/bookings/waitlist/${entry.id}/confirm`
 

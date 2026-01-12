@@ -103,7 +103,8 @@ export async function POST(request: NextRequest) {
 
     // Send email using the web app's custom email service
     try {
-      const webAppUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || 'http://localhost:3000'
+      const { getWebAppUrl } = await import('@/lib/email-url')
+      const webAppUrl = getWebAppUrl()
       const emailApiSecret = process.env.EMAIL_API_SECRET || process.env.NEXT_PUBLIC_EMAIL_API_SECRET || 'change-me-in-production'
 
       const emailResponse = await fetch(`${webAppUrl}/api/email/send`, {
