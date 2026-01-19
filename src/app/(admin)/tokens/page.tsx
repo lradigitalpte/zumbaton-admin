@@ -473,9 +473,17 @@ export default function TokenTransactionsPage() {
                     {/* User */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className={`flex h-9 w-9 items-center justify-center rounded-full ${getAvatarColor(tx.userName)} text-white text-sm font-semibold`}>
-                          {getInitials(tx.userName)}
-                        </div>
+                        {tx.userAvatar ? (
+                          <img
+                            src={tx.userAvatar}
+                            alt={tx.userName}
+                            className="h-9 w-9 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className={`flex h-9 w-9 items-center justify-center rounded-full ${getAvatarColor(tx.userName)} text-white text-sm font-semibold`}>
+                            {getInitials(tx.userName)}
+                          </div>
+                        )}
                         <div>
                           <p className="font-medium text-gray-900 dark:text-white text-sm">
                             {tx.userName}
@@ -696,9 +704,17 @@ export default function TokenTransactionsPage() {
 
               {/* User Info */}
               <div className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${getAvatarColor(selectedTransaction.userName)} text-white font-semibold`}>
-                  {getInitials(selectedTransaction.userName)}
-                </div>
+                {selectedTransaction.userAvatar ? (
+                  <img
+                    src={selectedTransaction.userAvatar}
+                    alt={selectedTransaction.userName}
+                    className="h-12 w-12 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-full ${getAvatarColor(selectedTransaction.userName)} text-white font-semibold`}>
+                    {getInitials(selectedTransaction.userName)}
+                  </div>
+                )}
                 <div>
                   <p className="font-medium text-gray-900 dark:text-white">{selectedTransaction.userName}</p>
                   <p className="text-sm text-gray-500 dark:text-gray-400">{selectedTransaction.userEmail}</p>

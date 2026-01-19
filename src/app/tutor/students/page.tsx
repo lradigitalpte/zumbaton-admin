@@ -169,9 +169,17 @@ export default function TutorStudentsPage() {
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-full bg-linear-to-br from-amber-500 to-orange-600 flex items-center justify-center text-lg font-bold text-white">
-                    {student.name.split(" ").map(n => n[0]).join("")}
-                  </div>
+                  {student.avatar_url ? (
+                    <img
+                      src={student.avatar_url}
+                      alt={student.name}
+                      className="h-12 w-12 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="h-12 w-12 rounded-full bg-linear-to-br from-amber-500 to-orange-600 flex items-center justify-center text-lg font-bold text-white">
+                      {student.name.split(" ").map(n => n[0]).join("")}
+                    </div>
+                  )}
                   <div>
                     <p className="font-semibold text-gray-900 dark:text-white">{student.name}</p>
                     <p className="text-sm text-gray-500 dark:text-gray-400">{student.email}</p>
@@ -219,9 +227,17 @@ export default function TutorStudentsPage() {
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-4">
-                  <div className="h-16 w-16 rounded-full bg-linear-to-br from-amber-500 to-orange-600 flex items-center justify-center text-2xl font-bold text-white">
-                    {selectedStudent.name.split(" ").map(n => n[0]).join("")}
-                  </div>
+                  {selectedStudent.avatar_url ? (
+                    <img
+                      src={selectedStudent.avatar_url}
+                      alt={selectedStudent.name}
+                      className="h-16 w-16 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="h-16 w-16 rounded-full bg-linear-to-br from-amber-500 to-orange-600 flex items-center justify-center text-2xl font-bold text-white">
+                      {selectedStudent.name.split(" ").map(n => n[0]).join("")}
+                    </div>
+                  )}
                   <div>
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedStudent.name}</h2>
                     <p className="text-sm text-gray-500 dark:text-gray-400">Member since {new Date(selectedStudent.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}</p>

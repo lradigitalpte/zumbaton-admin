@@ -35,11 +35,52 @@ const ERROR_CODES = {
   USER_NOT_FOUND: 'USER_NOT_FOUND',
   CLASS_CANCELLED: 'CLASS_CANCELLED',
   CLASS_FULL: 'CLASS_FULL',
+  RATE_LIMITED: 'RATE_LIMITED',
+}
+
+// Simple in-memory rate limiting (for production, use Redis)
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const RATE_LIMIT_MAX_REQUESTS = 50; // Max 50 requests per IP per window
+
+function checkRateLimit(ip: string): { allowed: boolean; resetTime?: number } {
+  const now = Date.now();
+  const key = `qr_checkin:${ip}`;
+  
+  const current = rateLimitMap.get(key);
+  
+  if (!current || now > current.resetTime) {
+    // First request or window expired
+    rateLimitMap.set(key, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+    return { allowed: true };
+  }
+  
+  if (current.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return { allowed: false, resetTime: current.resetTime };
+  }
+  
+  current.count++;
+  return { allowed: true };
 }
 
 // POST /api/attendance/qr-check-in - Check in via QR code
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting check
+    const clientIp = (request as any).ip || request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+    const rateLimit = checkRateLimit(clientIp);
+    
+    if (!rateLimit.allowed) {
+      const resetInMinutes = rateLimit.resetTime ? Math.ceil((rateLimit.resetTime - Date.now()) / 1000 / 60) : 15;
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: ERROR_CODES.RATE_LIMITED,
+          message: `Too many check-in attempts. Please wait ${resetInMinutes} minutes before trying again.`,
+        },
+      }, { status: 429 });
+    }
+
     const body = await request.json()
     
     // Validate request body

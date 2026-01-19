@@ -75,16 +75,16 @@ export async function GET(request: NextRequest) {
     const userIds = [...new Set((transactions || []).map((t: { user_id: string }) => t.user_id))]
     
     // Fetch user profiles for all users in transactions
-    let userProfiles: Record<string, { name: string | null; email: string | null }> = {}
+    let userProfiles: Record<string, { name: string | null; email: string | null; avatar_url: string | null }> = {}
     if (userIds.length > 0) {
       const { data: profiles } = await adminClient
         .from(TABLES.USER_PROFILES)
-        .select('id, name, email')
+        .select('id, name, email, avatar_url')
         .in('id', userIds)
 
       if (profiles) {
-        userProfiles = profiles.reduce((acc: Record<string, { name: string | null; email: string | null }>, p: { id: string; name: string | null; email: string | null }) => {
-          acc[p.id] = { name: p.name, email: p.email }
+        userProfiles = profiles.reduce((acc: Record<string, { name: string | null; email: string | null; avatar_url: string | null }>, p: { id: string; name: string | null; email: string | null; avatar_url: string | null }) => {
+          acc[p.id] = { name: p.name, email: p.email, avatar_url: p.avatar_url }
           return acc
         }, {})
       }
@@ -110,6 +110,7 @@ export async function GET(request: NextRequest) {
         userId: t.user_id,
         userName: profile.name || 'Unknown User',
         userEmail: profile.email || '',
+        userAvatar: profile.avatar_url || null,
         userPackageId: t.user_package_id,
         bookingId: t.booking_id,
         type: t.transaction_type,

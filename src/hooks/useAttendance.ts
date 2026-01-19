@@ -10,6 +10,7 @@ export interface Attendee {
   name: string
   email: string
   phone: string | null
+  avatarUrl: string | null
   bookingId: string
   status: 'pending' | 'checked-in' | 'no-show'
   checkedInAt: string | null

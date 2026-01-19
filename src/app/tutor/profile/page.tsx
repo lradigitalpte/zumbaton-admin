@@ -1,18 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTutorProfile, updateTutorProfile, changePassword } from "@/hooks/useTutor";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
 import Input from "@/components/form/input/InputField";
 
 export default function TutorProfilePage() {
   const { data, isLoading, error } = useTutorProfile();
   const queryClient = useQueryClient();
+
+
   
   const [activeTab, setActiveTab] = useState<"profile" | "security" | "sessions">("profile");
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [profile, setProfile] = useState({
     firstName: "",
@@ -21,6 +26,7 @@ export default function TutorProfilePage() {
     phone: "",
     role: "",
     bio: "",
+    avatar: "",
   });
 
   const [passwords, setPasswords] = useState({
@@ -39,6 +45,7 @@ export default function TutorProfilePage() {
         phone: data.profile.phone || "",
         role: data.profile.role || "",
         bio: data.profile.bio || "",
+        avatar: data.profile.avatarUrl || "",
       });
     }
   }, [data]);
@@ -66,7 +73,13 @@ export default function TutorProfilePage() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await updateProfileMutation.mutateAsync(profile);
+      await updateProfileMutation.mutateAsync({
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        phone: profile.phone,
+        bio: profile.bio,
+        avatarUrl: profile.avatar || null,
+      });
     } finally {
       setIsSaving(false);
     }
@@ -89,6 +102,74 @@ export default function TutorProfilePage() {
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      alert('Invalid file type. Please upload a JPEG, PNG, WebP, or GIF image.');
+      return;
+    }
+
+    // Validate file size (5MB max)
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      alert('File too large. Maximum file size is 5MB.');
+      return;
+    }
+
+    try {
+      setIsUploadingAvatar(true);
+      
+      // Create form data
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Get session token for upload
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        alert('Please sign in to upload avatar');
+        return;
+      }
+
+      const response = await fetch('/api/profile/upload-avatar', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        alert(errorData.error?.message || 'Failed to upload avatar');
+        return;
+      }
+
+      const data = await response.json();
+      if (data.success && data.data?.avatarUrl) {
+        // Update profile state with new avatar
+        setProfile(prev => ({ ...prev, avatar: data.data.avatarUrl }));
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+        // Invalidate profile query to refresh
+        queryClient.invalidateQueries({ queryKey: ['tutor', 'profile'] });
+      }
+    } catch (error) {
+      console.error('Avatar upload error:', error);
+      alert('Failed to upload avatar');
+    } finally {
+      setIsUploadingAvatar(false);
+      // Reset input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -170,16 +251,42 @@ export default function TutorProfilePage() {
           {/* Profile Card */}
           <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center dark:border-gray-700 dark:bg-gray-800">
             <div className="relative mx-auto h-24 w-24 mb-4">
-              <div className="h-24 w-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white shadow-lg">
-                {profile.firstName[0]}{profile.lastName[0]}
-              </div>
-              <button className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-white shadow-lg border border-gray-200 dark:border-gray-600 dark:bg-gray-700 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">
-                <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+              {profile.avatar ? (
+                <img
+                  src={profile.avatar}
+                  alt={`${profile.firstName} ${profile.lastName}`}
+                  className="h-24 w-24 rounded-full object-cover shadow-lg"
+                />
+              ) : (
+                <div className="h-24 w-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white shadow-lg">
+                  {profile.firstName[0]}{profile.lastName[0]}
+                </div>
+              )}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingAvatar}
+                className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-white shadow-lg border border-gray-200 dark:border-gray-600 dark:bg-gray-700 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isUploadingAvatar ? (
+                  <svg className="h-4 w-4 animate-spin text-gray-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                )}
               </button>
             </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleAvatarChange}
+              className="hidden"
+            />
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{profile.firstName} {profile.lastName}</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">{profile.role}</p>
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{profile.email}</p>
