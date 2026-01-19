@@ -32,11 +32,24 @@ export default function QRCodeDisplay({
   const [countdown, setCountdown] = useState(refreshInterval);
   const [currentToken, setCurrentToken] = useState("");
 
-  // Generate a random token
+  // Generate a cryptographically secure token
   const generateToken = useCallback(() => {
+    // Use crypto.randomUUID for better security
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID().replace(/-/g, '');
+    }
+    
+    // Fallback for older browsers - use crypto.getRandomValues
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      const array = new Uint8Array(16);
+      crypto.getRandomValues(array);
+      return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+    }
+    
+    // Last resort fallback (less secure)
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     let token = "";
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 32; i++) { // Longer token for better security
       token += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return token;

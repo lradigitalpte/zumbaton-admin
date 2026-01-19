@@ -99,26 +99,11 @@ export async function checkEarlyBirdEligibility(userId: string): Promise<{
     }
   }
 
-  // Check if user has already used early bird discount
-  const { data: promoUsage } = await supabase
-    .from('promo_usage')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('promo_type', 'early_bird')
-    .limit(1)
-    .single()
-
-  if (promoUsage) {
-    // Already used
-    return {
-      eligible: false,
-      discountPercent: 0,
-    }
-  }
-
+  // Early bird promo: 10% for first N users, valid for 2 months after granted
+  // Users can use this discount multiple times during the validity period
   return {
     eligible: true,
-    discountPercent: 15, // 15% discount
+    discountPercent: 10, // Updated to match web app
   }
 }
 

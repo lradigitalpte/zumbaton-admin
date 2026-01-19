@@ -37,13 +37,25 @@ export default function SetPasswordForm() {
         if ((accessToken && type === 'recovery') || (token && typeParam === 'recovery')) {
           if (accessToken) {
             // Exchange hash token for session
+            const refreshToken = hashParams.get("refresh_token") || '';
+            console.log('[SetPassword] Setting session with recovery token', { hasAccessToken: !!accessToken, hasRefreshToken: !!refreshToken });
+            
             const { data: { session }, error } = await supabase.auth.setSession({
               access_token: accessToken,
-              refresh_token: hashParams.get("refresh_token") || '',
+              refresh_token: refreshToken,
             });
             
+            if (error) {
+              console.error('[SetPassword] Error setting session:', error);
+              setIsValidToken(false);
+              return;
+            }
+            
             if (session && !error) {
+              console.log('[SetPassword] Session set successfully');
               setIsValidToken(true);
+              // Clear hash to avoid re-processing on refresh
+              window.history.replaceState(null, '', window.location.pathname + window.location.search);
               return;
             }
           }

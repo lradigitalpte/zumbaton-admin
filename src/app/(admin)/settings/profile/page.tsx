@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import Input from "@/components/form/input/InputField";
 import { useProfile, useUpdateProfile, useChangePassword, getBioFromProfile } from "@/hooks/useProfile";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabase";
 
 interface ProfileData {
   firstName: string;
@@ -52,6 +53,8 @@ export default function ProfileSettingsPage() {
 
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load profile data from API
   useEffect(() => {
@@ -159,6 +162,78 @@ export default function ProfileSettingsPage() {
     }
   };
 
+  const handleAvatarClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      alert('Invalid file type. Please upload a JPEG, PNG, WebP, or GIF image.');
+      return;
+    }
+
+    // Validate file size (5MB max)
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      alert('File too large. Maximum file size is 5MB.');
+      return;
+    }
+
+    try {
+      setIsUploadingAvatar(true);
+      
+      // Create form data
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Get session token for upload
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        alert('Please sign in to upload avatar');
+        return;
+      }
+
+      const response = await fetch('/api/profile/upload-avatar', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        alert(errorData.error?.message || 'Failed to upload avatar');
+        return;
+      }
+
+      const data = await response.json();
+      if (data.success && data.data?.avatarUrl) {
+        // Update profile state with new avatar
+        setProfile(prev => ({ ...prev, avatar: data.data.avatarUrl }));
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      }
+    } catch (error) {
+      console.error('Error uploading avatar:', error);
+      alert('Failed to upload avatar. Please try again.');
+    } finally {
+      setIsUploadingAvatar(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   const tabs = [
     { id: "profile", label: "Profile", icon: (
       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -212,14 +287,52 @@ export default function ProfileSettingsPage() {
           {/* Profile Card */}
           <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center dark:border-gray-700 dark:bg-gray-800">
             <div className="relative mx-auto h-24 w-24 mb-4">
-              <div className="h-24 w-24 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white shadow-lg">
-                {profile.firstName[0]}{profile.lastName[0]}
+              <div 
+                className="h-24 w-24 rounded-full overflow-hidden bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white shadow-lg cursor-pointer hover:opacity-90 transition-opacity"
+                onClick={handleAvatarClick}
+                title="Click to change profile picture"
+              >
+                {profile.avatar ? (
+                  <img
+                    src={profile.avatar}
+                    alt={`${profile.firstName} ${profile.lastName}`}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      // Fallback to initials if image fails to load
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const parent = target.parentElement;
+                      if (parent && !parent.querySelector('span')) {
+                        const span = document.createElement('span');
+                        span.textContent = `${profile.firstName[0]}${profile.lastName[0]}`;
+                        parent.appendChild(span);
+                      }
+                    }}
+                  />
+                ) : (
+                  <span>{profile.firstName[0]}{profile.lastName[0]}</span>
+                )}
               </div>
-              <button className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-white shadow-lg border border-gray-200 dark:border-gray-600 dark:bg-gray-700 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">
-                <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={handleAvatarChange}
+                className="hidden"
+              />
+              <button 
+                onClick={handleAvatarClick}
+                className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-white shadow-lg border border-gray-200 dark:border-gray-600 dark:bg-gray-700 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                title="Change profile picture"
+              >
+                {isUploadingAvatar ? (
+                  <div className="w-4 h-4 border-2 border-gray-400 border-t-indigo-600 rounded-full animate-spin"></div>
+                ) : (
+                  <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                )}
               </button>
             </div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{profile.firstName} {profile.lastName}</h3>

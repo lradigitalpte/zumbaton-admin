@@ -92,6 +92,12 @@ export default function TutorClassesPage() {
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return "TBD";
+    }
+    
     const today = new Date();
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -575,8 +581,7 @@ export default function TutorClassesPage() {
                       {isExpanded && classItem._childInstances && classItem._childInstances.length > 0 && (
                         <div className="ml-4 space-y-2 border-l-2 border-gray-200 dark:border-gray-700 pl-4">
                           {classItem._childInstances.map((session: any) => {
-                            const sessionTime = new Date(session.scheduled_at);
-                            const isPast = sessionTime < new Date();
+                            const isPast = new Date(session.date) < new Date();
                             const sessionStatus = session.status === "cancelled" ? "cancelled" : isPast ? "completed" : "upcoming";
                             
                             return (
@@ -587,12 +592,12 @@ export default function TutorClassesPage() {
                                   e.stopPropagation();
                                   setSelectedClass({
                                     id: session.id,
-                                    name: session.title,
-                                    type: session.class_type.charAt(0).toUpperCase() + session.class_type.slice(1),
-                                    time: sessionTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
-                                    duration: session.duration_minutes,
-                                    room: session.room_name || session.location || "TBD",
-                                    date: sessionTime.toISOString().split("T")[0],
+                                    name: session.name,
+                                    type: session.type,
+                                    time: session.time,
+                                    duration: session.duration,
+                                    room: "Studio",
+                                    date: session.date,
                                     enrolled: bookingData[session.id]?.total || 0,
                                     capacity: session.capacity,
                                     attended: bookingData[session.id]?.attended || 0,
@@ -602,11 +607,9 @@ export default function TutorClassesPage() {
                               >
                                 <div className="flex items-center justify-between">
                                   <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{session.title}</p>
+                                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{session.name}</p>
                                     <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                      <span>{sessionTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
-                                      <span>•</span>
-                                      <span>{session.room_name || session.location || "TBA"}</span>
+                                      <span>{session.time}</span>
                                       <span>•</span>
                                       <span>{(bookingData[session.id]?.total || 0)}/{session.capacity}</span>
                                     </div>

@@ -90,6 +90,7 @@ export const TABLES = {
   PACKAGES: 'packages',
   USER_PACKAGES: 'user_packages',
   CLASSES: 'classes',
+  PASSWORD_RESET_OTPS: 'password_reset_otps',
   BOOKINGS: 'bookings',
   ATTENDANCES: 'attendances',
   TOKEN_TRANSACTIONS: 'token_transactions',

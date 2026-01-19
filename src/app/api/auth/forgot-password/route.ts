@@ -1,6 +1,6 @@
 /**
  * Forgot Password API Route
- * POST /api/auth/forgot-password - Send password reset email using custom SMTP
+ * POST /api/auth/forgot-password - Generate and send 6-digit OTP code via email
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -12,8 +12,15 @@ const ForgotPasswordRequestSchema = z.object({
 })
 
 /**
- * POST /api/auth/forgot-password - Send password reset email
- * Uses custom email service instead of Supabase's default
+ * Generate a 6-digit OTP code
+ */
+function generateOTP(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString()
+}
+
+/**
+ * POST /api/auth/forgot-password - Generate and send OTP code
+ * New OTP-based flow instead of recovery links
  */
 export async function POST(request: NextRequest) {
   try {
@@ -32,13 +39,14 @@ export async function POST(request: NextRequest) {
     }
 
     const { email } = parseResult.data
+    const normalizedEmail = email.toLowerCase().trim()
 
     // Check if user exists
     const adminClient = getSupabaseAdminClient()
     const { data: userProfile, error: userError } = await adminClient
       .from(TABLES.USER_PROFILES)
       .select('id, email, name')
-      .eq('email', email.toLowerCase().trim())
+      .eq('email', normalizedEmail)
       .single()
 
     // Don't reveal if email exists or not (security best practice)
@@ -47,13 +55,45 @@ export async function POST(request: NextRequest) {
       console.log(`[ForgotPassword] Email not found: ${email}`)
       return NextResponse.json({
         success: true,
-        message: 'If an account with that email exists, a password reset link has been sent.',
+        message: 'If an account with that email exists, a verification code has been sent.',
       })
     }
 
-    // Get the base URL for the redirect link
-    // Always use admin.zumbaton.sg for production emails (unless explicitly overridden)
-    // For development, use localhost or the configured URL
+    // Generate 6-digit OTP code
+    const otpCode = generateOTP()
+    
+    // OTP expires in 15 minutes
+    const expiresAt = new Date()
+    expiresAt.setMinutes(expiresAt.getMinutes() + 15)
+
+    // Delete any existing unverified OTPs for this email
+    await adminClient
+      .from(TABLES.PASSWORD_RESET_OTPS)
+      .delete()
+      .eq('email', normalizedEmail)
+      .eq('verified', false)
+
+    // Store OTP in database
+    const { error: otpError } = await adminClient
+      .from(TABLES.PASSWORD_RESET_OTPS)
+      .insert({
+        user_id: userProfile.id,
+        email: normalizedEmail,
+        otp_code: otpCode,
+        expires_at: expiresAt.toISOString(),
+        verified: false,
+      })
+
+    if (otpError) {
+      console.error('[ForgotPassword] Error storing OTP:', otpError)
+      // Still return success to prevent email enumeration
+      return NextResponse.json({
+        success: true,
+        message: 'If an account with that email exists, a verification code has been sent.',
+      })
+    }
+
+    // Get base URL for verify-otp page
     const isDevelopment = process.env.NODE_ENV === 'development' || 
                          process.env.NEXT_PUBLIC_APP_URL?.includes('localhost') ||
                          process.env.NEXT_PUBLIC_APP_URL?.includes('vercel.app')
@@ -62,46 +102,8 @@ export async function POST(request: NextRequest) {
       ? (process.env.NEXT_PUBLIC_APP_URL ||
          (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3001'))
       : (process.env.NEXT_PUBLIC_APP_URL || 'https://admin.zumbaton.sg')
-    
-    // Generate password recovery token using Supabase Admin API
-    // This creates a secure recovery token that Supabase will validate
-    const { data: recoveryData, error: recoveryError } = await adminClient.auth.admin.generateLink({
-      type: 'recovery',
-      email: userProfile.email,
-      options: {
-        redirectTo: `${baseUrl}/set-password`,
-      },
-    })
 
-    if (recoveryError || !recoveryData) {
-      console.error('[ForgotPassword] Error generating recovery link:', recoveryError)
-      // Still return success to prevent email enumeration
-      return NextResponse.json({
-        success: true,
-        message: 'If an account with that email exists, a password reset link has been sent.',
-      })
-    }
-
-    // Extract the recovery link from the response
-    let resetLink = recoveryData.properties?.action_link || 
-                   recoveryData.properties?.redirect_to || 
-                   `${baseUrl}/set-password`
-    
-    // Replace any localhost or Vercel URLs with the production domain
-    if (resetLink && (resetLink.includes('localhost') || resetLink.includes('vercel.app'))) {
-      try {
-        const url = new URL(resetLink)
-        const pathAndQuery = url.pathname + url.search
-        const productionBase = baseUrl.replace(/\/$/, '')
-        resetLink = `${productionBase}${pathAndQuery}`
-      } catch (urlError) {
-        const pathMatch = resetLink.match(/\/set-password[^?#]*(\?[^#]*)?(#.*)?/)
-        const pathPart = pathMatch ? pathMatch[0] : '/set-password'
-        resetLink = `${baseUrl.replace(/\/$/, '')}${pathPart}`
-      }
-    }
-
-    // Send email using the web app's custom email service
+    // Send OTP email using the web app's custom email service
     try {
       const { getWebAppUrl } = await import('@/lib/email-url')
       const webAppUrl = getWebAppUrl()
@@ -111,34 +113,35 @@ export async function POST(request: NextRequest) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: 'forgot-password',
+          type: 'forgot-password-otp',
           secret: emailApiSecret,
           data: {
             userEmail: userProfile.email,
             userName: userProfile.name || 'User',
-            resetLink: recoveryData.properties.action_link || resetLink,
-            expiresIn: '1 hour',
+            otpCode: otpCode,
+            verifyUrl: `${baseUrl}/verify-otp`,
+            expiresIn: '15 minutes',
           },
         }),
       })
 
       if (!emailResponse.ok) {
         const emailResult = await emailResponse.json().catch(() => ({}))
-        console.error('[ForgotPassword] Error sending email:', emailResult.error || `HTTP ${emailResponse.status}`)
+        console.error('[ForgotPassword] Error sending OTP email:', emailResult.error || `HTTP ${emailResponse.status}`)
         console.error('[ForgotPassword] Email API URL:', `${webAppUrl}/api/email/send`)
         // Still return success to prevent email enumeration
       } else {
         const emailResult = await emailResponse.json().catch(() => ({}))
-        console.log(`[ForgotPassword] Password reset email sent to ${userProfile.email}`)
+        console.log(`[ForgotPassword] OTP code sent to ${userProfile.email}`)
       }
     } catch (emailError) {
-      console.error('[ForgotPassword] Error sending email:', emailError)
+      console.error('[ForgotPassword] Error sending OTP email:', emailError)
       // Still return success to prevent email enumeration
     }
 
     return NextResponse.json({
       success: true,
-      message: 'If an account with that email exists, a password reset link has been sent.',
+      message: 'If an account with that email exists, a verification code has been sent.',
     })
   } catch (error) {
     console.error('[ForgotPassword] Error in forgot password endpoint:', error)

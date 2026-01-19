@@ -610,23 +610,44 @@ export default function AttendancePage() {
                   >
                     <td className="whitespace-nowrap px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white ${
-                          attendee.status === "checked-in"
-                            ? "bg-emerald-500"
-                            : attendee.status === "no-show"
-                            ? "bg-red-500"
-                            : "bg-linear-to-br from-brand-500 to-brand-600"
-                        }`}>
-                          {attendee.status === "checked-in" ? (
-                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : attendee.status === "no-show" ? (
-                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
+                        <div className="relative h-10 w-10 shrink-0">
+                          {attendee.avatarUrl ? (
+                            <img
+                              src={attendee.avatarUrl}
+                              alt={attendee.name}
+                              className="h-10 w-10 rounded-full object-cover"
+                            />
                           ) : (
-                            getInitials(attendee.name)
+                            <div className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white ${
+                              attendee.status === "checked-in"
+                                ? "bg-emerald-500"
+                                : attendee.status === "no-show"
+                                ? "bg-red-500"
+                                : "bg-linear-to-br from-brand-500 to-brand-600"
+                            }`}>
+                              {getInitials(attendee.name)}
+                            </div>
+                          )}
+                          {attendee.avatarUrl && (
+                            <div className={`absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full text-white text-xs font-bold ${
+                              attendee.status === "checked-in"
+                                ? "bg-emerald-500"
+                                : attendee.status === "no-show"
+                                ? "bg-red-500"
+                                : "bg-brand-500"
+                            }`}>
+                              {attendee.status === "checked-in" ? (
+                                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                </svg>
+                              ) : attendee.status === "no-show" ? (
+                                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              ) : (
+                                "○"
+                              )}
+                            </div>
                           )}
                         </div>
                         <div className="min-w-0">

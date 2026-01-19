@@ -223,6 +223,25 @@ export default function ClassesPage() {
     isOpen: false,
     classData: null,
   });
+  const [bookingsPanel, setBookingsPanel] = useState<{
+    isOpen: boolean;
+    parentClass: DisplayClass | null;
+    bookings: Array<{
+      id: string;
+      userId: string;
+      userName: string;
+      userEmail: string;
+      classId: string;
+      className: string;
+      scheduledAt: string;
+      status: string;
+      bookedAt: string;
+    }>;
+  }>({
+    isOpen: false,
+    parentClass: null,
+    bookings: [],
+  });
 
   // Cancel/Delete class mutation
   const cancelClassMutation = useCancelClass();
@@ -447,12 +466,96 @@ export default function ClassesPage() {
     });
   };
 
+  // Open bookings panel for recurring class
+  const openBookingsPanel = async (parentClass: DisplayClass) => {
+    try {
+      // Get all instances of this recurring class
+      const instances = getRecurringInstances(parentClass);
+      const classIds = instances.map(inst => inst.id);
+
+      // Fetch bookings for all instances
+      const bookingsPromises = classIds.map(async (classId) => {
+        try {
+          const response = await api.get<{
+            success: boolean;
+            data: {
+              class: { 
+                id: string; 
+                name: string; 
+                scheduledAt: string;
+              };
+              attendees: Array<{
+                id: string;
+                userId: string;
+                name: string;
+                checkedInAt: string;
+              }>;
+            };
+          }>(`/api/attendance/class/${classId}/attendees`);
+
+          if (response.data?.success && response.data.data) {
+            const classData = response.data.data.class;
+            const attendees = response.data.data.attendees;
+            
+            return attendees.map(attendee => ({
+              id: attendee.id,
+              userId: attendee.userId,
+              userName: attendee.name,
+              userEmail: '',
+              classId: classData.id,
+              className: classData.name,
+              scheduledAt: classData.scheduledAt,
+              status: attendee.checkedInAt ? 'attended' : 'confirmed',
+              bookedAt: '',
+            }));
+          }
+        } catch (err) {
+          console.error(`Error fetching bookings for class ${classId}:`, err);
+        }
+        return [];
+      });
+
+      const allBookings = (await Promise.all(bookingsPromises)).flat();
+
+      setBookingsPanel({
+        isOpen: true,
+        parentClass,
+        bookings: allBookings,
+      });
+    } catch (error) {
+      console.error('Error fetching bookings:', error);
+      // Still open panel with empty bookings
+      setBookingsPanel({
+        isOpen: true,
+        parentClass,
+        bookings: [],
+      });
+    }
+  };
+
+  // Close bookings panel
+  const closeBookingsPanel = () => {
+    setBookingsPanel({
+      isOpen: false,
+      parentClass: null,
+      bookings: [],
+    });
+  };
+
   // Combine single and recurring parent classes for display
+  // For "completed" filter, show individual completed instances instead of parent cards
   const displayClasses = useMemo(() => {
+    if (filter === "completed") {
+      // For completed filter, show all individual completed classes (including occurrences)
+      return classes.filter(c => c.status === "completed").sort((a, b) => 
+        new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+      );
+    }
+    // For other filters, show parent cards for recurring classes
     return [...groupedClasses.single, ...groupedClasses.recurring].sort((a, b) => 
       new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
     );
-  }, [groupedClasses]);
+  }, [groupedClasses, classes, filter]);
 
   const openAttendanceModal = (cls: DisplayClass) => {
     setAttendanceModal({ isOpen: true, classData: cls });
@@ -484,18 +587,21 @@ export default function ClassesPage() {
   };
 
   const filteredClasses = displayClasses.filter((cls) => {
+    // For completed filter, displayClasses already contains only completed classes
+    // For other filters, apply the filter logic
     let matchesFilter = true;
-    if (filter !== "all") {
+    if (filter !== "all" && filter !== "completed") {
       if (filter === "active") {
         matchesFilter = cls.status === "active";
-      } else if (filter === "completed") {
-        matchesFilter = cls.status === "completed";
       } else if (filter === "cancelled") {
         matchesFilter = cls.status === "cancelled";
       } else if (filter === "full") {
         matchesFilter = cls.status === "full";
       }
     }
+    // For "completed" filter, displayClasses already filtered, so all match
+    // For "all" filter, show everything
+    
     const matchesSearch =
       cls.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       cls.instructor.toLowerCase().includes(searchQuery.toLowerCase());
@@ -525,6 +631,8 @@ export default function ClassesPage() {
     return "bg-gray-300 dark:bg-gray-600";
   };
 
+  // Calculate stats from individual classes (not grouped) to show accurate counts
+  // This counts all individual class instances, including occurrences from recurring classes
   const stats = {
     total: classes.length,
     active: classes.filter((c) => c.status === "active").length,
@@ -797,7 +905,10 @@ export default function ClassesPage() {
                   : 'border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'
               }`}
               onClick={(e) => {
-                if ((cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && 
+                // For completed classes, show details instead of recurring panel
+                if (cls.status === 'completed' && !(e.target as HTMLElement).closest('button, a')) {
+                  openDetailsPanel(cls);
+                } else if ((cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && 
                     !(e.target as HTMLElement).closest('button, a')) {
                   openRecurringPanel(cls);
                 }
@@ -903,7 +1014,7 @@ export default function ClassesPage() {
                           ? 'text-blue-700 dark:text-blue-300'
                           : 'text-gray-500 dark:text-gray-400'
                       }`}>
-                        Next Session
+                        {cls.status === 'completed' ? 'Date' : 'Next Session'}
                       </p>
                       <p className={`mt-0.5 text-sm font-medium ${
                         (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
@@ -1023,30 +1134,65 @@ export default function ClassesPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
                     </button>
-                    {/* Attendance QR Button */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openAttendanceModal(cls);
-                      }}
-                      className="inline-flex items-center justify-center rounded-lg p-2 text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400 transition-colors"
-                      title="Start Attendance"
-                    >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                      </svg>
-                    </button>
-                    <Link 
-                      href={`/classes/new?id=${cls.id}`}
-                      className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors"
-                      title="Edit Class"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                      </svg>
-                    </Link>
+                    {/* For recurring parent cards, show "View Bookings" instead of QR */}
+                    {cls.status !== 'completed' && (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openBookingsPanel(cls);
+                        }}
+                        className="inline-flex items-center justify-center rounded-lg p-2 text-blue-500 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400 transition-colors"
+                        title="View Bookings"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                      </button>
+                    ) : cls.status === 'completed' ? (
+                      /* For completed classes, show attendance button to view attendees */
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openAttendanceModal(cls);
+                        }}
+                        className="inline-flex items-center justify-center rounded-lg p-2 text-blue-500 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400 transition-colors"
+                        title="View Attendance"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                      </button>
+                    ) : (
+                      /* For single active classes, show QR button */
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openAttendanceModal(cls);
+                        }}
+                        className="inline-flex items-center justify-center rounded-lg p-2 text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400 transition-colors"
+                        title="Start Attendance"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                        </svg>
+                      </button>
+                    )}
+                    {/* Edit Button - Hide for completed classes */}
+                    {cls.status !== 'completed' && (
+                      <Link 
+                        href={`/classes/new?id=${cls.id}`}
+                        className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors"
+                        title="Edit Class"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </Link>
+                    )}
                     <button
                       type="button"
                       onClick={(e) => {
@@ -1093,7 +1239,10 @@ export default function ClassesPage() {
                         : ''
                     }`}
                     onClick={(e) => {
-                      if ((cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && 
+                      // For completed classes, show details instead of recurring panel
+                      if (cls.status === 'completed' && !(e.target as HTMLElement).closest('button, a')) {
+                        openDetailsPanel(cls);
+                      } else if ((cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && 
                           !(e.target as HTMLElement).closest('button, a')) {
                         openRecurringPanel(cls);
                       }
@@ -1130,8 +1279,18 @@ export default function ClassesPage() {
                           </>
                         ) : (
                           <>
-                            <p className="font-medium text-gray-900 dark:text-white">{cls.dayOfWeek}</p>
-                            <p className="text-gray-500 dark:text-gray-400">{cls.time}</p>
+                            {/* For completed classes, show the actual date instead of day of week */}
+                            {cls.status === 'completed' ? (
+                              <>
+                                <p className="font-medium text-gray-900 dark:text-white">{formatClassDate(cls.scheduledAt)}</p>
+                                <p className="text-gray-500 dark:text-gray-400">{cls.time}</p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="font-medium text-gray-900 dark:text-white">{cls.dayOfWeek}</p>
+                                <p className="text-gray-500 dark:text-gray-400">{cls.time}</p>
+                              </>
+                            )}
                           </>
                         )}
                       </div>
@@ -1167,30 +1326,65 @@ export default function ClassesPage() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-2">
-                        {/* Attendance QR Button */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openAttendanceModal(cls);
-                          }}
-                          className="inline-flex items-center justify-center rounded-lg p-2 text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400 transition-colors"
-                          title="Start Attendance"
-                        >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                          </svg>
-                        </button>
-                        <Link 
-                          href={`/classes/new?id=${cls.id}`}
-                          className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors"
-                          title="Edit Class"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                          </svg>
-                        </Link>
+                        {/* For recurring parent cards, show "View Bookings" instead of QR */}
+                        {cls.status !== 'completed' && (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openBookingsPanel(cls);
+                            }}
+                            className="inline-flex items-center justify-center rounded-lg p-2 text-blue-500 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400 transition-colors"
+                            title="View Bookings"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                            </svg>
+                          </button>
+                        ) : cls.status === 'completed' ? (
+                          /* For completed classes, show attendance button to view attendees */
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openAttendanceModal(cls);
+                            }}
+                            className="inline-flex items-center justify-center rounded-lg p-2 text-blue-500 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400 transition-colors"
+                            title="View Attendance"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                            </svg>
+                          </button>
+                        ) : (
+                          /* For single active classes, show QR button */
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openAttendanceModal(cls);
+                            }}
+                            className="inline-flex items-center justify-center rounded-lg p-2 text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400 transition-colors"
+                            title="Start Attendance"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                            </svg>
+                          </button>
+                        )}
+                        {/* Edit Button - Hide for completed classes */}
+                        {cls.status !== 'completed' && (
+                          <Link 
+                            href={`/classes/new?id=${cls.id}`}
+                            className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors"
+                            title="Edit Class"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </Link>
+                        )}
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1239,6 +1433,7 @@ export default function ClassesPage() {
             time: attendanceModal.classData.time,
             enrolled: attendanceModal.classData.enrolled,
             capacity: attendanceModal.classData.capacity,
+            status: attendanceModal.classData.status,
           }}
         />
       )}
@@ -1481,6 +1676,114 @@ export default function ClassesPage() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bookings Panel for Recurring Classes */}
+      {bookingsPanel.isOpen && bookingsPanel.parentClass && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-end">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/50 transition-opacity"
+            onClick={closeBookingsPanel}
+          />
+          
+          {/* Panel */}
+          <div className="relative w-full sm:w-[500px] h-[80vh] sm:h-[600px] bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-l-2xl sm:rounded-tr-none shadow-2xl flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
+              <div className="flex-1">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                  {bookingsPanel.parentClass.name}
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  {bookingsPanel.bookings.length} {bookingsPanel.bookings.length === 1 ? 'booking' : 'bookings'} across all sessions
+                </p>
+              </div>
+              <button
+                onClick={closeBookingsPanel}
+                className="ml-4 rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {bookingsPanel.bookings.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="mb-4 h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                    <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-gray-600 dark:text-gray-400">No bookings found</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">No students have booked this class series yet</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Group bookings by class session */}
+                  {Array.from(new Set(bookingsPanel.bookings.map(b => b.classId))).map(classId => {
+                    const classBookings = bookingsPanel.bookings.filter(b => b.classId === classId);
+                    const firstBooking = classBookings[0];
+                    const classDate = new Date(firstBooking.scheduledAt);
+                    
+                    return (
+                      <div key={classId} className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/50">
+                        <div className="mb-3 pb-3 border-b border-gray-200 dark:border-gray-700">
+                          <h3 className="font-medium text-gray-900 dark:text-white text-sm">
+                            {firstBooking.className}
+                          </h3>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {classDate.toLocaleDateString('en-US', { 
+                              weekday: 'long', 
+                              month: 'short', 
+                              day: 'numeric',
+                              year: 'numeric'
+                            })} at {classDate.toLocaleTimeString('en-US', { 
+                              hour: '2-digit', 
+                              minute: '2-digit' 
+                            })}
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          {classBookings.map((booking) => (
+                            <div
+                              key={booking.id}
+                              className="flex items-center gap-3 rounded-lg bg-white dark:bg-gray-900 p-3 border border-gray-200 dark:border-gray-700"
+                            >
+                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-xs font-medium text-white">
+                                {booking.userName
+                                  .split(' ')
+                                  .map(n => n[0])
+                                  .join('')
+                                  .toUpperCase()
+                                  .slice(0, 2)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                  {booking.userName}
+                                </p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                  {booking.status === 'attended' ? (
+                                    <span className="text-emerald-600 dark:text-emerald-400">✓ Attended</span>
+                                  ) : (
+                                    <span className="text-gray-500 dark:text-gray-400">Confirmed</span>
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>

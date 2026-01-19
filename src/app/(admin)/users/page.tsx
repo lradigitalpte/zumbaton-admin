@@ -740,9 +740,17 @@ export default function UsersPage() {
                 >
                   <td className="whitespace-nowrap px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-sm font-semibold text-white">
-                        {getInitials(user.name)}
-                      </div>
+                      {user.avatarUrl ? (
+                        <img
+                          src={user.avatarUrl}
+                          alt={user.name}
+                          className="h-10 w-10 shrink-0 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-sm font-semibold text-white">
+                          {getInitials(user.name)}
+                        </div>
+                      )}
                       <div className="min-w-0">
                         <div className="truncate font-medium text-gray-900 dark:text-white">
                           {user.name}
@@ -981,9 +989,17 @@ export default function UsersPage() {
         {selectedUser && (
           <div className="space-y-6">
             <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-lg font-semibold text-white">
-                {getInitials(selectedUser.name)}
-              </div>
+              {selectedUser.avatarUrl ? (
+                <img
+                  src={selectedUser.avatarUrl}
+                  alt={selectedUser.name}
+                  className="h-12 w-12 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-lg font-semibold text-white">
+                  {getInitials(selectedUser.name)}
+                </div>
+              )}
               <div>
                 <div className="font-medium text-gray-900 dark:text-white">
                   {selectedUser.name}
@@ -1081,9 +1097,17 @@ export default function UsersPage() {
           <div className="space-y-6">
             {/* User Info */}
             <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-lg font-semibold text-white">
-                {getInitials(userToFlag.name)}
-              </div>
+              {userToFlag.avatarUrl ? (
+                <img
+                  src={userToFlag.avatarUrl}
+                  alt={userToFlag.name}
+                  className="h-12 w-12 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-lg font-semibold text-white">
+                  {getInitials(userToFlag.name)}
+                </div>
+              )}
               <div>
                 <div className="font-medium text-gray-900 dark:text-white">
                   {userToFlag.name}

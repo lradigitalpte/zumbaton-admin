@@ -4,6 +4,8 @@ import { usePathname } from "next/navigation";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/hooks/useProfile";
+import Image from "next/image";
 
 // Helper to get name from localStorage (instant, no waiting for AuthContext)
 function getNameFromLocalStorage(): string | null {
@@ -35,6 +37,7 @@ function getNameFromLocalStorage(): string | null {
 export default function UserDropdown() {
   const [isOpen, setIsOpen] = useState(false);
   const { user, signOut } = useAuth();
+  const { data: profileData } = useProfile();
   const pathname = usePathname();
   
   // Get name from localStorage instantly, then use user.name when available
@@ -88,6 +91,7 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
     await signOut();
   };
   const initials = displayName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+  const avatarUrl = profileData?.avatarUrl;
 
   return (
     <div className="relative">
@@ -95,9 +99,31 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
         onClick={toggleDropdown} 
         className="flex items-center text-gray-700 dark:text-gray-400 dropdown-toggle"
       >
-        <span className="mr-3 flex items-center justify-center h-11 w-11 rounded-full bg-brand-500 text-white font-semibold text-lg">
-          {initials}
-        </span>
+        {avatarUrl ? (
+          <div className="mr-3 h-11 w-11 rounded-full overflow-hidden border-2 border-gray-200 dark:border-gray-700">
+            <Image
+              src={avatarUrl}
+              alt={`${displayName}'s avatar`}
+              width={44}
+              height={44}
+              className="h-full w-full object-cover"
+              onError={(e) => {
+                // Fallback to initials if image fails to load
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                const fallback = target.nextElementSibling as HTMLElement;
+                if (fallback) fallback.style.display = 'flex';
+              }}
+            />
+            <span className="hidden h-full w-full items-center justify-center bg-brand-500 text-white font-semibold text-lg">
+              {initials}
+            </span>
+          </div>
+        ) : (
+          <span className="mr-3 flex items-center justify-center h-11 w-11 rounded-full bg-brand-500 text-white font-semibold text-lg">
+            {initials}
+          </span>
+        )}
 
         <span className="block mr-1 font-medium text-theme-sm">{displayName}</span>
 

@@ -100,14 +100,14 @@ export async function GET(request: NextRequest) {
     // Get user IDs and fetch their profiles separately (no direct FK from bookings to user_profiles)
     const userIds = [...new Set((bookings || []).map(b => b.user_id))]
     
-    let userProfiles: Record<string, { id: string; name: string; email: string; phone: string | null }> = {}
+    let userProfiles: Record<string, { id: string; name: string; email: string; phone: string | null; avatar_url: string | null }> = {}
     let userTokens: Record<string, number> = {}
     
     if (userIds.length > 0) {
       // Fetch user profiles
       const { data: profiles } = await supabase
         .from('user_profiles')
-        .select('id, name, email, phone')
+        .select('id, name, email, phone, avatar_url')
         .in('id', userIds)
       
       for (const profile of profiles || []) {
@@ -146,6 +146,7 @@ export async function GET(request: NextRequest) {
           name: profile?.name || 'Unknown',
           email: profile?.email || 'unknown@email.com',
           phone: profile?.phone || null,
+          avatarUrl: profile?.avatar_url || null,
           bookingId: booking.id,
           status: uiStatus,
           checkedInAt: attendance?.checked_in_at 

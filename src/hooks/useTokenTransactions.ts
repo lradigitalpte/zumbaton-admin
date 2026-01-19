@@ -20,6 +20,7 @@ export interface TokenTransaction {
   userId: string
   userName: string
   userEmail: string
+  userAvatar: string | null
   userPackageId: string | null
   bookingId: string | null
   type: TransactionType

@@ -152,6 +152,11 @@ export async function createClass(data: CreateClassRequest & {
   const recurrenceType = data.recurrenceType || 'single'
   const startDate = new Date(data.scheduledAt)
 
+  // Validate required fields
+  if (!data.title || !data.classType || !data.capacity) {
+    throw new ApiError('VALIDATION_ERROR', 'Title, class type, and capacity are required', 400)
+  }
+
   // Generate all occurrences
   const occurrences = generateOccurrences(startDate, recurrenceType, data.recurrencePattern)
 
@@ -170,9 +175,9 @@ export async function createClass(data: CreateClassRequest & {
     room_id: data.roomId || null,
     category_id: data.categoryId || null,
     recurrence_type: recurrenceType,
-    recurrence_pattern: data.recurrencePattern || null,
+    recurrence_pattern: data.recurrencePattern ? JSON.stringify(data.recurrencePattern) : null,
     status: 'scheduled' as const,
-    // Walk-in/drop-in settings
+    // Walk-in/drop-in settings (requires migration 005_add_drop_in_to_classes.sql)
     allow_drop_in: data.allowDropIn || false,
     drop_in_token_cost: data.dropInTokenCost || null,
     created_at: new Date().toISOString(),
@@ -209,19 +214,43 @@ export async function createClass(data: CreateClassRequest & {
 
   // For recurring and course classes, create parent class and all occurrences
   // First create the parent/template class (this is just a template, not an actual occurrence)
+  const parentClassData = {
+    ...baseClassData,
+    scheduled_at: startDate.toISOString(),
+    parent_class_id: null,
+    occurrence_date: null,
+  }
+
+  console.log('[createClass] Creating parent class with data:', {
+    title: parentClassData.title,
+    class_type: parentClassData.class_type,
+    instructor_id: parentClassData.instructor_id,
+    recurrence_type: parentClassData.recurrence_type,
+    scheduled_at: parentClassData.scheduled_at,
+  })
+
   const { data: parentClass, error: parentError } = await adminClient
     .from(TABLES.CLASSES)
-    .insert({
-      ...baseClassData,
-      scheduled_at: startDate.toISOString(),
-      parent_class_id: null,
-      occurrence_date: null,
-    })
+    .insert(parentClassData)
     .select()
     .single()
 
   if (parentError) {
-    throw new ApiError('SERVER_ERROR', 'Failed to create parent class', 500, parentError)
+    console.error('[createClass] Failed to create parent class:', {
+      error: parentError,
+      errorCode: parentError.code,
+      errorMessage: parentError.message,
+      errorDetails: parentError.details,
+      baseClassData: {
+        title: baseClassData.title,
+        class_type: baseClassData.class_type,
+        instructor_id: baseClassData.instructor_id,
+        capacity: baseClassData.capacity,
+        scheduled_at: startDate.toISOString(),
+      },
+      recurrenceType,
+    })
+    throw new ApiError('SERVER_ERROR', `Failed to create parent class: ${parentError.message || 'Unknown error'}`, 500, parentError)
   }
 
   // Create ALL occurrence classes including the first one
