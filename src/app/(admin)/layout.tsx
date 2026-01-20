@@ -5,6 +5,8 @@ import { useAuth } from "@/context/AuthContext";
 import AppHeader from "@/layout/AppHeader";
 import AppSidebar from "@/layout/AppSidebar";
 import Backdrop from "@/layout/Backdrop";
+import OnboardingTour from "@/components/onboarding/OnboardingTour";
+import OnboardingHelpButton from "@/components/onboarding/OnboardingHelpButton";
 import { useRouter, usePathname } from "next/navigation";
 import React, { useEffect } from "react";
 
@@ -47,6 +49,10 @@ export default function AdminLayout({
         {/* Page Content */}
         <div className="p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6">{children}</div>
       </div>
+      {/* Onboarding Tour */}
+      <OnboardingTour />
+      {/* Floating Help Button */}
+      <OnboardingHelpButton />
     </div>
   );
 }

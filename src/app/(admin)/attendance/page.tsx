@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/components/ui/Toast";
 import {
   useAttendance,
   useCheckIn,
@@ -16,6 +17,7 @@ import {
 export default function AttendancePage() {
   const { user } = useAuth();
   const router = useRouter();
+  const { showToast } = useToast();
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "checked-in" | "no-show">("all");
@@ -57,9 +59,10 @@ export default function AttendancePage() {
         checkedInBy: user.id,
         method: 'admin',
       });
+      showToast('Check-in successful!', 'success');
     } catch (err) {
       console.error('Check-in failed:', err);
-      alert('Failed to check in. Please try again.');
+      showToast('Failed to check in. Please try again.', 'error');
     }
   };
 
@@ -71,9 +74,10 @@ export default function AttendancePage() {
         bookingId,
         markedBy: user.id,
       });
+      showToast('Marked as no-show', 'success');
     } catch (err) {
       console.error('Mark no-show failed:', err);
-      alert('Failed to mark as no-show. Please try again.');
+      showToast('Failed to mark as no-show. Please try again.', 'error');
     }
   };
 
@@ -91,9 +95,10 @@ export default function AttendancePage() {
         bookingIds: pendingBookingIds,
         checkedInBy: user.id,
       });
+      showToast(`Checked in ${pendingBookingIds.length} attendee(s)`, 'success');
     } catch (err) {
       console.error('Bulk check-in failed:', err);
-      alert('Failed to bulk check in. Please try again.');
+      showToast('Failed to bulk check in. Please try again.', 'error');
     }
   };
 

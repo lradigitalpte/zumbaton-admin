@@ -5,6 +5,7 @@ import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
+import { useOnboarding } from "@/components/onboarding";
 import Image from "next/image";
 
 // Helper to get name from localStorage (instant, no waiting for AuthContext)
@@ -38,6 +39,7 @@ export default function UserDropdown() {
   const [isOpen, setIsOpen] = useState(false);
   const { user, signOut } = useAuth();
   const { data: profileData } = useProfile();
+  const { restart: restartOnboarding } = useOnboarding();
   const pathname = usePathname();
   
   // Get name from localStorage instantly, then use user.name when available
@@ -210,6 +212,34 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
                 />
               </svg>
               Settings
+            </DropdownItem>
+          </li>
+          <li>
+            <DropdownItem
+              onItemClick={() => {
+                closeDropdown();
+                restartOnboarding();
+              }}
+              className="flex items-center gap-3 px-3 py-2 font-medium text-gray-700 rounded-lg group text-theme-sm hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
+            >
+              <svg
+                className="fill-gray-500 group-hover:fill-gray-700 dark:fill-gray-400 dark:group-hover:fill-gray-300"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                  stroke="currentColor"
+                  fill="none"
+                />
+              </svg>
+              Restart Tour
             </DropdownItem>
           </li>
         </ul>

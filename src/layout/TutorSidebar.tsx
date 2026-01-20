@@ -234,6 +234,7 @@ const TutorSidebar: React.FC = () => {
         <li key={nav.name}>
           {nav.subItems ? (
             <button
+              data-onboarding={`tutor-${nav.name.toLowerCase().replace(/\s+/g, '-')}-menu`}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -275,6 +276,7 @@ const TutorSidebar: React.FC = () => {
             nav.path && (
               <Link
                 href={nav.path}
+                data-onboarding={`tutor-${nav.name.toLowerCase().replace(/\s+/g, '-')}-menu`}
                 className={`menu-item group ${
                   isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"
                 }`}

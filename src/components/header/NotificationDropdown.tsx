@@ -10,6 +10,10 @@ import {
   type Notification 
 } from "@/hooks/useNotifications";
 
+interface NotificationDropdownProps {
+  'data-onboarding'?: string;
+}
+
 // Helper function to format relative time
 function getRelativeTime(dateString: string): string {
   const date = new Date(dateString);
@@ -79,7 +83,7 @@ function getNotificationColor(type: string): string {
   }
 }
 
-export default function NotificationDropdown() {
+export default function NotificationDropdown({ 'data-onboarding': dataOnboarding }: NotificationDropdownProps = {} as NotificationDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   
   // Fetch notifications (only in_app channel for dropdown)
@@ -119,6 +123,7 @@ export default function NotificationDropdown() {
   return (
     <div className="relative">
       <button
+        data-onboarding={dataOnboarding || "notifications-button"}
         className="relative dropdown-toggle flex items-center justify-center text-gray-500 transition-colors bg-white border border-gray-200 rounded-full hover:text-gray-700 h-11 w-11 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
         onClick={toggleDropdown}
       >
