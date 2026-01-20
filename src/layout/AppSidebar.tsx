@@ -244,6 +244,7 @@ const AppSidebar: React.FC = () => {
         <li key={nav.name}>
           {nav.subItems ? (
             <button
+              data-onboarding={`${nav.name.toLowerCase().replace(/\s+/g, '-')}-menu`}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -285,6 +286,7 @@ const AppSidebar: React.FC = () => {
             nav.path && (
               <Link
                 href={nav.path}
+                data-onboarding={`${nav.name.toLowerCase().replace(/\s+/g, '-')}-menu`}
                 className={`menu-item group ${
                   isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"
                 }`}

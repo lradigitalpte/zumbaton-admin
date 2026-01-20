@@ -130,6 +130,7 @@ const AppHeader: React.FC = () => {
 
           <div className="hidden lg:block">
             <button
+              data-onboarding="search-button"
               onClick={() => setSearchOpen(true)}
               className="flex items-center gap-3 h-11 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-4 pr-3 text-sm text-gray-500 shadow-theme-xs hover:border-gray-300 hover:bg-gray-50 transition-colors dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-700 dark:hover:bg-gray-800/50 xl:w-[430px]"
             >
@@ -170,6 +171,7 @@ const AppHeader: React.FC = () => {
             {showAttendanceButton && (
               <Link
                 href="/attendance"
+                data-onboarding="attendance-button"
                 className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
               >
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -179,7 +181,7 @@ const AppHeader: React.FC = () => {
               </Link>
             )}
 
-           <NotificationDropdown /> 
+           <NotificationDropdown data-onboarding="notifications-button" /> 
             {/* <!-- Notification Menu Area --> */}
           </div>
           {/* <!-- User Area --> */}

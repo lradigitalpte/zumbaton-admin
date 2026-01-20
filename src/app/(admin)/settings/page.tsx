@@ -4,10 +4,12 @@ import { useState, useEffect } from "react";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import Input from "@/components/form/input/InputField";
 import { useSettings, useUpdateSettings, BusinessSettings, BookingSettings } from "@/hooks/useSettings";
+import { useOnboarding } from "@/components/onboarding";
 
 export default function GeneralSettingsPage() {
   const [activeTab, setActiveTab] = useState<"business" | "booking">("business");
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const { restart: restartOnboarding } = useOnboarding();
 
   const { data: settings, isLoading, error } = useSettings();
   const updateSettings = useUpdateSettings();
@@ -88,14 +90,26 @@ export default function GeneralSettingsPage() {
             </p>
           </div>
         </div>
-        {saveSuccess && (
-          <div className="flex items-center gap-2 rounded-lg bg-emerald-100 px-4 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+        <div className="flex items-center gap-3">
+          {saveSuccess && (
+            <div className="flex items-center gap-2 rounded-lg bg-emerald-100 px-4 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Settings saved successfully
+            </div>
+          )}
+          <button
+            onClick={restartOnboarding}
+            className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition-colors shadow-md hover:shadow-lg"
+            title="Restart the onboarding tour"
+          >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            Settings saved successfully
-          </div>
-        )}
+            Restart Tour
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">

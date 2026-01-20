@@ -3,10 +3,12 @@
 import { useState, useEffect } from "react";
 import { useTutorSettings, updateTutorSettings } from "@/hooks/useTutor";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTutorOnboarding } from "@/components/onboarding";
 
 export default function TutorSettingsPage() {
   const { data, isLoading, error } = useTutorSettings();
   const queryClient = useQueryClient();
+  const { restart: restartOnboarding } = useTutorOnboarding();
   
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -125,6 +127,16 @@ export default function TutorSettingsPage() {
               Saved
             </div>
           )}
+          <button
+            onClick={restartOnboarding}
+            className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition-colors shadow-md hover:shadow-lg"
+            title="Restart the onboarding tour"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Restart Tour
+          </button>
           <button
             onClick={handleSave}
             disabled={isSaving}

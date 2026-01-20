@@ -584,13 +584,16 @@ export default function StaffManagementPage() {
           </div>
 
           <div>
-            <Label htmlFor="phone">Phone Number</Label>
+            <Label htmlFor="phone">
+              Phone Number <span className="text-error-500">*</span>
+            </Label>
             <Input
               id="phone"
               type="tel"
-              placeholder="+1 (555) 123-4567"
+              placeholder="+65 1234 5678"
               value={newStaff.phone}
               onChange={(e) => setNewStaff({ ...newStaff, phone: e.target.value })}
+              required
             />
           </div>
 
