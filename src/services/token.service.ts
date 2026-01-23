@@ -419,8 +419,9 @@ export async function adminAdjustTokens(params: {
   tokensChange: number
   reason: string
   performedBy: string
+  expiryDays?: number // Expiry duration in days for new adjustment packages
 }): Promise<TokenOperationResult> {
-  const { userId, userPackageId, tokensChange, reason, performedBy } = params
+  const { userId, userPackageId, tokensChange, reason, performedBy, expiryDays = 365 } = params
 
   // Use admin client for server-side admin operations
   const adminClient = getSupabaseAdminClient()
@@ -445,6 +446,7 @@ export async function adminAdjustTokens(params: {
       targetPackageId = packages[0].id
     } else if (tokensChange > 0) {
       // Create a new adjustment package - package already has the correct tokens
+      const expiryDate = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000);
       const { data: newPkg, error: createError } = await adminClient
         .from(TABLES.USER_PACKAGES)
         .insert({
@@ -453,7 +455,7 @@ export async function adminAdjustTokens(params: {
           tokens_remaining: tokensChange,
           tokens_held: 0,
           purchased_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year
+          expires_at: expiryDate.toISOString(),
           status: 'active',
           payment_id: `admin-adjustment-${Date.now()}`,
         })

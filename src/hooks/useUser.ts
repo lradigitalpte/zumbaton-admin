@@ -23,6 +23,14 @@ export interface UserDetail {
   address?: string
   emergencyContact?: string
   notes?: string
+  // New fields
+  dateOfBirth?: string | null
+  bloodGroup?: string | null
+  physicalFormUrl?: string | null
+  // Early bird fields
+  earlyBirdEligible?: boolean
+  earlyBirdGrantedAt?: string | null
+  earlyBirdExpiresAt?: string | null
 }
 
 // Query key factory
@@ -39,8 +47,12 @@ function computeStatus(isActive: boolean, isFlagged: boolean): "active" | "flagg
 }
 
 // Fetch user detail from API
-async function fetchUserDetail(userId: string): Promise<UserDetail> {
-  const response = await api.get<{ data: any }>(`/api/users/${userId}`)
+async function fetchUserDetail(userId: string, cacheBuster?: number): Promise<UserDetail> {
+  // Add cache-busting query parameter if provided
+  const url = cacheBuster 
+    ? `/api/users/${userId}?cb=${cacheBuster}&_t=${Date.now()}`
+    : `/api/users/${userId}?_t=${Date.now()}`
+  const response = await api.get<{ data: any }>(url)
 
   if (response.error) {
     throw new Error(response.error.message || "Failed to fetch user")
@@ -77,16 +89,24 @@ async function fetchUserDetail(userId: string): Promise<UserDetail> {
     address: (user.preferences as any)?.address || undefined,
     emergencyContact: (user.preferences as any)?.emergencyContact || undefined,
     notes: (user.preferences as any)?.notes || undefined,
+    // New fields from database
+    dateOfBirth: user.dateOfBirth || null,
+    bloodGroup: user.bloodGroup || null,
+    physicalFormUrl: user.physicalFormUrl || null,
+    // Early bird fields
+    earlyBirdEligible: user.earlyBirdEligible || false,
+    earlyBirdGrantedAt: user.earlyBirdGrantedAt || null,
+    earlyBirdExpiresAt: user.earlyBirdExpiresAt || null,
   }
 
   return userDetail
 }
 
 // Hook to fetch user detail with caching
-export function useUser(userId: string) {
+export function useUser(userId: string, cacheBuster?: number) {
   return useQuery({
-    queryKey: userKeys.detail(userId),
-    queryFn: () => fetchUserDetail(userId),
+    queryKey: [...userKeys.detail(userId), cacheBuster || 0], // Include cacheBuster in key to force refetch
+    queryFn: () => fetchUserDetail(userId, cacheBuster),
     enabled: !!userId, // Only fetch if userId is provided
     staleTime: 0, // Always stale so refetch works
     gcTime: 10 * 60 * 1000, // 10 minutes

@@ -32,6 +32,12 @@ function toUserProfile(row: Record<string, unknown>): UserProfile {
     preferences: (row.preferences as Record<string, unknown>) || {},
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
+    dateOfBirth: row.date_of_birth as string | null,
+    bloodGroup: row.blood_group as string | null,
+    physicalFormUrl: row.physical_form_url as string | null,
+    earlyBirdEligible: (row.early_bird_eligible as boolean) || false,
+    earlyBirdGrantedAt: row.early_bird_granted_at as string | null,
+    earlyBirdExpiresAt: row.early_bird_expires_at as string | null,
   }
 }
 
@@ -265,6 +271,11 @@ export async function updateUserProfile(
   if (updates.phone !== undefined) updateData.phone = updates.phone
   if (updates.avatarUrl !== undefined) updateData.avatar_url = updates.avatarUrl
   if (updates.preferences !== undefined) updateData.preferences = updates.preferences
+  // Handle admin-only fields if present (from UpdateUserProfileAdminRequest)
+  const adminUpdates = updates as any
+  if (adminUpdates.email !== undefined) updateData.email = adminUpdates.email
+  if (adminUpdates.dateOfBirth !== undefined) updateData.date_of_birth = adminUpdates.dateOfBirth
+  if (adminUpdates.bloodGroup !== undefined) updateData.blood_group = adminUpdates.bloodGroup
 
   const { data, error } = await getSupabaseAdminClient()
     .from('user_profiles')
@@ -513,6 +524,9 @@ export async function createUser(
         name: data.name,
         phone: data.phone || null,
         role: data.role,
+        date_of_birth: data.dateOfBirth || null,
+        blood_group: data.bloodGroup || null,
+        physical_form_url: data.physicalFormUrl || null,
       })
       .select()
       .single()
@@ -534,10 +548,20 @@ export async function createUser(
   }
 
   // If the profile was created by trigger but with wrong role, update it
-  if (profileData.role !== data.role) {
+  if (profileData.role !== data.role || data.dateOfBirth || data.bloodGroup || data.physicalFormUrl) {
+    const updateData: Record<string, unknown> = {
+      role: data.role,
+      name: data.name,
+      phone: data.phone || null,
+    }
+    
+    if (data.dateOfBirth) updateData.date_of_birth = data.dateOfBirth
+    if (data.bloodGroup) updateData.blood_group = data.bloodGroup
+    if (data.physicalFormUrl) updateData.physical_form_url = data.physicalFormUrl
+    
     const { data: updatedProfile, error: updateError } = await getSupabaseAdminClient()
       .from('user_profiles')
-      .update({ role: data.role, name: data.name, phone: data.phone || null })
+      .update(updateData)
       .eq('id', authData.user.id)
       .select()
       .single()
@@ -581,56 +605,8 @@ export async function createUser(
     console.error('[UserService] Error sending welcome notification:', notificationError)
   }
 
-  // Send welcome email to new user (admin-created)
-  // Use fire-and-forget to avoid blocking user creation if email service is slow
-  ;(async () => {
-    try {
-      // Get admin name who created the user
-      const { data: adminProfile } = await getSupabaseAdminClient()
-        .from('user_profiles')
-        .select('name')
-        .eq('id', requesterId)
-        .single()
-
-      const { getWebAppUrl } = await import('@/lib/email-url')
-      const webAppUrl = getWebAppUrl()
-      const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
-
-      // Add timeout to prevent hanging
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
-
-      try {
-        await fetch(`${webAppUrl}/api/email/send`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'admin-created-user',
-            secret: emailApiSecret,
-            data: {
-              userEmail: data.email,
-              userName: data.name,
-              temporaryPassword: data.password, // Include password if provided
-              createdBy: adminProfile?.name,
-            },
-          }),
-          signal: controller.signal,
-        })
-        clearTimeout(timeoutId)
-        console.log(`[UserService] Admin-created user email sent to ${data.email}`)
-      } catch (fetchError: any) {
-        clearTimeout(timeoutId)
-        if (fetchError.name === 'AbortError') {
-          console.warn(`[UserService] Email sending timeout for ${data.email}`)
-        } else {
-          throw fetchError
-        }
-      }
-    } catch (emailError) {
-      console.error('[UserService] Failed to send admin-created user email:', emailError)
-      // Don't fail user creation if email fails
-    }
-  })()
+  // Email sending is now handled separately via API endpoint
+  // This ensures user creation succeeds even if email fails
 
   return toUserProfile(profileData)
 }

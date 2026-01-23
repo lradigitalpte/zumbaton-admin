@@ -15,10 +15,12 @@ import type {
 } from '@/api/schemas'
 
 // Helper function to generate class occurrences based on recurrence pattern
+// maxWeeks parameter limits how many weeks to generate (for hybrid auto-generation)
 function generateOccurrences(
   startDate: Date,
   recurrenceType: 'single' | 'recurring' | 'course',
-  recurrencePattern?: Record<string, unknown>
+  recurrencePattern?: Record<string, unknown>,
+  maxWeeks?: number // If provided, limit recurring classes to this many weeks
 ): Date[] {
   const occurrences: Date[] = [new Date(startDate)]
 
@@ -50,7 +52,7 @@ function generateOccurrences(
   }
 
   if (recurrenceType === 'course' && occurrencesCount) {
-    // Course: Fixed number of sessions
+    // Course: Fixed number of sessions (generate all)
     let currentDate = new Date(startDate)
     let sessionCount = 1
 
@@ -74,9 +76,16 @@ function generateOccurrences(
       sessionCount++
     }
   } else if (recurrenceType === 'recurring') {
-    // Recurring: Weekly until end date or indefinitely (max 52 weeks)
+    // Recurring: Generate up to maxWeeks (default 8 weeks for hybrid auto-generation)
     let currentDate = new Date(startDate)
-    const maxOccurrences = 52 // Limit to 1 year of weekly classes
+    const weeksToGenerate = maxWeeks || 8 // Default to 8 weeks
+    const calculatedEndDate = new Date(startDate)
+    calculatedEndDate.setDate(calculatedEndDate.getDate() + (weeksToGenerate * 7))
+    
+    // Use the earlier of: provided endDate or calculated maxWeeks limit
+    const effectiveEndDate = endDate && endDate < calculatedEndDate ? endDate : calculatedEndDate
+    
+    const maxOccurrences = 200 // Safety limit
 
     for (let i = 0; i < maxOccurrences; i++) {
       const currentDay = currentDate.getDay()
@@ -93,7 +102,7 @@ function generateOccurrences(
       currentDate.setDate(currentDate.getDate() + daysToAdd)
       currentDate.setHours(originalHours, originalMinutes, originalSeconds, 0)
 
-      if (endDate && currentDate > endDate) {
+      if (currentDate > effectiveEndDate) {
         break
       }
 
@@ -214,9 +223,11 @@ export async function createClass(data: CreateClassRequest & {
 
   // For recurring and course classes, create parent class and all occurrences
   // First create the parent/template class (this is just a template, not an actual occurrence)
+  // Set scheduled_at to a far future date so it never appears in date-based queries
+  const templateDate = new Date('2099-12-31T00:00:00Z')
   const parentClassData = {
     ...baseClassData,
-    scheduled_at: startDate.toISOString(),
+    scheduled_at: templateDate.toISOString(), // Far future date so parent never shows in daily queries
     parent_class_id: null,
     occurrence_date: null,
   }
@@ -386,7 +397,56 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
     throw new ApiError('SERVER_ERROR', 'Failed to fetch classes', 500, error)
   }
 
-  // Get booking counts for all classes
+  // Get ALL classes for stats calculation (without pagination)
+  const { data: allClassesData } = await supabase
+    .from(TABLES.CLASSES)
+    .select('id, status, scheduled_at, duration_minutes, capacity')
+    .order('scheduled_at', { ascending: true })
+
+  // Calculate stats from ALL classes
+  const now = new Date()
+  let stats = {
+    total: count || 0,
+    active: 0,
+    completed: 0,
+    cancelled: 0,
+    full: 0,
+  }
+
+  if (allClassesData) {
+    // Get booking counts for all classes to determine "full" status
+    const allClassIds = allClassesData.map((c: Record<string, unknown>) => c.id as string)
+    const allBookingCounts = await getBookingCounts(allClassIds)
+
+    allClassesData.forEach((classData: Record<string, unknown>) => {
+      const id = classData.id as string
+      const status = classData.status as string
+      const scheduledAt = classData.scheduled_at as string
+      const durationMinutes = (classData.duration_minutes as number) || 60
+      const capacity = classData.capacity as number
+      const bookedCount = allBookingCounts[id] || 0
+
+      if (status === 'cancelled') {
+        stats.cancelled++
+      } else if (status === 'completed') {
+        stats.completed++
+      } else {
+        // Check if class end time has passed (client-side logic for "completed")
+        const classDate = new Date(scheduledAt)
+        const classEndTime = new Date(classDate.getTime() + durationMinutes * 60 * 1000)
+        
+        if (classEndTime < now && status === 'scheduled') {
+          stats.completed++
+        } else if (bookedCount >= capacity) {
+          stats.full++
+        } else {
+          stats.active++
+        }
+      }
+    })
+  }
+
+  // Get booking counts for paginated classes
   const classIds = (data || []).map((c: Record<string, unknown>) => c.id as string)
   const bookingCounts = await getBookingCounts(classIds)
   const waitlistCounts = await getWaitlistCounts(classIds)
@@ -415,6 +475,7 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
     page,
     pageSize,
     hasMore: (count || 0) > page * pageSize,
+    stats, // Include aggregated stats
   }
 }
 
@@ -821,7 +882,104 @@ async function getBookingCounts(classIds: string[]): Promise<Record<string, numb
   
   return counts
 }
-
+// Generate future occurrences for a recurring parent class
+// Used by cron job to auto-generate instances
+export async function generateFutureOccurrences(parentClassId: string, weeksToGenerate: number = 4): Promise<number> {
+  const adminClient = getSupabaseAdminClient()
+  
+  // Get the parent class
+  const { data: parentClass, error: parentError } = await adminClient
+    .from(TABLES.CLASSES)
+    .select('*')
+    .eq('id', parentClassId)
+    .single()
+  
+  if (parentError || !parentClass) {
+    throw new ApiError('NOT_FOUND_ERROR', 'Parent class not found', 404)
+  }
+  
+  // Verify it's a recurring parent class
+  if (parentClass.parent_class_id !== null) {
+    throw new ApiError('VALIDATION_ERROR', 'This is not a parent class', 400)
+  }
+  
+  if (parentClass.recurrence_type !== 'recurring') {
+    throw new ApiError('VALIDATION_ERROR', 'This is not a recurring class', 400)
+  }
+  
+  // Get the last generated occurrence for this parent
+  const { data: lastOccurrence } = await adminClient
+    .from(TABLES.CLASSES)
+    .select('scheduled_at')
+    .eq('parent_class_id', parentClassId)
+    .order('scheduled_at', { ascending: false })
+    .limit(1)
+    .single()
+  
+  if (!lastOccurrence) {
+    console.log(`[generateFutureOccurrences] No existing occurrences for parent ${parentClassId}`)
+    return 0
+  }
+  
+  // Generate new occurrences starting from day after last occurrence
+  const startDate = new Date(lastOccurrence.scheduled_at)
+  startDate.setDate(startDate.getDate() + 1)
+  
+  const recurrencePattern = parentClass.recurrence_pattern 
+    ? JSON.parse(parentClass.recurrence_pattern as string)
+    : null
+  
+  const newOccurrences = generateOccurrences(
+    startDate,
+    'recurring',
+    recurrencePattern,
+    weeksToGenerate
+  )
+  
+  // Remove first item (it's the start date we passed in)
+  newOccurrences.shift()
+  
+  if (newOccurrences.length === 0) {
+    console.log(`[generateFutureOccurrences] No new occurrences to generate for parent ${parentClassId}`)
+    return 0
+  }
+  
+  // Create occurrence classes
+  const occurrenceClasses = newOccurrences.map(occurrenceDate => ({
+    title: `${parentClass.title} - ${occurrenceDate.toLocaleDateString()}`,
+    description: parentClass.description,
+    class_type: parentClass.class_type,
+    level: parentClass.level,
+    instructor_id: parentClass.instructor_id,
+    instructor_name: parentClass.instructor_name,
+    scheduled_at: occurrenceDate.toISOString(),
+    duration_minutes: parentClass.duration_minutes,
+    capacity: parentClass.capacity,
+    token_cost: parentClass.token_cost,
+    location: parentClass.location,
+    status: 'scheduled',
+    room_id: parentClass.room_id,
+    category_id: parentClass.category_id,
+    recurrence_type: 'recurring',
+    recurrence_pattern: parentClass.recurrence_pattern,
+    parent_class_id: parentClassId,
+    occurrence_date: occurrenceDate.toISOString().split('T')[0],
+    allow_drop_in: parentClass.allow_drop_in,
+    drop_in_token_cost: parentClass.drop_in_token_cost,
+  }))
+  
+  const { error: insertError } = await adminClient
+    .from(TABLES.CLASSES)
+    .insert(occurrenceClasses)
+  
+  if (insertError) {
+    console.error('[generateFutureOccurrences] Error creating occurrences:', insertError)
+    throw new ApiError('SERVER_ERROR', 'Failed to create class occurrences', 500)
+  }
+  
+  console.log(`[generateFutureOccurrences] Generated ${newOccurrences.length} new occurrences for parent ${parentClassId}`)
+  return newOccurrences.length
+}
 // Helper: Get waitlist counts for multiple classes
 async function getWaitlistCounts(classIds: string[]): Promise<Record<string, number>> {
   if (classIds.length === 0) return {}

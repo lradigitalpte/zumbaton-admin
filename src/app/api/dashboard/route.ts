@@ -265,7 +265,7 @@ export async function GET(request: NextRequest) {
         id: cls.id,
         title: cls.title,
         instructor: cls.instructor_name || 'TBD',
-        time: scheduledTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+        time: scheduledTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Singapore' }),
         capacity: cls.capacity || 20,
         booked: classBookings.length,
         checkedIn: classAttendance.length,
@@ -326,7 +326,7 @@ export async function GET(request: NextRequest) {
       const classData = b.classes as { title?: string; scheduled_at?: string } | { title?: string; scheduled_at?: string }[] | null
       const cls = Array.isArray(classData) ? classData[0] : classData
       const classTime = cls?.scheduled_at 
-        ? new Date(cls.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+        ? new Date(cls.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Singapore' })
         : ''
       activities.push({
         id: `booking-${b.id}`,

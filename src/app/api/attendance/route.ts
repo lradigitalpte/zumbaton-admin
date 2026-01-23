@@ -42,14 +42,6 @@ export async function GET(request: NextRequest) {
       .in('status', ['scheduled', 'in-progress', 'completed'])
       .order('scheduled_at', { ascending: true })
 
-    if (classesError) {
-      console.error('[Attendance API] Classes error:', classesError)
-      return NextResponse.json({
-        success: false,
-        error: { code: 'DATABASE_ERROR', message: 'Failed to fetch classes' }
-      }, { status: 500 })
-    }
-
     // Get bookings for these classes with user info and attendance status
     const classIds = (classes || []).map(c => c.id)
     
@@ -150,7 +142,7 @@ export async function GET(request: NextRequest) {
           bookingId: booking.id,
           status: uiStatus,
           checkedInAt: attendance?.checked_in_at 
-            ? new Date(attendance.checked_in_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+            ? new Date(attendance.checked_in_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Singapore' })
             : null,
           tokenBalance: userTokens[booking.user_id] || 0,
           tokensUsed: booking.tokens_used,
@@ -169,8 +161,8 @@ export async function GET(request: NextRequest) {
         className: cls.title,
         instructor: cls.instructor_name || 'TBD',
         instructorId: cls.instructor_id,
-        time: scheduledAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
-        endTime: endTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+        time: scheduledAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Singapore' }),
+        endTime: endTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Singapore' }),
         capacity: cls.capacity,
         room: roomName || 'TBD',
         roomId: cls.room_id,

@@ -26,7 +26,7 @@ async function handleAdjustTokens(
       )
     }
 
-    const { userId, tokensChange, reason, userPackageId } = parseResult.data
+    const { userId, tokensChange, reason, userPackageId, expiryDays } = parseResult.data
 
     // Adjust tokens
     const result = await adminAdjustTokens({
@@ -35,6 +35,7 @@ async function handleAdjustTokens(
       tokensChange,
       reason,
       performedBy: context.user.id,
+      expiryDays,
     })
 
     // Log the action

@@ -10,7 +10,10 @@ import { useUsers, useInvalidateUsers, type User } from "@/hooks/useUsers";
 import { useAuth } from "@/context/AuthContext";
 import { useFlagUser } from "@/hooks/useFlaggedUsers";
 import { useAdjustTokens } from "@/hooks/useTokenAdjustment";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Mail } from "lucide-react";
+import { api } from "@/lib/api-client";
+import { useToast } from "@/components/ui/Toast";
+import { supabase } from "@/lib/supabase";
 
 // Skeleton Components
 const StatCardSkeleton = () => (
@@ -79,10 +82,10 @@ export default function UsersPage() {
   
   const { invalidateAll } = useInvalidateUsers();
   const flagMutation = useFlagUser();
-  const adjustTokensMutation = useAdjustTokens();
   
   // Loading timeout state
   const [isLoadingTakingTooLong, setIsLoadingTakingTooLong] = useState(false);
+  const [forceRefreshKey, setForceRefreshKey] = useState(0);
   
   // Filters
   const [filter, setFilter] = useState<FilterType>("all");
@@ -98,17 +101,31 @@ export default function UsersPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(100); // Get all users, paginate client-side for now
   
-  // Slide panel - Token adjustment
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [adjustmentAmount, setAdjustmentAmount] = useState("");
-  const [adjustmentReason, setAdjustmentReason] = useState("");
-  const [adjustError, setAdjustError] = useState<string | null>(null);
-  
   // Slide panel - Flag user
   const [userToFlag, setUserToFlag] = useState<User | null>(null);
   const [flagReason, setFlagReason] = useState<string>("");
   const [flagNotes, setFlagNotes] = useState("");
   const [flagError, setFlagError] = useState<string | null>(null);
+  
+  // Slide panel - Create user
+  const [showCreatePanel, setShowCreatePanel] = useState(false);
+  const [newUser, setNewUser] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    dateOfBirth: "",
+    bloodGroup: "",
+    physicalForm: null as File | null,
+  });
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [physicalFormUrl, setPhysicalFormUrl] = useState<string | null>(null);
+  const toast = useToast();
+  
+  // Resend email state
+  const [resendingEmailTo, setResendingEmailTo] = useState<string | null>(null);
+  const [showResendEmailPanel, setShowResendEmailPanel] = useState(false);
+  const [userToResendEmail, setUserToResendEmail] = useState<User | null>(null);
   
   // Show/hide advanced filters
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
@@ -146,6 +163,7 @@ export default function UsersPage() {
   
   const { data: usersData, isLoading: loading, error: queryError, refetch } = useUsers(apiFilters, {
     enabled: shouldFetch, // Only fetch when auth is ready
+    cacheBuster: forceRefreshKey, // Include cacheBuster to force refresh
   });
   
   const users: User[] = usersData?.users || [];
@@ -290,49 +308,6 @@ export default function UsersPage() {
     }
   };
 
-  const handleAdjustTokens = async () => {
-    if (!selectedUser || !adjustmentAmount) return;
-    
-    const amount = parseInt(adjustmentAmount);
-    if (isNaN(amount) || amount === 0) {
-      setAdjustError("Please enter a valid non-zero amount");
-      return;
-    }
-    
-    if (!adjustmentReason.trim()) {
-      setAdjustError("Please provide a reason for this adjustment");
-      return;
-    }
-    
-    setAdjustError(null);
-    
-    try {
-      const result = await adjustTokensMutation.mutateAsync({
-        userId: selectedUser.id,
-        tokensChange: amount,
-        reason: adjustmentReason,
-      });
-      
-      console.log('[UsersPage] Token adjustment result:', result);
-      
-      // Close panel and reset
-      setSelectedUser(null);
-      setAdjustmentAmount("");
-      setAdjustmentReason("");
-      
-      // Refresh data - invalidate cache first, then refetch after a delay
-      // to allow the database view (user_token_balances) to update
-      invalidateAll();
-      // Force immediate refetch, then again after delay for database view update
-      refetch();
-      setTimeout(() => {
-        invalidateAll();
-        refetch();
-      }, 1000);
-    } catch (error) {
-      setAdjustError(error instanceof Error ? error.message : "Failed to adjust tokens");
-    }
-  };
 
   const handleFlagUser = async () => {
     if (!userToFlag || !flagReason) return;
@@ -354,6 +329,195 @@ export default function UsersPage() {
       refetch();
     } catch (error) {
       setFlagError(error instanceof Error ? error.message : "Failed to flag user");
+    }
+  };
+
+  const handlePhysicalFormChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setCreateError('Invalid file type. Please upload a PDF, JPEG, PNG, or WebP file.');
+      return;
+    }
+
+    // Validate file size (10MB max)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      setCreateError('File size too large. Maximum size is 10MB.');
+      return;
+    }
+
+    setNewUser({ ...newUser, physicalForm: file });
+    setCreateError(null);
+
+    // Upload file immediately using fetch (FormData needs to be sent without JSON.stringify)
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      // Get session token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Please sign in to upload files');
+      }
+
+      const response = await fetch('/api/users/upload-physical-form', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'Failed to upload physical form');
+      }
+
+      const data = await response.json();
+      if (data.success && data.data?.url) {
+        setPhysicalFormUrl(data.data.url);
+      } else {
+        throw new Error('Failed to upload physical form');
+      }
+    } catch (error) {
+      console.error('Error uploading physical form:', error);
+      setCreateError(error instanceof Error ? error.message : 'Failed to upload physical form');
+      setNewUser({ ...newUser, physicalForm: null });
+    }
+  };
+
+  const handleCreateUser = async () => {
+    if (!newUser.name || !newUser.email || !newUser.phone) {
+      setCreateError("Please fill in all required fields");
+      return;
+    }
+
+    // Generate a temporary password (8 characters)
+    const generatePassword = () => {
+      const lowercase = 'abcdefghijklmnopqrstuvwxyz'
+      const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+      const numbers = '0123456789'
+      const special = '!@#$%^&*'
+      const allChars = lowercase + uppercase + numbers + special
+      let password = ''
+      // Ensure at least one of each type
+      password += lowercase[Math.floor(Math.random() * lowercase.length)]
+      password += uppercase[Math.floor(Math.random() * uppercase.length)]
+      password += numbers[Math.floor(Math.random() * numbers.length)]
+      password += special[Math.floor(Math.random() * special.length)]
+      // Fill the rest randomly to make it 8 characters total
+      for (let i = password.length; i < 8; i++) {
+        password += allChars[Math.floor(Math.random() * allChars.length)]
+      }
+      // Shuffle the password
+      return password.split('').sort(() => Math.random() - 0.5).join('')
+    }
+    const tempPassword = generatePassword();
+
+    setIsCreating(true);
+    setCreateError(null);
+
+    try {
+      const response = await api.post<{ data: any }>("/api/users", {
+        name: newUser.name,
+        email: newUser.email,
+        phone: newUser.phone,
+        role: "user",
+        password: tempPassword,
+        dateOfBirth: newUser.dateOfBirth || undefined,
+        bloodGroup: newUser.bloodGroup || undefined,
+        physicalFormUrl: physicalFormUrl || undefined,
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message || "Failed to create user");
+      }
+
+      const userId = (response.data as any)?.id || (response.data as any)?.data?.id;
+      const userName = newUser.name;
+
+      // Send welcome email separately (don't fail user creation if email fails)
+      if (userId) {
+        try {
+          await api.post(`/api/users/${userId}/send-welcome-email`, {
+            temporaryPassword: tempPassword,
+          });
+          toast.showToast(`User "${userName}" created successfully! Welcome email sent to ${newUser.email}.`, "success");
+        } catch (emailError: any) {
+          console.error("Failed to send welcome email:", emailError);
+          toast.showToast(`User "${userName}" created successfully, but email sending failed. You can resend it using the email icon.`, "warning");
+        }
+      } else {
+        toast.showToast(`User "${userName}" created successfully!`, "success");
+      }
+
+      // Reset form and close panel
+      setNewUser({
+        name: "",
+        email: "",
+        phone: "",
+        dateOfBirth: "",
+        bloodGroup: "",
+        physicalForm: null,
+      });
+      setPhysicalFormUrl(null);
+      setShowCreatePanel(false);
+      setCreateError(null);
+      
+      // Increment refresh key to force new query
+      setForceRefreshKey(prev => prev + 1);
+      
+      // Wait a moment for the API to process
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Invalidate and refetch user list
+      invalidateAll();
+      
+      // Force refetch with cache-busting
+      await refetch();
+      
+      // Increment again after refetch to ensure UI updates
+      setForceRefreshKey(prev => prev + 1);
+    } catch (err: any) {
+      setCreateError(err.message || "Failed to create user");
+      console.error("Error creating user:", err);
+      toast.showToast(err.message || "Failed to create user", "error");
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleResendEmailClick = (user: User) => {
+    setUserToResendEmail(user);
+    setShowResendEmailPanel(true);
+  };
+
+  const handleResendEmail = async () => {
+    if (!userToResendEmail) return;
+    
+    setResendingEmailTo(userToResendEmail.id);
+    
+    try {
+      const response = await api.post<{ success: boolean; message?: string; userEmail?: string }>(
+        `/api/users/${userToResendEmail.id}/resend-email`
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message || "Failed to resend email");
+      }
+
+      toast.showToast(`Welcome email with new password resent successfully to ${userToResendEmail.email}`, "success");
+      setShowResendEmailPanel(false);
+      setUserToResendEmail(null);
+    } catch (err: any) {
+      console.error("Error resending email:", err);
+      toast.showToast(err.message || "Failed to resend email", "error");
+    } finally {
+      setResendingEmailTo(null);
     }
   };
 
@@ -487,15 +651,26 @@ export default function UsersPage() {
                 Manage user accounts and token balances
               </p>
             </div>
-            <button
-              onClick={handleRefresh}
-              disabled={loading}
-              className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-              title="Refresh data"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowCreatePanel(true)}
+                className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 transition-colors"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Create User
+              </button>
+              <button
+                onClick={handleRefresh}
+                disabled={loading}
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                title="Refresh data"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
             
             {/* Search and Filter Controls */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -813,12 +988,6 @@ export default function UsersPage() {
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
                     <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => setSelectedUser(user)}
-                        className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                      >
-                        Adjust
-                      </button>
                       {user.status !== "flagged" && (
                         <button
                           onClick={() => setUserToFlag(user)}
@@ -827,6 +996,14 @@ export default function UsersPage() {
                           Flag
                         </button>
                       )}
+                      <button
+                        onClick={() => handleResendEmailClick(user)}
+                        disabled={resendingEmailTo === user.id}
+                        className="rounded-lg p-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Resend welcome email"
+                      >
+                        <Mail className={`h-4 w-4 ${resendingEmailTo === user.id ? 'animate-pulse' : ''}`} />
+                      </button>
                       <Link
                         href={`/users/${user.id}`}
                         className="rounded-lg bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
@@ -976,113 +1153,6 @@ export default function UsersPage() {
         )}
       </div>
 
-      {/* Token Adjustment Panel */}
-      <SlidePanel
-        isOpen={!!selectedUser}
-        onClose={() => {
-          setSelectedUser(null);
-          setAdjustmentAmount("");
-          setAdjustmentReason("");
-        }}
-        title="Adjust Tokens"
-      >
-        {selectedUser && (
-          <div className="space-y-6">
-            <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-              {selectedUser.avatarUrl ? (
-                <img
-                  src={selectedUser.avatarUrl}
-                  alt={selectedUser.name}
-                  className="h-12 w-12 rounded-full object-cover"
-                />
-              ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-lg font-semibold text-white">
-                  {getInitials(selectedUser.name)}
-                </div>
-              )}
-              <div>
-                <div className="font-medium text-gray-900 dark:text-white">
-                  {selectedUser.name}
-                </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">{selectedUser.email}</div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-              <div className="text-sm text-gray-500 dark:text-gray-400">Current Balance</div>
-              <div className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">
-                {selectedUser.tokenBalance}{" "}
-                <span className="text-lg font-normal text-gray-500">tokens</span>
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="amount">Adjustment Amount</Label>
-              <Input
-                id="amount"
-                type="number"
-                placeholder="e.g., 5 or -2"
-                value={adjustmentAmount}
-                onChange={(e) => setAdjustmentAmount(e.target.value)}
-              />
-              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                Use positive numbers to add tokens, negative to remove.
-              </p>
-            </div>
-
-            <div>
-              <Label htmlFor="reason">Reason for Adjustment</Label>
-              <textarea
-                id="reason"
-                rows={3}
-                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
-                placeholder="Enter reason for this adjustment..."
-                value={adjustmentReason}
-                onChange={(e) => {
-                  setAdjustmentReason(e.target.value);
-                  setAdjustError(null);
-                }}
-              />
-              {adjustError && (
-                <p className="mt-2 text-sm text-red-600 dark:text-red-400">{adjustError}</p>
-              )}
-            </div>
-
-            {adjustmentAmount && (
-              <div className="rounded-xl border-2 border-dashed border-gray-300 p-4 dark:border-gray-600">
-                <div className="text-sm text-gray-500 dark:text-gray-400">New Balance Preview</div>
-                <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
-                  {selectedUser.tokenBalance + parseInt(adjustmentAmount || "0")}{" "}
-                  <span className="text-base font-normal text-gray-500">tokens</span>
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-3 pt-4">
-              <button
-                onClick={() => {
-                  setSelectedUser(null);
-                  setAdjustmentAmount("");
-                  setAdjustmentReason("");
-                  setAdjustError(null);
-                }}
-                disabled={adjustTokensMutation.isPending}
-                className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAdjustTokens}
-                disabled={!adjustmentAmount || !adjustmentReason.trim() || adjustTokensMutation.isPending}
-                className="flex-1 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {adjustTokensMutation.isPending ? "Applying..." : "Apply Adjustment"}
-              </button>
-            </div>
-          </div>
-        )}
-      </SlidePanel>
-
       {/* Flag User Panel */}
       <SlidePanel
         isOpen={!!userToFlag}
@@ -1208,6 +1278,256 @@ export default function UsersPage() {
                 className="flex-1 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {flagMutation.isPending ? "Flagging..." : "Flag User"}
+              </button>
+            </div>
+          </div>
+        )}
+      </SlidePanel>
+
+      {/* Create User Panel */}
+      <SlidePanel
+        isOpen={showCreatePanel}
+        onClose={() => {
+          setShowCreatePanel(false);
+          setCreateError(null);
+          setNewUser({
+            name: "",
+            email: "",
+            phone: "",
+            dateOfBirth: "",
+            bloodGroup: "",
+            physicalForm: null,
+          });
+          setPhysicalFormUrl(null);
+        }}
+        title="Create New User"
+        size="md"
+      >
+        <div className="space-y-6">
+          {createError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+              <p className="text-sm text-red-600 dark:text-red-400">{createError}</p>
+            </div>
+          )}
+
+          <div>
+            <Label htmlFor="name">
+              Full Name <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="name"
+              type="text"
+              placeholder="John Doe"
+              value={newUser.name}
+              onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="email">
+              Email Address <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="john.doe@example.com"
+              value={newUser.email}
+              onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="phone">
+              Phone Number <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="phone"
+              type="tel"
+              placeholder="+65 1234 5678"
+              value={newUser.phone}
+              onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="dateOfBirth">
+              Date of Birth
+            </Label>
+            <Input
+              id="dateOfBirth"
+              type="date"
+              value={newUser.dateOfBirth}
+              onChange={(e) => setNewUser({ ...newUser, dateOfBirth: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="bloodGroup">
+              Blood Group
+            </Label>
+            <select
+              id="bloodGroup"
+              value={newUser.bloodGroup}
+              onChange={(e) => setNewUser({ ...newUser, bloodGroup: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+            >
+              <option value="">Select blood group</option>
+              <option value="A+">A+</option>
+              <option value="A-">A-</option>
+              <option value="B+">B+</option>
+              <option value="B-">B-</option>
+              <option value="AB+">AB+</option>
+              <option value="AB-">AB-</option>
+              <option value="O+">O+</option>
+              <option value="O-">O-</option>
+            </select>
+          </div>
+
+          <div>
+            <Label htmlFor="physicalForm">
+              Physical Form (PDF, JPEG, PNG, WebP)
+            </Label>
+            <input
+              id="physicalForm"
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              onChange={handlePhysicalFormChange}
+              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+            />
+            {physicalFormUrl && (
+              <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                ✓ Physical form uploaded successfully
+              </p>
+            )}
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Maximum file size: 10MB
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+            <p className="text-sm text-blue-800 dark:text-blue-200">
+              <strong>Note:</strong> A temporary password will be automatically generated and sent to the user via email. They can sign in at <strong>zumbaton.sg/signin</strong> and change their password using the "Forgot Password" option if needed.
+            </p>
+          </div>
+
+          <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={() => {
+                setShowCreatePanel(false);
+                setCreateError(null);
+                setNewUser({
+                  name: "",
+                  email: "",
+                  phone: "",
+                  dateOfBirth: "",
+                  bloodGroup: "",
+                  physicalForm: null,
+                });
+                setPhysicalFormUrl(null);
+              }}
+              disabled={isCreating}
+              className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleCreateUser}
+              disabled={!newUser.name || !newUser.email || !newUser.phone || isCreating}
+              className="flex-1 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isCreating ? "Creating..." : "Create User"}
+            </button>
+          </div>
+        </div>
+      </SlidePanel>
+
+      {/* Resend Email Panel */}
+      <SlidePanel
+        isOpen={showResendEmailPanel}
+        onClose={() => {
+          setShowResendEmailPanel(false);
+          setUserToResendEmail(null);
+          setResendingEmailTo(null);
+        }}
+        title="Resend Welcome Email"
+        size="md"
+      >
+        {userToResendEmail && (
+          <div className="space-y-6">
+            {/* User Info */}
+            <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
+              {userToResendEmail.avatarUrl ? (
+                <img
+                  src={userToResendEmail.avatarUrl}
+                  alt={userToResendEmail.name}
+                  className="h-12 w-12 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-lg font-semibold text-white">
+                  {getInitials(userToResendEmail.name)}
+                </div>
+              )}
+              <div>
+                <div className="font-medium text-gray-900 dark:text-white">
+                  {userToResendEmail.name}
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">{userToResendEmail.email}</div>
+              </div>
+            </div>
+
+            {/* Instructions */}
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+              <div className="flex items-start gap-3">
+                <svg className="h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <div className="font-medium text-blue-800 dark:text-blue-200">
+                    What happens when you resend the email?
+                  </div>
+                  <ul className="mt-2 space-y-1 text-sm text-blue-700 dark:text-blue-300">
+                    <li>• A new temporary password will be generated</li>
+                    <li>• The old password will be invalidated</li>
+                    <li>• Welcome email will be sent to: <strong>{userToResendEmail.email}</strong></li>
+                    <li>• The email will include sign-in instructions and the new password</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Email Display */}
+            <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email will be sent to:</div>
+              <div className="text-lg font-semibold text-gray-900 dark:text-white">{userToResendEmail.email}</div>
+            </div>
+
+            {/* Sign-in Instructions */}
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Sign-in URL:</div>
+              <div className="text-sm text-gray-900 dark:text-white font-mono bg-white dark:bg-gray-900 px-3 py-2 rounded border">
+                https://zumbaton.sg/signin
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => {
+                  setShowResendEmailPanel(false);
+                  setUserToResendEmail(null);
+                  setResendingEmailTo(null);
+                }}
+                disabled={resendingEmailTo === userToResendEmail.id}
+                className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResendEmail}
+                disabled={resendingEmailTo === userToResendEmail.id}
+                className="flex-1 rounded-lg bg-blue-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {resendingEmailTo === userToResendEmail.id ? "Sending..." : "Resend Email"}
               </button>
             </div>
           </div>

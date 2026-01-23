@@ -2,6 +2,7 @@
 // Handles user package operations
 
 import { NextRequest, NextResponse } from 'next/server'
+import { withAuth, AuthenticatedUser } from '@/middleware/rbac'
 import { purchasePackage, getUserPackages } from '@/services/user-package.service'
 import { UuidSchema } from '@/api/schemas'
 import { ApiError } from '@/lib/api-error'
@@ -15,7 +16,10 @@ const PurchaseRequestSchema = z.object({
 })
 
 // GET /api/user-packages - Get user's packages
-export async function GET(request: NextRequest) {
+async function handleGetUserPackages(
+  request: NextRequest,
+  context: { params: Promise<Record<string, unknown>>; user: AuthenticatedUser }
+) {
   try {
     const { searchParams } = new URL(request.url)
     
@@ -46,8 +50,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/user-packages - Purchase a package
-export async function POST(request: NextRequest) {
+// POST /api/user-packages - Purchase a package (admin can sell packages)
+async function handlePurchasePackage(
+  request: NextRequest,
+  context: { params: Promise<Record<string, unknown>>; user: AuthenticatedUser }
+) {
   try {
     const body = await request.json()
 
@@ -65,6 +72,9 @@ export async function POST(request: NextRequest) {
     return handleApiError(error)
   }
 }
+
+export const GET = withAuth(handleGetUserPackages, { requiredRole: 'admin' })
+export const POST = withAuth(handlePurchasePackage, { requiredRole: 'admin' })
 
 // Error handler helper
 function handleApiError(error: unknown) {

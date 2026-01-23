@@ -8,7 +8,7 @@ interface QRCodeDisplayProps {
   className: string;
   sessionDate?: string;
   sessionTime?: string;
-  refreshInterval?: number; // in seconds, default 30
+  refreshInterval?: number; // in seconds, default 600 (10 minutes)
   size?: number;
 }
 
@@ -25,7 +25,7 @@ export default function QRCodeDisplay({
   className,
   sessionDate,
   sessionTime,
-  refreshInterval = 30,
+  refreshInterval = 600, // 10 minutes (600 seconds)
   size = 280,
 }: QRCodeDisplayProps) {
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
@@ -98,7 +98,7 @@ export default function QRCodeDisplay({
   // Initial generation
   useEffect(() => {
     generateQR();
-  }, [generateQR]);
+  }, [generateQR, refreshInterval]);
 
   // Countdown and refresh
   useEffect(() => {

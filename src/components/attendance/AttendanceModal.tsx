@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import QRCodeDisplay from "./QRCodeDisplay";
+import { getSupabaseClient } from "@/lib/supabase";
 
 interface Attendee {
   id: string;
@@ -46,19 +46,23 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
   const [isLoading, setIsLoading] = useState(false);
   const isCompleted = classData.status === 'completed';
 
-  // Fetch real attendees for completed classes
+  // Fetch real attendees for ALL classes (not just completed)
   useEffect(() => {
     if (!isOpen) {
       setAttendees([]);
       return;
     }
 
-    // If completed class, fetch real attendees
-    if (isCompleted) {
+    let isMounted = true;
+
+    // Fetch attendees from API
+    const fetchAttendees = () => {
       setIsLoading(true);
       fetch(`/api/attendance/class/${classData.id}/attendees`)
         .then(res => res.json())
         .then(data => {
+          if (!isMounted) return;
+          
           if (data.success && data.data?.attendees) {
             const formattedAttendees: AttendeeWithStatus[] = data.data.attendees.map((a: any) => ({
               id: a.id,
@@ -74,47 +78,72 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
           setIsLoading(false);
         })
         .catch(err => {
+          if (!isMounted) return;
           console.error('Error fetching attendees:', err);
           setAttendees([]);
           setIsLoading(false);
         });
-      return;
-    }
-
-    // For active classes, simulate people checking in for demo
-    const addRandomAttendee = () => {
-      setAttendees((prev) => {
-        const notCheckedIn = demoAttendees.filter(
-          (d) => !prev.some((p) => p.id === d.id)
-        );
-        if (notCheckedIn.length === 0) return prev;
-
-        const randomAttendee = notCheckedIn[Math.floor(Math.random() * notCheckedIn.length)];
-        const now = new Date();
-        return [
-          {
-            ...randomAttendee,
-            checkedInAt: now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
-            status: 'attended' as const,
-          },
-          ...prev,
-        ];
-      });
     };
 
-    // Add first attendee after 2 seconds, then randomly
-    const firstTimer = setTimeout(addRandomAttendee, 2000);
-    const interval = setInterval(() => {
-      if (Math.random() > 0.5) {
-        addRandomAttendee();
-      }
-    }, 3000);
+    // Initial fetch
+    fetchAttendees();
+
+    // Set up real-time subscription for new check-ins
+    const supabase = getSupabaseClient();
+    
+    // Subscribe to attendances table - listen for new check-ins
+    const attendancesChannel = supabase
+      .channel(`attendance-modal:${classData.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "attendances",
+        },
+        async (payload) => {
+          console.log("[AttendanceModal] New check-in:", payload);
+          // Verify this attendance is for a booking in this class
+          const { data: booking } = await supabase
+            .from('bookings')
+            .select('class_id')
+            .eq('id', payload.new.booking_id)
+            .single();
+          
+          if (booking?.class_id === classData.id) {
+            fetchAttendees();
+          }
+        }
+      )
+      .subscribe();
+
+    // Subscribe to bookings table for status changes
+    const bookingsChannel = supabase
+      .channel(`bookings-modal:${classData.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "bookings",
+          filter: `class_id=eq.${classData.id}`,
+        },
+        (payload) => {
+          // Only refetch if status changed to 'attended'
+          if (payload.new.status === 'attended' && payload.old.status !== 'attended') {
+            console.log("[AttendanceModal] Booking marked as attended:", payload);
+            fetchAttendees();
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
-      clearTimeout(firstTimer);
-      clearInterval(interval);
+      isMounted = false;
+      supabase.removeChannel(attendancesChannel);
+      supabase.removeChannel(bookingsChannel);
     };
-  }, [isOpen, isCompleted, classData.id]);
+  }, [isOpen, classData.id]);
 
   // Handle escape key
   useEffect(() => {
@@ -178,28 +207,8 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
 
         {/* Main Content */}
         <div className="flex flex-1 overflow-hidden">
-          {/* QR Code Section - Hide for completed classes */}
-          {!isCompleted && (
-            <div className="flex flex-1 items-center justify-center p-8 overflow-visible">
-              <QRCodeDisplay
-                classId={classData.id}
-                className={classData.name}
-                size={400}
-                refreshInterval={30}
-              />
-            </div>
-          )}
-          {isCompleted && (
-            <div className="flex flex-1 items-center justify-center p-8">
-              <div className="text-center">
-                <h2 className="text-3xl font-bold text-white mb-2">Class Completed</h2>
-                <p className="text-gray-400">View attendance below</p>
-              </div>
-            </div>
-          )}
-
-          {/* Attendees List */}
-          <div className="w-96 border-l border-gray-700 bg-gray-800/50 p-6">
+          {/* Attendees List - Full Width */}
+          <div className="flex-1 bg-gray-800/50 p-6">
             <h3 className="mb-4 text-lg font-semibold text-white">
               Recent Check-ins
             </h3>
@@ -318,29 +327,9 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
         </div>
 
         {/* Content */}
-        <div className="flex flex-col md:flex-row">
-          {/* QR Code - Hide for completed classes */}
-          {!isCompleted && (
-            <div className="flex flex-1 items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-8 dark:from-gray-800 dark:to-gray-850">
-              <QRCodeDisplay
-                classId={classData.id}
-                className={classData.name}
-                size={240}
-                refreshInterval={30}
-              />
-            </div>
-          )}
-          {isCompleted && (
-            <div className="flex flex-1 items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-8 dark:from-gray-800 dark:to-gray-850">
-              <div className="text-center">
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Class Completed</h3>
-                <p className="text-gray-600 dark:text-gray-400">View attendance list on the right</p>
-              </div>
-            </div>
-          )}
-
-          {/* Attendees */}
-          <div className="w-full md:w-80 border-t md:border-t-0 md:border-l border-gray-200 dark:border-gray-700">
+        <div className="flex flex-col">
+          {/* Attendees - Full Width */}
+          <div className="w-full border-gray-200 dark:border-gray-700">
             <div className="p-4 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-gray-900 dark:text-white">{isCompleted ? 'Attendance' : 'Check-ins'}</h3>

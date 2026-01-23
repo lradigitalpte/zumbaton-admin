@@ -131,16 +131,33 @@ function NewClassPageContent() {
       rooms.length > 0 &&
       allCategories.length > 0
     ) {
+      // Convert UTC time back to Singapore time (UTC+8) for display
       const scheduledDate = new Date(existingClass.scheduledAt);
-      // Get date in local timezone
-      const year = scheduledDate.getFullYear();
-      const month = String(scheduledDate.getMonth() + 1).padStart(2, '0');
-      const day = String(scheduledDate.getDate()).padStart(2, '0');
+      // Get UTC date components
+      const utcYear = scheduledDate.getUTCFullYear();
+      const utcMonth = scheduledDate.getUTCMonth();
+      const utcDate = scheduledDate.getUTCDate();
+      const utcHours = scheduledDate.getUTCHours();
+      const utcMinutes = scheduledDate.getUTCMinutes();
+      
+      // Convert UTC to Singapore time (add 8 hours)
+      const sgHours = utcHours + 8;
+      let sgDate = new Date(Date.UTC(utcYear, utcMonth, utcDate, sgHours, utcMinutes));
+      
+      // Handle day rollover if Singapore hours exceed 24
+      if (sgHours >= 24) {
+        sgDate = new Date(Date.UTC(utcYear, utcMonth, utcDate + 1, sgHours - 24, utcMinutes));
+      }
+      
+      // Format date string (in Singapore time)
+      const year = sgDate.getUTCFullYear();
+      const month = String(sgDate.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(sgDate.getUTCDate()).padStart(2, '0');
       const dateStr = `${year}-${month}-${day}`;
       
-      // Get time in local timezone
-      const hours = String(scheduledDate.getHours()).padStart(2, '0');
-      const minutes = String(scheduledDate.getMinutes()).padStart(2, '0');
+      // Format time string (in Singapore time)
+      const hours = String(sgDate.getUTCHours()).padStart(2, '0');
+      const minutes = String(sgDate.getUTCMinutes()).padStart(2, '0');
       const timeStr = `${hours}:${minutes}`;
       
       // Determine class type from recurrence
@@ -269,14 +286,40 @@ function NewClassPageContent() {
     const isIndividualInstance = existingClass && /-\s*\d{1,2}\/\d{1,2}\/\d{4}$/.test(existingClass.title || "");
 
     // Build scheduled datetime
+    // IMPORTANT: The time input is ALWAYS in Singapore time (SGT, UTC+8)
+    // We need to convert it to UTC for storage, regardless of admin's location
+    const convertSGTimeToUTC = (dateStr: string, timeStr: string): string => {
+      // Parse the date and time components
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      
+      // Create a date object for the date (treat as UTC midnight)
+      const dateParts = dateStr.split('-').map(Number);
+      const baseDate = new Date(Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2], 0, 0, 0));
+      
+      // The time entered is Singapore time (SGT = UTC+8)
+      // So we subtract 8 hours to get UTC
+      // Example: User enters "10:00" (Singapore time) = UTC 02:00
+      const utcHours = hours - 8;
+      
+      // Handle day rollover if UTC hours go negative
+      if (utcHours < 0) {
+        baseDate.setUTCDate(baseDate.getUTCDate() - 1);
+        baseDate.setUTCHours(utcHours + 24, minutes, 0, 0);
+      } else {
+        baseDate.setUTCHours(utcHours, minutes, 0, 0);
+      }
+      
+      return baseDate.toISOString();
+    };
+
     let scheduledAt: string;
     if (classType === "single" || isIndividualInstance) {
       // For individual instances, use the date field
-      scheduledAt = new Date(`${formData.date}T${formData.startTime}`).toISOString();
+      scheduledAt = convertSGTimeToUTC(formData.date, formData.startTime);
     } else if (classType === "recurring") {
-      scheduledAt = new Date(`${formData.startDate}T${formData.startTime}`).toISOString();
+      scheduledAt = convertSGTimeToUTC(formData.startDate, formData.startTime);
     } else {
-      scheduledAt = new Date(`${formData.courseStartDate}T${formData.startTime}`).toISOString();
+      scheduledAt = convertSGTimeToUTC(formData.courseStartDate, formData.startTime);
     }
 
     // Build recurrence pattern for recurring/course
@@ -675,7 +718,9 @@ function NewClassPageContent() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="startTime">Start Time</Label>
+                  <Label htmlFor="startTime">
+                    Start Time <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">(SGT)</span>
+                  </Label>
                   <Input
                     id="startTime"
                     type="time"
@@ -720,13 +765,18 @@ function NewClassPageContent() {
 
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
                   <div>
-                    <Label htmlFor="startTime">Start Time</Label>
+                    <Label htmlFor="startTime">
+                      Start Time <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">(SGT)</span>
+                    </Label>
                     <Input
                       id="startTime"
                       type="time"
                       value={formData.startTime}
                       onChange={(e) => handleChange("startTime")(e.target.value)}
                     />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Enter time in Singapore Standard Time (UTC+8)
+                    </p>
                   </div>
                   <div>
                     <Label htmlFor="duration">Duration (minutes)</Label>
@@ -838,7 +888,9 @@ function NewClassPageContent() {
 
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                   <div>
-                    <Label htmlFor="startTime">Class Time</Label>
+                    <Label htmlFor="startTime">
+                      Class Time <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">(SGT)</span>
+                    </Label>
                     <Input
                       id="startTime"
                       type="time"

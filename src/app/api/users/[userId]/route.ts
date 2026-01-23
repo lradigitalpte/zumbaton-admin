@@ -6,10 +6,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { withSelfOrAdmin, withAuth, AuthenticatedUser, hasRequiredRole } from '@/middleware/rbac'
 import { getUserProfile, updateUserProfile, updateUserStatus, updateUserRole, deleteUser } from '@/services/user.service'
 import { createAuditLog } from '@/services/rbac.service'
-import { UpdateUserProfileRequestSchema, UpdateUserStatusRequestSchema, UpdateUserRoleRequestSchema } from '@/api/schemas/user'
+import { UpdateUserProfileRequestSchema, UpdateUserProfileAdminRequestSchema, UpdateUserStatusRequestSchema, UpdateUserRoleRequestSchema } from '@/api/schemas/user'
 import { cachedResponse, CACHE_PRESETS } from '@/lib/api-cache'
 import { ApiError, isApiError } from '@/lib/api-error'
 
@@ -100,6 +101,17 @@ async function handleUpdateUser(
         )
       }
       updatedProfile = await updateUserStatus(context.user.id, targetUserId, parseResult.data)
+    }
+    // Admin updating user profile (including personal info)
+    else if (isAdmin && !isSelf && (body.name !== undefined || body.email !== undefined || body.phone !== undefined || body.dateOfBirth !== undefined || body.bloodGroup !== undefined)) {
+      const parseResult = UpdateUserProfileAdminRequestSchema.safeParse(body)
+      if (!parseResult.success) {
+        return NextResponse.json(
+          { error: 'Bad Request', message: 'Invalid request body', details: parseResult.error.issues },
+          { status: 400 }
+        )
+      }
+      updatedProfile = await updateUserProfile(context.user.id, targetUserId, parseResult.data)
     } else {
       // User updating self - limited fields
       const parseResult = UpdateUserProfileRequestSchema.safeParse(body)
@@ -123,6 +135,11 @@ async function handleUpdateUser(
         updatedFields: Object.keys(body) 
       }
     })
+
+    // Invalidate Next.js cache for this user's route
+    revalidatePath(`/api/users/${targetUserId}`)
+    revalidatePath(`/users/${targetUserId}`)
+    revalidatePath(`/users/staff/${targetUserId}`)
 
     return NextResponse.json({ data: updatedProfile })
   } catch (error) {

@@ -44,9 +44,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .order('booked_at', { ascending: true })
 
     // Log for debugging
-    console.log('[Attendance API] Raw bookings count:', allBookingsRaw?.length || 0, 'Error:', allBookingsError?.message)
     if (allBookingsError) {
-      console.error('[Attendance API] Bookings query error details:', allBookingsError)
+      console.error('[Attendance API] Bookings query error:', allBookingsError)
+      console.log('[Attendance API] Raw bookings count: 0 (error occurred)')
+    } else {
+      console.log('[Attendance API] Raw bookings count:', allBookingsRaw?.length || 0)
     }
 
     // Filter out cancelled bookings for "expected" count (people expected to show up)
@@ -73,6 +75,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             time: new Date(classData.scheduled_at).toLocaleTimeString('en-US', {
               hour: '2-digit',
               minute: '2-digit',
+              timeZone: 'Asia/Singapore',
             }),
             scheduledAt: classData.scheduled_at,
             enrolled: 0,
@@ -145,6 +148,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
+            timeZone: 'Asia/Singapore',
           }) : '',
         }
       })
@@ -158,11 +162,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         return a.name.localeCompare(b.name)
       })
 
-    // Format class data
+    // Format class data (Singapore time)
     const scheduledAt = new Date(classData.scheduled_at)
     const timeStr = scheduledAt.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
+      timeZone: 'Asia/Singapore',
     })
 
     return NextResponse.json({

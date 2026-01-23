@@ -30,7 +30,18 @@ export default function AttendancePage() {
   const bulkCheckIn = useBulkCheckIn();
   const markNoShow = useMarkNoShow();
 
-  const sessions = data?.classes || [];
+  // Deduplicate classes by ID (in case API returns duplicates)
+  const sessions = useMemo(() => {
+    const classes = data?.classes || [];
+    const seen = new Set<string>();
+    return classes.filter((session) => {
+      if (seen.has(session.id)) {
+        return false;
+      }
+      seen.add(session.id);
+      return true;
+    });
+  }, [data?.classes]);
   const todayStats = data?.stats || {
     totalClasses: 0,
     totalBookings: 0,
@@ -46,9 +57,9 @@ export default function AttendancePage() {
     }
   }, [sessions, selectedSession]);
 
-  // Get current time for display
-  const currentTime = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
-  const currentDate = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  // Get current time for display (Singapore time)
+  const currentTime = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Singapore" });
+  const currentDate = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Singapore" });
 
   const handleCheckIn = async (bookingId: string) => {
     if (!user?.id) return;

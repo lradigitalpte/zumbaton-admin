@@ -30,9 +30,10 @@ interface QRAttendanceModalProps {
   realAttendees?: Array<{ id: string; name: string; checkedInAt: string; avatar?: string }>;
   realEnrolled?: number;
   autoFullscreen?: boolean; // Auto-open in fullscreen mode
+  onRefresh?: () => void; // Manual refresh callback
 }
 
-const QR_REFRESH_SECONDS = 300; // 5 minutes
+const QR_REFRESH_SECONDS = 600; // 10 minutes
 
 // Format seconds as MM:SS
 const formatTime = (seconds: number) => {
@@ -50,15 +51,18 @@ export default function QRAttendanceModal({
   classInfo, 
   realAttendees = [],
   realEnrolled,
-  autoFullscreen = false 
+  autoFullscreen = false,
+  onRefresh
 }: QRAttendanceModalProps) {
   const [isFullscreen, setIsFullscreen] = useState(autoFullscreen);
   const [qrToken, setQrToken] = useState("");
   const [timeLeft, setTimeLeft] = useState(QR_REFRESH_SECONDS);
   const [students, setStudents] = useState<Student[]>([]);
   const [activeTab, setActiveTab] = useState<"qr" | "list">("qr");
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const classIdRef = useRef(classInfo.id);
   const prevClassInfoEnrolledRef = useRef(classInfo.enrolled);
+  const initialClassInfoRef = useRef(classInfo); // Store initial class info to prevent QR regeneration on data updates
 
   // Use real attendees if provided, otherwise generate demo students
   // Use refs to track previous values and avoid infinite loops
@@ -82,6 +86,12 @@ export default function QRAttendanceModal({
     prevAttendeesRef.current = attendeesKey;
     prevEnrolledRef.current = enrolled;
     prevClassInfoEnrolledRef.current = classInfo.enrolled;
+    
+    // Show refresh indicator briefly when data updates
+    if (students.length > 0) {
+      setIsRefreshing(true);
+      setTimeout(() => setIsRefreshing(false), 500);
+    }
     
     // Always use real attendees if provided (even if empty array)
     // Only use demo data if realAttendees is explicitly undefined/null (not provided)
@@ -226,16 +236,24 @@ export default function QRAttendanceModal({
   const checkedInCount = students.filter((s) => s.status === "checked-in").length;
   const pendingCount = students.filter((s) => s.status === "pending").length;
 
-  // Memoize QR data so it only changes when token changes, not on every render
+  // Update initial class info ref when classId changes (new class opened)
+  useEffect(() => {
+    // Only update initial class info if classId actually changes (new class)
+    if (initialClassInfoRef.current.id !== classInfo.id) {
+      initialClassInfoRef.current = classInfo;
+    }
+  }, [classInfo.id]);
+
   const qrData = useMemo(() => {
     if (!qrToken) return "";
 
-    // Use the time when token was generated, not current time, so QR code stays stable
+    // Use the initial class info (stored when modal opened) to prevent QR regeneration
+    // Only the token should change, not the class info
     const qrDataObject = {
-      classId: classInfo.id,
-      className: classInfo.name,
-      sessionDate: classInfo.date, // Use sessionDate to match backend API format
-      sessionTime: classInfo.time,
+      classId: initialClassInfoRef.current.id,
+      className: initialClassInfoRef.current.name,
+      sessionDate: initialClassInfoRef.current.date, // Use sessionDate to match backend API format
+      sessionTime: initialClassInfoRef.current.time,
       token: qrToken,
       expiresAt: tokenGeneratedAtRef.current + (QR_REFRESH_SECONDS * 1000), // Token expires when QR refreshes
     };
@@ -250,7 +268,7 @@ export default function QRAttendanceModal({
     
     // QR code contains URL for phone camera scanning, but also works with in-app scanner
     return checkInUrl;
-  }, [qrToken, classInfo.id, classInfo.name, classInfo.date, classInfo.time]);
+  }, [qrToken]); // Only depend on qrToken, not classInfo
 
   if (!isOpen) return null;
 
@@ -274,6 +292,21 @@ export default function QRAttendanceModal({
               <p className="text-2xl font-bold text-emerald-400">{checkedInCount}/{realEnrolled || classInfo.enrolled || students.length}</p>
               <p className="text-xs text-gray-400">checked in</p>
             </div>
+            {onRefresh && (
+              <button
+                onClick={() => {
+                  onRefresh();
+                  setIsRefreshing(true);
+                  setTimeout(() => setIsRefreshing(false), 1000);
+                }}
+                className="p-2 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-transform hover:rotate-180"
+                title="Refresh data"
+              >
+                <svg className={`h-6 w-6 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            )}
             <button
               onClick={() => setIsFullscreen(false)}
               className="p-2 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600"
@@ -378,9 +411,14 @@ export default function QRAttendanceModal({
 
         {/* Stats Bar */}
         <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50">
-          <div className="text-center">
-            <p className="text-2xl font-bold text-emerald-600">{checkedInCount}</p>
+          <div className="text-center relative">
+            <p className={`text-2xl font-bold text-emerald-600 transition-all ${isRefreshing ? 'scale-110' : ''}`}>
+              {checkedInCount}
+            </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">Checked In</p>
+            {isRefreshing && (
+              <div className="absolute -top-1 -right-1 h-3 w-3 bg-emerald-500 rounded-full animate-ping"></div>
+            )}
           </div>
           <div className="text-center">
             <p className="text-2xl font-bold text-amber-600">{pendingCount}</p>
