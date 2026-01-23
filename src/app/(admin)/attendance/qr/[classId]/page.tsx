@@ -36,46 +36,45 @@ export default function AttendanceQRPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Extract fetch function so it can be called from refresh button
+  const fetchClassData = async () => {
+    if (!classId) return;
+
+    try {
+      setIsLoading(true);
+      const response = await fetch(`/api/attendance/class/${classId}/attendees`);
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || "Failed to fetch class data");
+      }
+
+      console.log('[AttendanceQR] Class data received:', {
+        enrolled: result.data.class.enrolled,
+        expected: result.data.expected,
+        checkedIn: result.data.checkedIn,
+        attendees: result.data.attendees.length
+      });
+      setClassData(result.data.class);
+      setRealAttendees(result.data.attendees || []);
+      setError(null);
+    } catch (err) {
+      console.error("[AttendanceQR] Error fetching class data:", err);
+      setError(err instanceof Error ? err.message : "Failed to load class data");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Fetch real class data and attendees
   useEffect(() => {
     let isMounted = true;
 
-    const fetchClassData = async () => {
-      if (!classId) return;
-
-      try {
-        setIsLoading(true);
-        const response = await fetch(`/api/attendance/class/${classId}/attendees`);
-        const result = await response.json();
-
-        if (!response.ok || !result.success) {
-          throw new Error(result.error?.message || "Failed to fetch class data");
-        }
-
-        if (isMounted) {
-          console.log('[AttendanceQR] Class data received:', {
-            enrolled: result.data.class.enrolled,
-            expected: result.data.expected,
-            checkedIn: result.data.checkedIn,
-            attendees: result.data.attendees.length
-          });
-          setClassData(result.data.class);
-          setRealAttendees(result.data.attendees || []);
-          setError(null);
-        }
-      } catch (err) {
-        console.error("[AttendanceQR] Error fetching class data:", err);
-        if (isMounted) {
-          setError(err instanceof Error ? err.message : "Failed to load class data");
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
+    const fetchData = async () => {
+      await fetchClassData();
     };
 
-    fetchClassData();
+    fetchData();
 
     // Set up real-time subscription for new check-ins
     const supabase = getSupabaseClient();
@@ -127,12 +126,12 @@ export default function AttendanceQRPage() {
       )
       .subscribe();
 
-    // Auto-refresh every 30 seconds to catch any missed updates (less aggressive)
+    // Auto-refresh every 10 minutes to catch any missed updates (matches QR refresh interval)
     const refreshInterval = setInterval(() => {
       if (isMounted) {
         fetchClassData();
       }
-    }, 30000);
+    }, 600000); // 10 minutes (600000ms) - matches QR refresh interval
 
     return () => {
       isMounted = false;
@@ -210,6 +209,7 @@ export default function AttendanceQRPage() {
       realAttendees={formattedAttendees}
       realEnrolled={classData.enrolled}
       autoFullscreen={true}
+      onRefresh={fetchClassData}
     />
   );
 }

@@ -100,7 +100,7 @@ function getDayOfWeek(dateStr: string): string {
 // Helper to format time from ISO string
 function formatTime(dateStr: string): string {
   const date = new Date(dateStr);
-  return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+  return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Singapore" });
 }
 
 // Helper to get initials from name
@@ -196,7 +196,9 @@ export default function ClassesPage() {
   }, [rooms]);
   const [filter, setFilter] = useState<"all" | "active" | "completed" | "cancelled" | "full">("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("list"); // Default to table view
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(20);
   const [attendanceModal, setAttendanceModal] = useState<{
     isOpen: boolean;
     classData: DisplayClass | null;
@@ -255,9 +257,23 @@ export default function ClassesPage() {
     refetch,
     isFetching
   } = useQuery({
-    queryKey: keys.list(),
+    queryKey: [...keys.list(), filter, currentPage, pageSize], // Include filter, page, and pageSize in query key
     queryFn: async () => {
-      const response = await api.get<{ data: ClassListResponse }>("/api/classes");
+      // For completed filter, fetch with max page size (100) to get more results
+      // Note: We don't filter by status in the API because client-side logic determines
+      // "completed" status based on end time, not just database status field
+      const fetchPageSize = filter === "completed" ? 100 : pageSize;
+      const fetchPage = filter === "completed" ? 1 : currentPage;
+      
+      const params = new URLSearchParams({
+        page: fetchPage.toString(),
+        pageSize: fetchPageSize.toString(),
+      });
+      
+      // Don't filter by status - let client-side logic determine completion
+      // This ensures we get all classes that might be completed based on end time
+      
+      const response = await api.get<{ data: ClassListResponse }>(`/api/classes?${params.toString()}`);
       
       if (response.error) {
         throw new Error(response.error.message || "Failed to fetch classes");
@@ -274,6 +290,14 @@ export default function ClassesPage() {
 
   // Extract classes array from response
   const apiClasses = classesResponse?.classes || [];
+  const totalClasses = classesResponse?.total || 0;
+  const hasMore = classesResponse?.hasMore || false;
+  const apiStats = classesResponse?.stats; // Aggregated stats from API
+  
+  // Reset to page 1 when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter]);
 
   // Cache invalidation hook
   const { invalidateAll } = useInvalidateEntity("classes");
@@ -547,8 +571,9 @@ export default function ClassesPage() {
   const displayClasses = useMemo(() => {
     if (filter === "completed") {
       // For completed filter, show all individual completed classes (including occurrences)
+      // Sort by most recent first (descending)
       return classes.filter(c => c.status === "completed").sort((a, b) => 
-        new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+        new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
       );
     }
     // For other filters, show parent cards for recurring classes
@@ -631,10 +656,17 @@ export default function ClassesPage() {
     return "bg-gray-300 dark:bg-gray-600";
   };
 
-  // Calculate stats from individual classes (not grouped) to show accurate counts
-  // This counts all individual class instances, including occurrences from recurring classes
-  const stats = {
-    total: classes.length,
+  // Calculate stats - use API aggregated stats if available, otherwise fallback to current page
+  const stats = apiStats ? {
+    total: apiStats.total,
+    active: apiStats.active,
+    completed: apiStats.completed,
+    full: apiStats.full,
+    cancelled: apiStats.cancelled,
+    totalEnrolled: classes.reduce((sum, c) => sum + c.enrolled, 0), // Still from current page
+    totalCapacity: classes.reduce((sum, c) => sum + c.capacity, 0), // Still from current page
+  } : {
+    total: totalClasses,
     active: classes.filter((c) => c.status === "active").length,
     completed: classes.filter((c) => c.status === "completed").length,
     full: classes.filter((c) => c.status === "full").length,
@@ -1173,10 +1205,10 @@ export default function ClassesPage() {
                           openAttendanceModal(cls);
                         }}
                         className="inline-flex items-center justify-center rounded-lg p-2 text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400 transition-colors"
-                        title="Start Attendance"
+                        title="View Attendance"
                       >
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                         </svg>
                       </button>
                     )}
@@ -1357,7 +1389,7 @@ export default function ClassesPage() {
                             </svg>
                           </button>
                         ) : (
-                          /* For single active classes, show QR button */
+                          /* For single active classes, show attendance button */
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1365,10 +1397,10 @@ export default function ClassesPage() {
                               openAttendanceModal(cls);
                             }}
                             className="inline-flex items-center justify-center rounded-lg p-2 text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400 transition-colors"
-                            title="Start Attendance"
+                            title="View Attendance"
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                             </svg>
                           </button>
                         )}
@@ -1405,6 +1437,34 @@ export default function ClassesPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Pagination Controls - Only show if not completed filter (completed uses max pageSize) */}
+      {filter !== "completed" && filteredClasses.length > 0 && (
+        <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-6 py-4 dark:border-gray-800 dark:bg-gray-900">
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            Showing {(currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, totalClasses)} of {totalClasses} classes
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1 || isLoading}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              Previous
+            </button>
+            <span className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
+              Page {currentPage} of {Math.ceil(totalClasses / pageSize)}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => p + 1)}
+              disabled={!hasMore || isLoading}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              Next
+            </button>
           </div>
         </div>
       )}
@@ -1491,7 +1551,8 @@ export default function ClassesPage() {
                             <p className="font-medium text-gray-900 dark:text-white">
                               {new Date(instance.scheduledAt).toLocaleDateString('en-US', { 
                                 weekday: 'short', 
-                                month: 'short', 
+                                month: 'short',
+                                timeZone: 'Asia/Singapore', 
                                 day: 'numeric',
                                 year: 'numeric'
                               })}
@@ -1743,10 +1804,12 @@ export default function ClassesPage() {
                               weekday: 'long', 
                               month: 'short', 
                               day: 'numeric',
-                              year: 'numeric'
-                            })} at {classDate.toLocaleTimeString('en-US', { 
+                              year: 'numeric',
+                              timeZone: 'Asia/Singapore'
+                            })} at {classDate.toLocaleTimeString('en-US', {
                               hour: '2-digit', 
-                              minute: '2-digit' 
+                              minute: '2-digit',
+                              timeZone: 'Asia/Singapore'
                             })}
                           </p>
                         </div>

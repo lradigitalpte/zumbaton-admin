@@ -204,7 +204,7 @@ export async function GET(request: NextRequest) {
         classId: booking.class_id,
         className: classData?.title || 'Unknown Class',
         classDate: classData?.scheduled_at?.split('T')[0] || '',
-        classTime: classData?.scheduled_at ? new Date(classData.scheduled_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : '',
+        classTime: classData?.scheduled_at ? new Date(classData.scheduled_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Singapore' }) : '',
         instructor: instructorName || 'Unknown',
         issueType,
         status: issueInfo?.status || 'pending',

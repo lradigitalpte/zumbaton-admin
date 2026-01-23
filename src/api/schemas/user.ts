@@ -24,6 +24,12 @@ export const UserProfileSchema = z.object({
   preferences: z.record(z.unknown()).default({}),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  dateOfBirth: z.string().nullable().optional(),
+  bloodGroup: z.string().nullable().optional(),
+  physicalFormUrl: z.string().url().nullable().optional(),
+  earlyBirdEligible: z.boolean().optional(),
+  earlyBirdGrantedAt: z.string().datetime().nullable().optional(),
+  earlyBirdExpiresAt: z.string().datetime().nullable().optional(),
 })
 
 export type UserProfile = z.infer<typeof UserProfileSchema>
@@ -75,6 +81,9 @@ export const CreateUserProfileRequestSchema = z.object({
   phone: z.string().optional(),
   role: UserRoleSchema.default('user'),
   password: z.string().min(8).max(128), // For auth.users creation
+  dateOfBirth: z.string().optional(), // ISO date string
+  bloodGroup: z.string().optional(), // e.g., "A+", "B-", "O+", "AB+"
+  physicalFormUrl: z.string().url().optional(), // URL to uploaded physical form
 })
 
 export type CreateUserProfileRequest = z.infer<typeof CreateUserProfileRequestSchema>
@@ -100,6 +109,18 @@ export const UpdateUserStatusRequestSchema = z.object({
 })
 
 export type UpdateUserStatusRequest = z.infer<typeof UpdateUserStatusRequestSchema>
+
+export const UpdateUserProfileAdminRequestSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  email: z.string().email().optional(),
+  phone: z.string().nullable().optional(),
+  avatarUrl: z.string().url().nullable().optional(),
+  dateOfBirth: z.string().nullable().optional(), // ISO date string
+  bloodGroup: z.string().nullable().optional(), // e.g., "A+", "B-", "O+", "AB+"
+  preferences: z.record(z.unknown()).optional(),
+})
+
+export type UpdateUserProfileAdminRequest = z.infer<typeof UpdateUserProfileAdminRequestSchema>
 
 // =====================================================
 // QUERY SCHEMAS

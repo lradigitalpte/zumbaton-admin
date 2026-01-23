@@ -13,6 +13,7 @@ import { api } from "@/lib/api-client";
 import { useStaff, useInvalidateStaff, type StaffRole, type StaffMember } from "@/hooks/useStaff";
 import { RefreshCw } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
+import { supabase } from "@/lib/supabase";
 
 // Skeleton Components
 const StatCardSkeleton = () => (
@@ -138,12 +139,15 @@ export default function StaffManagementPage() {
   
   // Loading timeout state
   const [isLoadingTakingTooLong, setIsLoadingTakingTooLong] = useState(false);
+  const [forceRefreshKey, setForceRefreshKey] = useState(0);
 
   // Use React Query hook with caching - automatically handles loading, error, and data
   const { data: staffMembers = [], isLoading: loading, error: queryError, refetch } = useStaff({
     searchQuery: searchQuery || undefined,
     statusFilter,
     roleFilter,
+  }, {
+    cacheBuster: forceRefreshKey, // Include cacheBuster to force refresh
   });
   
   // Loading timeout effect
@@ -175,13 +179,63 @@ export default function StaffManagementPage() {
     phone: "",
     role: "receptionist" as StaffRole,
     password: "",
+    dateOfBirth: "",
+    bloodGroup: "",
+    physicalForm: null as File | null,
   });
+  const [physicalFormUrl, setPhysicalFormUrl] = useState<string | null>(null);
 
   // Manual refresh function - invalidates cache and refetches
   const handleRefresh = () => {
     setIsLoadingTakingTooLong(false);
     invalidateAll();
     refetch();
+  };
+
+  const handlePhysicalFormChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setNewStaff({ ...newStaff, physicalForm: file });
+    setCreateError(null);
+
+    // Upload file immediately using fetch (FormData needs to be sent without JSON.stringify)
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      // Get session token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Please sign in to upload files');
+      }
+
+      const response = await fetch('/api/users/upload-physical-form', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'Failed to upload physical form');
+      }
+
+      const data = await response.json();
+      if (data.success && data.data?.url) {
+        setPhysicalFormUrl(data.data.url);
+      } else {
+        throw new Error('Failed to upload physical form');
+      }
+    } catch (error) {
+      console.error('Error uploading physical form:', error);
+      setCreateError(error instanceof Error ? error.message : 'Failed to upload physical form');
+      setNewStaff({ ...newStaff, physicalForm: null });
+    }
   };
 
   // Filter staff by role
@@ -278,13 +332,28 @@ export default function StaffManagementPage() {
         phone: "",
         role: "receptionist",
         password: "",
+        dateOfBirth: "",
+        bloodGroup: "",
+        physicalForm: null,
       });
+      setPhysicalFormUrl(null);
       setShowCreatePanel(false);
       setCreateError(null);
       
+      // Increment refresh key to force new query
+      setForceRefreshKey(prev => prev + 1);
+      
+      // Wait a moment for the API to process
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       // Invalidate and refetch staff list to show new member
       invalidateAll();
-      refetch();
+      
+      // Force refetch with cache-busting
+      await refetch();
+      
+      // Increment again after refetch to ensure UI updates
+      setForceRefreshKey(prev => prev + 1);
     } catch (err: any) {
       setCreateError(err.message || "Failed to create staff member");
       console.error("Error creating staff:", err);
@@ -546,6 +615,17 @@ export default function StaffManagementPage() {
         onClose={() => {
           setShowCreatePanel(false);
           setCreateError(null);
+          setNewStaff({
+            name: "",
+            email: "",
+            phone: "",
+            role: "receptionist",
+            password: "",
+            dateOfBirth: "",
+            bloodGroup: "",
+            physicalForm: null,
+          });
+          setPhysicalFormUrl(null);
         }}
         title="Add Staff Member"
         size="md"
@@ -632,6 +712,63 @@ export default function StaffManagementPage() {
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Minimum 8 characters. An email with these credentials will be sent to the staff member. They can change their password after signing in.
             </p>
+          </div>
+
+          <div>
+            <Label htmlFor="dateOfBirth">
+              Date of Birth
+            </Label>
+            <Input
+              id="dateOfBirth"
+              type="date"
+              value={newStaff.dateOfBirth}
+              onChange={(e) => setNewStaff({ ...newStaff, dateOfBirth: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="bloodGroup">
+              Blood Group
+            </Label>
+            <select
+              id="bloodGroup"
+              value={newStaff.bloodGroup}
+              onChange={(e) => setNewStaff({ ...newStaff, bloodGroup: e.target.value })}
+              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+            >
+              <option value="">Select blood group</option>
+              <option value="A+">A+</option>
+              <option value="A-">A-</option>
+              <option value="B+">B+</option>
+              <option value="B-">B-</option>
+              <option value="AB+">AB+</option>
+              <option value="AB-">AB-</option>
+              <option value="O+">O+</option>
+              <option value="O-">O-</option>
+            </select>
+          </div>
+
+          <div>
+            <Label htmlFor="physicalForm">
+              Physical Form (Registration Form)
+            </Label>
+            <input
+              id="physicalForm"
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,.webp"
+              onChange={handlePhysicalFormChange}
+              className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 file:mr-4 file:rounded-lg file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-brand-600 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:file:bg-brand-600 dark:file:hover:bg-brand-700"
+            />
+            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+              Accepted formats: PDF, JPEG, PNG, WebP. Maximum file size: 10MB.
+            </p>
+            {physicalFormUrl && (
+              <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  ✓ File uploaded successfully
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">

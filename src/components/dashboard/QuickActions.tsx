@@ -45,7 +45,7 @@ const QUICK_ACTIONS: QuickAction[] = [
     ),
   },
   {
-    title: "Adjust Tokens",
+    title: "Sell Tokens",
     description: "Manual token adjustments",
     href: "/tokens",
     color: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400",

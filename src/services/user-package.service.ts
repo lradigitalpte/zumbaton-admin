@@ -1,7 +1,7 @@
 // User Package Service
 // Handles user package purchases and management
 
-import { supabase, TABLES, isSupabaseError, SUPABASE_ERRORS } from '@/lib/supabase'
+import { supabase, getSupabaseAdminClient, TABLES, isSupabaseError, SUPABASE_ERRORS } from '@/lib/supabase'
 import { ApiError } from '@/lib/api-error'
 import { getUserTokenBalance } from './token.service'
 import type {
@@ -24,8 +24,11 @@ export async function purchasePackage(params: {
 }): Promise<PurchaseResponse> {
   const { userId, packageId, paymentId } = params
 
+  // Use admin client for server-side admin operations
+  const adminClient = getSupabaseAdminClient()
+
   // 1. Get package details
-  const { data: pkg, error: pkgError } = await supabase
+  const { data: pkg, error: pkgError } = await adminClient
     .from(TABLES.PACKAGES)
     .select('*')
     .eq('id', packageId)
@@ -41,7 +44,7 @@ export async function purchasePackage(params: {
   expiresAt.setDate(expiresAt.getDate() + pkg.validity_days)
 
   // 3. Create user package
-  const { data: userPackage, error: insertError } = await supabase
+  const { data: userPackage, error: insertError } = await adminClient
     .from(TABLES.USER_PACKAGES)
     .insert({
       user_id: userId,
@@ -59,11 +62,12 @@ export async function purchasePackage(params: {
     .single()
 
   if (insertError) {
+    console.error('[UserPackageService] Insert error:', insertError)
     throw new ApiError('SERVER_ERROR', 'Failed to create user package', 500, insertError)
   }
 
   // 4. Record transaction
-  await supabase
+  await adminClient
     .from(TABLES.TOKEN_TRANSACTIONS)
     .insert({
       user_id: userId,
@@ -197,7 +201,10 @@ export async function unfreezePackage(userPackageId: string): Promise<{
 export async function getUserPackages(params: UserPackagesQuery & { userId: string }): Promise<UserPackagesResponse> {
   const { userId, status, page = 1, pageSize = 20 } = params
 
-  let query = supabase
+  // Use admin client for server-side admin operations
+  const adminClient = getSupabaseAdminClient()
+
+  let query = adminClient
     .from(TABLES.USER_PACKAGES)
     .select(`
       *,

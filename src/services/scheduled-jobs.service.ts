@@ -4,6 +4,7 @@
 import { processNoShows } from './attendance.service'
 import { processExpiredPackages, processFrozenPackages } from './user-package.service'
 import { processExpiredWaitlistNotifications } from './waitlist.service'
+import { autoGenerateFutureClasses } from '@/cron/generate-future-classes'
 
 // Job results interface
 interface JobResult {
@@ -46,6 +47,11 @@ export async function runAllScheduledJobs(): Promise<JobResult[]> {
   // Job 6: Send token balance low warnings
   results.push(await runJob('sendTokenBalanceLowWarnings', async () => {
     return await sendTokenBalanceLowWarnings()
+  }))
+
+  // Job 7: Auto-generate future class occurrences
+  results.push(await runJob('autoGenerateFutureClasses', async () => {
+    return await autoGenerateFutureClasses()
   }))
 
   return results
@@ -102,6 +108,10 @@ export async function runNoShowsJob(): Promise<JobResult> {
 
 export async function runWaitlistExpiryJob(): Promise<JobResult> {
   return runJob('processExpiredWaitlistNotifications', processExpiredWaitlistNotifications)
+}
+
+export async function runAutoGenerateClassesJob(): Promise<JobResult> {
+  return runJob('autoGenerateFutureClasses', autoGenerateFutureClasses)
 }
 
 // Mark past classes as completed (daily job)

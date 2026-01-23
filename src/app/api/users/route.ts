@@ -5,6 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { withAuth, AuthenticatedUser } from '@/middleware/rbac'
 import { listUsers, createUser } from '@/services/user.service'
 import { createAuditLog } from '@/services/rbac.service'
@@ -111,6 +112,10 @@ async function handleCreateUser(
     }
 
     const profile = await createUser(context.user.id, parseResult.data)
+
+    // Invalidate Next.js cache for users list
+    revalidatePath('/api/users')
+    revalidatePath('/users')
 
     return NextResponse.json({ data: profile }, { status: 201 })
   } catch (error) {

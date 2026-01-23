@@ -15,6 +15,9 @@ export interface StaffMember {
   createdAt: string
   updatedAt?: string
   lastLogin?: string
+  dateOfBirth?: string | null
+  bloodGroup?: string | null
+  physicalFormUrl?: string | null
 }
 
 const INTERNAL_ROLES: StaffRole[] = ["super_admin", "admin", "staff", "receptionist", "instructor"]
@@ -35,7 +38,7 @@ const staffKeys = {
 }
 
 // Fetch staff from API
-async function fetchStaff(filters: UseStaffQueryParams): Promise<StaffMember[]> {
+async function fetchStaff(filters: UseStaffQueryParams, cacheBuster?: number): Promise<StaffMember[]> {
   const params = new URLSearchParams()
   
   if (filters.statusFilter && filters.statusFilter !== "all") {
@@ -49,6 +52,10 @@ async function fetchStaff(filters: UseStaffQueryParams): Promise<StaffMember[]> 
   }
   
   params.append("pageSize", "100") // Get all staff in one call
+  
+  // Add cache-busting parameters
+  if (cacheBuster) params.append('cb', String(cacheBuster))
+  params.append('_t', String(Date.now()))
 
   const response = await api.get<{ data: any[] }>(`/api/users?${params.toString()}`)
 
@@ -70,16 +77,19 @@ async function fetchStaff(filters: UseStaffQueryParams): Promise<StaffMember[]> 
       createdAt: member.createdAt,
       updatedAt: member.updatedAt,
       lastLogin: member.lastLogin || undefined,
+      dateOfBirth: member.dateOfBirth || null,
+      bloodGroup: member.bloodGroup || null,
+      physicalFormUrl: member.physicalFormUrl || null,
     }))
 
   return internalStaff
 }
 
 // Hook to fetch staff with caching
-export function useStaff(filters: UseStaffQueryParams = {}) {
+export function useStaff(filters: UseStaffQueryParams = {}, options?: { cacheBuster?: number }) {
   return useQuery({
-    queryKey: staffKeys.list(filters),
-    queryFn: () => fetchStaff(filters),
+    queryKey: [...staffKeys.list(filters), options?.cacheBuster || 0], // Include cacheBuster in key to force refetch
+    queryFn: () => fetchStaff(filters, options?.cacheBuster),
     staleTime: 0, // Always stale so refetch works
     gcTime: 10 * 60 * 1000, // Cache for 10 minutes
   })
@@ -90,11 +100,27 @@ export function useStaffMember(id: string) {
   return useQuery({
     queryKey: staffKeys.detail(id),
     queryFn: async () => {
-      const response = await api.get<{ data: StaffMember }>(`/api/users/${id}`)
+      const response = await api.get<{ data: any }>(`/api/users/${id}`)
       if (response.error) {
         throw new Error(response.error.message || "Failed to fetch staff member")
       }
-      return response.data?.data
+      const member = response.data?.data
+      // Map to StaffMember format
+      return {
+        id: member.id,
+        name: member.name,
+        email: member.email,
+        phone: member.phone,
+        role: member.role as StaffRole,
+        isActive: member.isActive,
+        avatarUrl: member.avatarUrl,
+        createdAt: member.createdAt,
+        updatedAt: member.updatedAt,
+        lastLogin: member.lastLogin || undefined,
+        dateOfBirth: member.dateOfBirth || null,
+        bloodGroup: member.bloodGroup || null,
+        physicalFormUrl: member.physicalFormUrl || null,
+      } as StaffMember
     },
     enabled: !!id, // Only fetch if ID is provided
     staleTime: 0, // Always stale so refetch works

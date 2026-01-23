@@ -62,7 +62,7 @@ export default function TutorDashboardPage() {
       return {
         id: cls.id,
         name: cls.title,
-        time: classTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+        time: classTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Singapore" }),
         duration: cls.duration_minutes,
         room: cls.room_name || cls.location || "TBD", // Use room_name first, then location, then TBD
         enrolled: cls.bookedCount,

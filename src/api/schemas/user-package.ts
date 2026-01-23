@@ -86,6 +86,7 @@ export const AdminTokenAdjustmentRequestSchema = z.object({
   userPackageId: UuidSchema.optional(), // if not provided, creates new adjustment package
   tokensChange: z.number().int().refine(val => val !== 0, 'Token change cannot be 0'),
   reason: z.string().min(1, 'Reason is required').max(500),
+  expiryDays: z.number().int().positive().optional(), // Expiry duration in days for new adjustment packages (default: 365)
 })
 export type AdminTokenAdjustmentRequest = z.infer<typeof AdminTokenAdjustmentRequestSchema>
 

@@ -51,7 +51,7 @@ function computeStatus(isActive: boolean, isFlagged: boolean): "active" | "flagg
 }
 
 // Fetch users from API - enhanced with stats
-async function fetchUsers(filters: UseUsersQueryParams = {}): Promise<{
+async function fetchUsers(filters: UseUsersQueryParams = {}, cacheBuster?: number): Promise<{
   users: User[]
   total: number
   page: number
@@ -67,6 +67,10 @@ async function fetchUsers(filters: UseUsersQueryParams = {}): Promise<{
   if (filters.search) params.append('search', filters.search)
   if (filters.sortBy) params.append('sortBy', filters.sortBy)
   if (filters.sortOrder) params.append('sortOrder', filters.sortOrder)
+  
+  // Add cache-busting parameters
+  if (cacheBuster) params.append('cb', String(cacheBuster))
+  params.append('_t', String(Date.now()))
 
   const url = `/api/users?${params.toString()}`
   
@@ -129,11 +133,12 @@ async function fetchUsers(filters: UseUsersQueryParams = {}): Promise<{
 }
 
 // Hook to fetch users with caching
-export function useUsers(filters: UseUsersQueryParams = {}, options?: { enabled?: boolean }) {
+export function useUsers(filters: UseUsersQueryParams = {}, options?: { enabled?: boolean; cacheBuster?: number }) {
   return useQuery({
-    queryKey: userKeys.list(filters),
-    queryFn: () => fetchUsers(filters),
+    queryKey: [...userKeys.list(filters), options?.cacheBuster || 0], // Include cacheBuster in key to force refetch
+    queryFn: () => fetchUsers(filters, options?.cacheBuster),
     enabled: options?.enabled !== false, // Only run if enabled (default: true)
+    staleTime: 0, // Always stale so refetch works
     // Uses global 30-minute staleTime from react-query.tsx
     // Manual refresh available via Refresh button
   })
