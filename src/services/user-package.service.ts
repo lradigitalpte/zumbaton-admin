@@ -80,8 +80,63 @@ export async function purchasePackage(params: {
       created_at: new Date().toISOString(),
     })
 
-  // 5. Get new balance
+  // 5. Create payment record for revenue tracking (even for admin sales)
+  // This ensures manual sales show up in revenue reports
+  const isAdminSale = paymentId?.startsWith('admin-sale-')
+  await adminClient
+    .from(TABLES.PAYMENTS)
+    .insert({
+      user_id: userId,
+      package_id: packageId,
+      amount_cents: pkg.price_cents,
+      currency: pkg.currency || 'SGD',
+      status: 'succeeded',
+      payment_method: isAdminSale ? 'admin-manual' : 'hitpay',
+      payment_reference: paymentId || `admin-sale-${Date.now()}`,
+      metadata: isAdminSale ? { source: 'admin-panel', manual_sale: true } : null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+
+  // 6. Get new balance
   const balance = await getUserTokenBalance(userId)
+
+  // 7. Send email notification to user about package purchase
+  try {
+    const { data: userProfile } = await adminClient
+      .from('user_profiles')
+      .select('email, name')
+      .eq('id', userId)
+      .single()
+
+    if (userProfile?.email && userProfile?.name) {
+      const { getWebAppUrl } = await import('@/lib/email-url')
+      const webAppUrl = getWebAppUrl()
+      const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+
+      await fetch(`${webAppUrl}/api/email/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'token-purchase',
+          secret: emailApiSecret,
+          data: {
+            userEmail: userProfile.email,
+            userName: userProfile.name,
+            packageName: pkg.name,
+            tokenCount: pkg.token_count,
+            amount: pkg.price_cents / 100,
+            currency: pkg.currency || 'SGD',
+            expiresAt: expiresAt.toISOString(),
+          },
+        }),
+      })
+      console.log(`[UserPackageService] Package purchase email sent to ${userProfile.email}`)
+    }
+  } catch (emailError) {
+    // Don't fail the purchase if email fails
+    console.error('[UserPackageService] Failed to send package purchase email:', emailError)
+  }
 
   return {
     userPackage: mapUserPackageToSchema(userPackage),

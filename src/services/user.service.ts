@@ -35,6 +35,8 @@ function toUserProfile(row: Record<string, unknown>): UserProfile {
     dateOfBirth: row.date_of_birth as string | null,
     bloodGroup: row.blood_group as string | null,
     physicalFormUrl: row.physical_form_url as string | null,
+    registrationFormId: row.registration_form_id as string | null,
+    registrationFormSentAt: row.registration_form_sent_at as string | null,
     earlyBirdEligible: (row.early_bird_eligible as boolean) || false,
     earlyBirdGrantedAt: row.early_bird_granted_at as string | null,
     earlyBirdExpiresAt: row.early_bird_expires_at as string | null,
@@ -603,6 +605,30 @@ export async function createUser(
     })
   } catch (notificationError) {
     console.error('[UserService] Error sending welcome notification:', notificationError)
+  }
+
+  // Automatically send registration form email
+  try {
+    console.log('[UserService] Sending registration form email to:', data.email)
+    const registrationFormUrl = process.env.NEXT_PUBLIC_ADMIN_URL || 'http://localhost:3001'
+    const registrationResponse = await fetch(`${registrationFormUrl}/api/registration-form/send`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userId: authData.user.id,
+      }),
+    })
+
+    if (!registrationResponse.ok) {
+      const errorData = await registrationResponse.json()
+      console.error('[UserService] Failed to send registration form:', errorData)
+    } else {
+      console.log('[UserService] Registration form email sent successfully')
+    }
+  } catch (registrationError) {
+    console.error('[UserService] Error sending registration form:', registrationError)
   }
 
   // Email sending is now handled separately via API endpoint

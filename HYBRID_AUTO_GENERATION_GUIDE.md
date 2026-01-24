@@ -76,7 +76,7 @@ The cron job returns detailed results:
     "results": [
       {
         "parentId": "...",
-        "title": "Choreographed Dance with Steppers",
+        "title": "Groove Stepper",
         "generated": 4
       }
     ]
