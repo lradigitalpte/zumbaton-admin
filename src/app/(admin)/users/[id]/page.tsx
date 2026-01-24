@@ -79,10 +79,19 @@ export default function UserDetailPage() {
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [isProcessingTokens, setIsProcessingTokens] = useState(false);
+  const [isSendingForm, setIsSendingForm] = useState(false);
+  const [registrationFormStatus, setRegistrationFormStatus] = useState<'pending' | 'completed' | 'expired' | null>(null);
   const toast = useToast();
 
   // Fetch user detail with React Query caching
   const { data: user, isLoading: loading, error: queryError, refetch } = useUser(userId, forceRefreshKey);
+
+  // Force clear cache on mount to get new fields
+  useEffect(() => {
+    queryClient.removeQueries({
+      queryKey: ['user', 'detail', userId],
+    });
+  }, [userId, queryClient]);
 
   // Initialize edit form when user data loads
   useEffect(() => {
@@ -178,7 +187,7 @@ export default function UserDetailPage() {
   useEffect(() => {
     if (user?.id) {
       setIsLoadingUserPackages(true);
-      api.get<{ success: boolean; data: { packages: Array<{ id: string; packageName: string; tokensRemaining: number; expiresAt: string; status: string }> } }>(`/api/user-packages?userId=${user.id}&status=active`)
+      api.get<{ success: boolean; data: { packages: Array<{ id: string; package?: { name: string }; tokensRemaining: number; expiresAt: string; status: string }> } }>(`/api/user-packages?userId=${user.id}&status=active`)
         .then((response) => {
           if (response.error) {
             console.error("Failed to fetch user packages:", response.error);
@@ -188,7 +197,7 @@ export default function UserDetailPage() {
             setUserPackages(
               response.data.data.packages.map((pkg) => ({
                 id: pkg.id,
-                packageName: pkg.packageName || "Adjustment Package",
+                packageName: pkg.package?.name || "Adjustment Package",
                 tokensRemaining: pkg.tokensRemaining,
                 expiresAt: pkg.expiresAt,
                 status: pkg.status,
@@ -374,9 +383,12 @@ export default function UserDetailPage() {
       return;
     }
 
+    setIsProcessingTokens(true);
+
     if (mode === "sell") {
       if (!selectedPackageId) {
         toast.showToast("Please select a package", "error");
+        setIsProcessingTokens(false);
         return;
       }
       try {
@@ -665,6 +677,53 @@ export default function UserDetailPage() {
     }
   };
 
+  const handleSendRegistrationForm = async () => {
+    if (!user?.email) {
+      toast.showToast('User does not have an email address', 'error');
+      return;
+    }
+
+    if (!confirm(`Send registration form to ${user.email}?`)) {
+      return;
+    }
+
+    setIsSendingForm(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Please sign in to send form');
+      }
+
+      const response = await fetch('/api/registration-form/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ userId: user.id }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to send registration form');
+      }
+
+      toast.showToast('Registration form sent successfully', 'success');
+      setRegistrationFormStatus('pending');
+      
+      // Refresh user data to get form status
+      setForceRefreshKey(prev => prev + 1);
+      invalidateDetail(userId);
+      await refetch();
+    } catch (error: any) {
+      console.error('Error sending registration form:', error);
+      toast.showToast(error.message || 'Failed to send registration form', 'error');
+    } finally {
+      setIsSendingForm(false);
+    }
+  };
+
   const handleUpdateUser = async () => {
     if (!editForm.name || !editForm.email) {
       toast.showToast('Name and email are required', 'error');
@@ -892,7 +951,26 @@ export default function UserDetailPage() {
                   </div>
                   <div className="flex justify-between items-center">
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Registration Form</dt>
-                    <dd className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                    <dd className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">
+                      {/* Digital Form Status & Actions */}
+                      {user.registrationFormSentAt && !user.registrationFormId && (
+                        <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-yellow-50 text-yellow-700 ring-1 ring-inset ring-yellow-600/20">
+                          📤 Sent - Awaiting User
+                        </span>
+                      )}
+                      {user.registrationFormId && (
+                        <>
+                          <a
+                            href={`/users/${user.id}/registration-form`}
+                            className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
+                            title="View and sign digital registration form"
+                          >
+                            ✓ View & Sign Digital Form
+                          </a>
+                        </>
+                      )}
+                      
+                      {/* Physical Form Actions */}
                       {user.physicalFormUrl ? (
                         <>
                           <a
@@ -901,7 +979,7 @@ export default function UserDetailPage() {
                             rel="noopener noreferrer"
                             className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
                           >
-                            View Registration Form
+                            View Physical Form
                           </a>
                           <button
                             onClick={() => setIsUploadPanelOpen(true)}
@@ -920,8 +998,7 @@ export default function UserDetailPage() {
                           </button>
                         </>
                       ) : (
-                        <>
-                          <span className="text-gray-500 dark:text-gray-400">-</span>
+                        !user.registrationFormId && (
                           <button
                             onClick={() => setIsUploadPanelOpen(true)}
                             className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
@@ -929,8 +1006,18 @@ export default function UserDetailPage() {
                           >
                             <Upload className="h-4 w-4" />
                           </button>
-                        </>
+                        )
                       )}
+                      
+                      {/* Send Digital Form Button */}
+                      <button
+                        onClick={handleSendRegistrationForm}
+                        disabled={isSendingForm || !user.email}
+                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title={user.registrationFormSentAt ? "Resend digital registration form" : "Send digital registration form"}
+                      >
+                        {isSendingForm ? 'Sending...' : (user.registrationFormSentAt ? 'Resend Form' : 'Send Form')}
+                      </button>
                     </dd>
                   </div>
                   <div className="flex justify-between">
@@ -941,11 +1028,11 @@ export default function UserDetailPage() {
                           <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-400">
                             Eligible
                           </span>
-                          {user.earlyBirdExpiresAt && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              (Expires: {new Date(user.earlyBirdExpiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})
-                            </span>
-                          )}
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {user.earlyBirdExpiresAt 
+                              ? `(Expires: ${new Date(user.earlyBirdExpiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})` 
+                              : '(Valid for 90 days from first class)'}
+                          </span>
                         </span>
                       ) : (
                         <span className="text-gray-500 dark:text-gray-400">Not Eligible</span>

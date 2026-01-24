@@ -46,7 +46,7 @@ SELECT id, title, scheduled_at
 FROM classes 
 WHERE id = '60a81ecf-f515-4b96-8d5a-6c785f209832';
 ```
-The `Choreographed Dance with Steppers` parent should still have today's date (we'll fix that in step 3).
+The `Groove Stepper` parent should still have today's date (we'll fix that in step 3).
 
 2. **See last generated instance:**
 ```sql
@@ -80,7 +80,7 @@ You should see:
 
 ### Verify It Worked:
 
-Check the attendance page - should now only show ONE "Choreographed Dance" instance (the one dated 1/23/2026), not two!
+Check the attendance page - should now only show ONE "Groove Stepper" instance (the one dated 1/23/2026), not two!
 
 ## What Happens from Now On
 

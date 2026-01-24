@@ -27,6 +27,8 @@ export interface UserDetail {
   dateOfBirth?: string | null
   bloodGroup?: string | null
   physicalFormUrl?: string | null
+  registrationFormId?: string | null
+  registrationFormSentAt?: string | null
   // Early bird fields
   earlyBirdEligible?: boolean
   earlyBirdGrantedAt?: string | null
@@ -63,6 +65,15 @@ async function fetchUserDetail(userId: string, cacheBuster?: number): Promise<Us
   }
 
   const user = response.data.data
+  
+  // Log to debug missing fields
+  console.log('[useUser] Fetched user data:', {
+    id: user.id,
+    name: user.name,
+    registrationFormSentAt: user.registrationFormSentAt,
+    registrationFormId: user.registrationFormId,
+  })
+  
   const status = computeStatus(user.isActive, user.isFlagged || false)
 
   // Map API response to UserDetail interface
@@ -93,6 +104,8 @@ async function fetchUserDetail(userId: string, cacheBuster?: number): Promise<Us
     dateOfBirth: user.dateOfBirth || null,
     bloodGroup: user.bloodGroup || null,
     physicalFormUrl: user.physicalFormUrl || null,
+    registrationFormId: user.registrationFormId || null,
+    registrationFormSentAt: user.registrationFormSentAt || null,
     // Early bird fields
     earlyBirdEligible: user.earlyBirdEligible || false,
     earlyBirdGrantedAt: user.earlyBirdGrantedAt || null,

@@ -738,3 +738,9 @@ span.flatpickr-weekday,
   opacity: 0.8;
   cursor: grabbing; /* Changes the cursor to indicate dragging */
 }
+
+/* Signature Font */
+.font-signature {
+  font-family: 'Brush Script MT', 'Lucida Handwriting', cursive;
+  font-style: italic;
+}

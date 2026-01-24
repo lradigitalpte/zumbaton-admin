@@ -20,14 +20,14 @@ export default function AuthLayout({
             <div className="relative items-center justify-center  flex z-1">
               {/* <!-- ===== Common Grid Shape Start ===== --> */}
               <GridShape />
-              <div className="flex flex-col items-center max-w-xs">
+              <div className="flex flex-col items-center max-w-sm">
                 <Link href="/" className="flex items-center gap-3 mb-4">
                   <Image
                     src="/images/logo/zumbaton logo (transparent).png"
                     alt="Zumbaton Logo"
                     width={320}
                     height={107}
-                    className="h-28 w-auto"
+                    className="h-36 w-auto"
                     priority
                   />
                 </Link>

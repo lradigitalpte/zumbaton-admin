@@ -6,7 +6,7 @@
  * 
  * This script will:
  * 1. Delete all existing classes from the database
- * 2. Create "Choreographed Dance with Steppers" as a recurring class
+ * 2. Create "Groove Stepper" as a recurring class
  * 3. Create "ZUMBATON" as a recurring class
  * Both classes will be set up for 2 months of recurring schedule
  */
@@ -112,19 +112,19 @@ async function setupClasses() {
     console.log(`\nStart date: ${startDate.toLocaleString()}`)
     console.log(`End date: ${endDate.toLocaleString()}`)
 
-    // Step 4: Create "Choreographed Dance with Steppers" class
-    console.log('\n=== Creating "Choreographed Dance with Steppers" class ===')
+    // Step 4: Create "Groove Stepper" class
+    console.log('\n=== Creating "Groove Stepper" class ===')
     
     const danceStartDate = new Date(startDate)
     const danceOccurrences = generateOccurrences(danceStartDate, ['monday', 'wednesday', 'friday'])
     
-    console.log(`Will create ${danceOccurrences.length} occurrences for Choreographed Dance with Steppers`)
+    console.log(`Will create ${danceOccurrences.length} occurrences for Groove Stepper`)
 
     // Create parent class
     const { data: danceParent, error: danceParentError } = await supabase
       .from('classes')
       .insert({
-        title: 'Choreographed Dance with Steppers',
+        title: 'Groove Stepper',
         description: 'This class focuses on structured dance routines performed using steppers to enhance movement, coordination, and strength. Each session combines rhythm, precision, and cardio, making it perfect for those who enjoy learning choreography while improving endurance and lower-body strength.',
         class_type: 'dance',
         level: 'all_levels',
@@ -159,7 +159,7 @@ async function setupClasses() {
     // Create occurrences
     if (danceOccurrences.length > 0) {
       const danceOccurrenceClasses = danceOccurrences.map(occurrenceDate => ({
-        title: `Choreographed Dance with Steppers - ${occurrenceDate.toLocaleDateString()}`,
+        title: `Groove Stepper - ${occurrenceDate.toLocaleDateString()}`,
         description: 'This class focuses on structured dance routines performed using steppers to enhance movement, coordination, and strength. Each session combines rhythm, precision, and cardio, making it perfect for those who enjoy learning choreography while improving endurance and lower-body strength.',
         class_type: 'dance',
         level: 'all_levels',
@@ -283,7 +283,7 @@ async function setupClasses() {
 
     console.log('\n=== Setup Complete! ===')
     console.log(`\nCreated classes:`)
-    console.log(`- Choreographed Dance with Steppers: ${danceOccurrences.length} occurrences`)
+    console.log(`- Groove Stepper: ${danceOccurrences.length} occurrences`)
     console.log(`- ZUMBATON: ${zumbatonOccurrences.length} occurrences`)
     console.log(`\nBoth classes are set for 2 months of recurring schedule.`)
     console.log(`You can edit the times, dates, and other details in the admin dashboard.`)
