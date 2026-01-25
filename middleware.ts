@@ -13,10 +13,12 @@ export function middleware(request: NextRequest) {
   // Get the origin from the request
   const origin = request.headers.get('origin')
   
-  // Allowed origins (add your production domain here)
+  // Allowed origins - includes both with and without www prefix
   const allowedOrigins = [
     'http://localhost:3001', // Web app dev
     'http://localhost:3000', // Admin app (same origin)
+    'https://zumbaton.sg',
+    'https://www.zumbaton.sg',
     process.env.NEXT_PUBLIC_WEB_APP_URL, // Web app production
   ].filter(Boolean) as string[]
 
