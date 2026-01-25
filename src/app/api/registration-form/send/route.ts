@@ -70,8 +70,12 @@ export async function POST(request: Request) {
       .update({ registration_form_sent_at: new Date().toISOString() })
       .eq('id', userId)
 
-    // Generate form URL
-    const baseUrl = process.env.NEXT_PUBLIC_WEB_URL || 'http://localhost:3000'
+    // Generate form URL - CRITICAL: Must use production URL
+    // Use NEXT_PUBLIC_WEB_APP_URL (which is set in Vercel) or fallback to NEXT_PUBLIC_APP_URL
+    const baseUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://zumbaton.sg'
+    if (!baseUrl || baseUrl === 'http://localhost:3000') {
+      console.error('[Registration Form] CRITICAL: Invalid or missing web URL in production. Got:', baseUrl)
+    }
     const formUrl = `${baseUrl}/registration-form/${formToken}`
 
     // Send email using the email API
