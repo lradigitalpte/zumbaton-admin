@@ -70,12 +70,15 @@ async function handleGetUsers(
 
     const result = await listUsers(context.user.id, queryResult.data)
 
-    // Log the action
-    await createAuditLog({
+    // Log the action asynchronously (don't block response)
+    createAuditLog({
       userId: context.user.id,
       action: 'list_users',
       resourceType: 'users',
       newValues: { filters: queryResult.data }
+    }).catch(err => {
+      console.error('[Users API] Failed to create audit log:', err)
+      // Don't fail the request if audit log fails
     })
 
     // Return cached response - reduces Next.js → Supabase calls

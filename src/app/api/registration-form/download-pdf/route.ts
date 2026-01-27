@@ -8,8 +8,6 @@ import { getSupabaseAdminClient, TABLES } from '@/lib/supabase'
 import { getAuthenticatedUser } from '@/middleware/rbac'
 
 export async function GET(request: NextRequest) {
-  console.log('[Admin Download PDF] API called')
-  
   try {
     // Check authentication
     const user = await getAuthenticatedUser(request)
@@ -22,8 +20,6 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const formId = searchParams.get('formId')
-
-    console.log('[Admin Download PDF] Form ID:', formId)
 
     if (!formId) {
       return NextResponse.json(
@@ -60,8 +56,6 @@ export async function GET(request: NextRequest) {
     // Call web app's generate-pdf API with form data
     const isDevelopment = process.env.NODE_ENV === 'development'
     const webAppUrl = isDevelopment ? 'http://localhost:3000' : (process.env.NEXT_PUBLIC_WEB_URL || 'https://zumbaton.sg')
-    
-    console.log('[Admin Download PDF] Calling web app at:', webAppUrl)
 
     const response = await fetch(`${webAppUrl}/api/registration-form/generate-pdf`, {
       method: 'POST',
@@ -108,8 +102,6 @@ export async function GET(request: NextRequest) {
         { status: 502 }
       )
     }
-
-    console.log('[Admin Download PDF] PDF generated successfully')
 
     // Convert base64 to buffer
     const pdfBuffer = Buffer.from(result.pdf, 'base64')

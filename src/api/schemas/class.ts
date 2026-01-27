@@ -11,6 +11,10 @@ export const ClassStatusSchema = z.enum([
 ])
 export type ClassStatus = z.infer<typeof ClassStatusSchema>
 
+// Age group schema for target audience
+export const AgeGroupSchema = z.enum(['adult', 'kid', 'all'])
+export type AgeGroup = z.infer<typeof AgeGroupSchema>
+
 // Class entity - matches Supabase 'classes' table
 export const ClassSchema = BaseTimestampsSchema.extend({
   id: UuidSchema,
@@ -18,6 +22,7 @@ export const ClassSchema = BaseTimestampsSchema.extend({
   description: z.string().max(1000).nullable(),
   classType: ClassTypeSchema,
   level: ClassLevelSchema.default('all_levels'),
+  ageGroup: AgeGroupSchema.default('all'), // Target audience: adult (13+), kid (<13), or all (both)
   instructorId: UuidSchema.nullable(),
   instructorName: z.string().nullable(),
   scheduledAt: DateTimeSchema,
@@ -30,6 +35,8 @@ export const ClassSchema = BaseTimestampsSchema.extend({
   recurrencePattern: z.record(z.unknown()).nullable().optional(),
   roomId: UuidSchema.nullable().optional(),
   categoryId: UuidSchema.nullable().optional(),
+  allowDropIn: z.boolean().default(false).optional(),
+  dropInTokenCost: z.number().int().positive().nullable().optional(),
 })
 export type Class = z.infer<typeof ClassSchema>
 
@@ -48,6 +55,7 @@ export const CreateClassRequestSchema = z.object({
   description: z.string().max(1000).optional(),
   classType: ClassTypeSchema,
   level: ClassLevelSchema.default('all_levels'),
+  ageGroup: AgeGroupSchema.default('all').optional(),
   instructorId: UuidSchema.optional(),
   instructorIds: z.array(UuidSchema).optional(), // Multiple instructor IDs
   scheduledAt: z.string().datetime('Invalid datetime format'),
@@ -64,6 +72,8 @@ export const CreateClassRequestSchema = z.object({
     endType: z.enum(['never', 'date', 'count']).optional(),
     occurrences: z.number().int().positive().optional(),
   }).optional(),
+  allowDropIn: z.boolean().optional(),
+  dropInTokenCost: z.number().int().positive().nullable().optional(),
 })
 export type CreateClassRequest = z.infer<typeof CreateClassRequestSchema>
 
@@ -73,12 +83,14 @@ export const UpdateClassRequestSchema = z.object({
   description: z.string().max(1000).nullable().optional(),
   classType: ClassTypeSchema.optional(),
   level: ClassLevelSchema.optional(),
+  ageGroup: AgeGroupSchema.optional(),
   instructorId: UuidSchema.nullable().optional(),
   instructorIds: z.array(UuidSchema).optional(),
   scheduledAt: z.string().datetime().optional(),
   durationMinutes: z.number().int().positive().optional(),
   capacity: z.number().int().positive().optional(),
   tokenCost: z.number().int().positive().optional(),
+  allowDropIn: z.boolean().optional(),
   dropInTokenCost: z.number().int().positive().nullable().optional(),
   location: z.string().max(200).nullable().optional(),
   status: ClassStatusSchema.optional(),

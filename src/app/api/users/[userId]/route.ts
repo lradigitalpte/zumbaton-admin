@@ -103,7 +103,7 @@ async function handleUpdateUser(
       updatedProfile = await updateUserStatus(context.user.id, targetUserId, parseResult.data)
     }
     // Admin updating user profile (including personal info)
-    else if (isAdmin && !isSelf && (body.name !== undefined || body.email !== undefined || body.phone !== undefined || body.dateOfBirth !== undefined || body.bloodGroup !== undefined)) {
+    else if (isAdmin && !isSelf && (body.name !== undefined || body.email !== undefined || body.phone !== undefined || body.dateOfBirth !== undefined || body.gender !== undefined || body.bloodGroup !== undefined)) {
       const parseResult = UpdateUserProfileAdminRequestSchema.safeParse(body)
       if (!parseResult.success) {
         return NextResponse.json(
@@ -152,8 +152,8 @@ async function handleUpdateUser(
 }
 
 /**
- * DELETE /api/users/[userId] - Deactivate/suspend user (admin only)
- * This doesn't delete the user, just sets status to 'suspended'
+ * DELETE /api/users/[userId] - Deactivate user (soft delete)
+ * Sets isActive to false instead of actually deleting the user
  */
 async function handleDeleteUser(
   request: NextRequest,
@@ -163,32 +163,97 @@ async function handleDeleteUser(
     const params = await context.params
     const { userId } = params
 
-    // Cannot delete yourself
+    // Cannot deactivate yourself
     if (userId === context.user.id) {
       return NextResponse.json(
-        { error: 'Bad Request', message: 'Cannot delete your own account' },
+        { error: 'Bad Request', message: 'Cannot deactivate your own account' },
         { status: 400 }
       )
     }
 
-    await deleteUser(context.user.id, userId)
+    // Use updateUserStatus to set isActive to false (soft delete)
+    const updatedProfile = await updateUserStatus(context.user.id, userId, {
+      isActive: false
+    })
+
+    // Sign out all sessions for the deactivated user to prevent them from continuing to use the app
+    try {
+      const { getSupabaseAdminClient } = await import('@/lib/supabase')
+      const supabaseAdmin = getSupabaseAdminClient()
+      // Sign out all sessions for this user - this invalidates all their JWT tokens
+      await supabaseAdmin.auth.admin.signOut(userId)
+      console.log('[Deactivate User] Signed out all sessions for user:', userId)
+    } catch (signOutError) {
+      console.error('[Deactivate User] Failed to sign out user sessions:', signOutError)
+      // Don't fail the deactivation if sign-out fails - the isActive check will still prevent access
+    }
 
     // Log the action
     await createAuditLog({
       userId: context.user.id,
-      action: 'delete_user',
+      action: 'deactivate_user',
       resourceType: 'users',
-      resourceId: userId
+      resourceId: userId,
+      newValues: { isActive: false }
     })
+
+    // Invalidate Next.js cache
+    revalidatePath(`/api/users/${userId}`)
+    revalidatePath(`/users/${userId}`)
 
     return NextResponse.json({
       success: true,
-      message: 'User deleted successfully'
+      message: 'User deactivated successfully',
+      data: updatedProfile
     })
   } catch (error) {
-    console.error('Error suspending user:', error)
+    console.error('Error deactivating user:', error)
     return NextResponse.json(
-      { error: 'Internal Server Error', message: 'Failed to suspend user' },
+      { error: 'Internal Server Error', message: 'Failed to deactivate user' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * PATCH /api/users/[userId] - Reactivate user
+ * Sets isActive to true to reactivate a deactivated user
+ */
+async function handleReactivateUser(
+  request: NextRequest,
+  context: { params: Promise<RouteParams>; user: AuthenticatedUser }
+): Promise<NextResponse> {
+  try {
+    const params = await context.params
+    const { userId } = params
+
+    // Use updateUserStatus to set isActive to true (reactivate)
+    const updatedProfile = await updateUserStatus(context.user.id, userId, {
+      isActive: true
+    })
+
+    // Log the action
+    await createAuditLog({
+      userId: context.user.id,
+      action: 'reactivate_user',
+      resourceType: 'users',
+      resourceId: userId,
+      newValues: { isActive: true }
+    })
+
+    // Invalidate Next.js cache
+    revalidatePath(`/api/users/${userId}`)
+    revalidatePath(`/users/${userId}`)
+
+    return NextResponse.json({
+      success: true,
+      message: 'User reactivated successfully',
+      data: updatedProfile
+    })
+  } catch (error) {
+    console.error('Error reactivating user:', error)
+    return NextResponse.json(
+      { error: 'Internal Server Error', message: 'Failed to reactivate user' },
       { status: 500 }
     )
   }
@@ -197,4 +262,5 @@ async function handleDeleteUser(
 // Export handlers with appropriate protection
 export const GET = withSelfOrAdmin(handleGetUser)
 export const PUT = withSelfOrAdmin(handleUpdateUser)
-export const DELETE = withAuth(handleDeleteUser, { requiredRole: 'super_admin' })
+export const PATCH = withAuth(handleReactivateUser, { requiredRole: 'admin' }) // Admin can reactivate users
+export const DELETE = withAuth(handleDeleteUser, { requiredRole: 'admin' }) // Admin can deactivate users (soft delete)

@@ -8,8 +8,6 @@ import { getSupabaseAdminClient, TABLES } from '@/lib/supabase'
 import { getAuthenticatedUser } from '@/middleware/rbac'
 
 export async function POST(request: NextRequest) {
-  console.log('[Admin Send PDF] API called')
-  
   try {
     // Check authentication
     const user = await getAuthenticatedUser(request)
@@ -21,7 +19,6 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    console.log('[Admin Send PDF] Request body:', { formId: body.formId, includeAdminCopy: body.includeAdminCopy, adminEmail: body.adminEmail })
 
     if (!body.formId) {
       return NextResponse.json(
@@ -55,14 +52,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('[Admin Send PDF] Form fetched:', form.id)
-    console.log('[Admin Send PDF] User email:', form.email)
-
     // Determine web app URL based on environment
     const isDevelopment = process.env.NODE_ENV === 'development'
     const webAppUrl = isDevelopment ? 'http://localhost:3000' : (process.env.NEXT_PUBLIC_WEB_URL || 'https://zumbaton.sg')
-    console.log('[Admin Send PDF] Environment:', process.env.NODE_ENV)
-    console.log('[Admin Send PDF] Calling web app at:', webAppUrl)
 
     const response = await fetch(`${webAppUrl}/api/registration-form/send-pdf`, {
       method: 'POST',
@@ -97,11 +89,8 @@ export async function POST(request: NextRequest) {
       }),
     })
 
-    console.log('[Admin Send PDF] Response status:', response.status, response.statusText)
-
     // Check if response has content
     const responseText = await response.text()
-    console.log('[Admin Send PDF] Response body:', responseText.substring(0, 500))
     
     if (!responseText) {
       console.error('[Admin Send PDF] Empty response from web app')
@@ -129,12 +118,6 @@ export async function POST(request: NextRequest) {
         { success: false, error: result.error || 'Failed to send email' },
         { status: response.status }
       )
-    }
-
-    console.log('[Admin Send PDF] Email sent successfully')
-    console.log('[Admin Send PDF] Sent to user:', form.email)
-    if (body.includeAdminCopy && body.adminEmail) {
-      console.log('[Admin Send PDF] Sent copy to admin:', body.adminEmail)
     }
 
     return NextResponse.json({

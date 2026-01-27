@@ -40,6 +40,40 @@ export async function createBooking(params: CreateBookingParams): Promise<Bookin
     throw new ApiError('NOT_FOUND_ERROR', 'Class not found or not available', 404)
   }
 
+  // Validate class type matches user type (adult/kid restriction)
+  // Note: Admins can bypass this check, but regular users cannot
+  try {
+    const { getUserType, isClassTypeCompatible } = await import('@/lib/user-age-utils')
+    
+    // Get user profile to check date of birth
+    const { data: userProfile } = await supabase
+      .from('user_profiles')
+      .select('date_of_birth')
+      .eq('id', userId)
+      .single()
+
+    const userType = getUserType(userProfile?.date_of_birth)
+    const classType = classData.class_type
+
+    if (!isClassTypeCompatible(classType, userType)) {
+      const userTypeLabel = userType === 'adult' ? 'adults' : 'children'
+      const classTypeLabel = classType === 'adult' ? 'adult' : classType === 'kid' ? 'kids' : 'all'
+      
+      throw new ApiError(
+        'VALIDATION_ERROR',
+        `This class is for ${classTypeLabel} only. ${userTypeLabel === 'adults' ? 'Adults' : 'Children'} cannot book ${classTypeLabel} classes.`,
+        400
+      )
+    }
+  } catch (validationError) {
+    // If it's an ApiError, rethrow it
+    if (validationError instanceof ApiError) {
+      throw validationError
+    }
+    console.error('[Booking Service] Error validating class type:', validationError)
+    // Continue with booking if validation fails (fail open for backwards compatibility)
+  }
+
   // Check if this is a course parent class (recurrence_type === 'course' && parent_class_id is null)
   const isCourseParent = classData.recurrence_type === 'course' && !classData.parent_class_id
 
@@ -261,6 +295,39 @@ async function createCourseBooking(
 ): Promise<BookingResponse> {
   const adminClient = getSupabaseAdminClient()
   const now = new Date()
+
+  // 0. Validate class type matches user type (adult/kid restriction)
+  try {
+    const { getUserType, isClassTypeCompatible } = await import('@/lib/user-age-utils')
+    
+    // Get user profile to check date of birth
+    const { data: userProfile } = await adminClient
+      .from('user_profiles')
+      .select('date_of_birth')
+      .eq('id', userId)
+      .single()
+
+    const userType = getUserType(userProfile?.date_of_birth)
+    const classType = parentClassData.class_type as string
+
+    if (!isClassTypeCompatible(classType, userType)) {
+      const userTypeLabel = userType === 'adult' ? 'adults' : 'children'
+      const classTypeLabel = classType === 'adult' ? 'adult' : classType === 'kid' ? 'kids' : 'all'
+      
+      throw new ApiError(
+        'VALIDATION_ERROR',
+        `This course is for ${classTypeLabel} only. ${userTypeLabel === 'adults' ? 'Adults' : 'Children'} cannot book ${classTypeLabel} courses.`,
+        400
+      )
+    }
+  } catch (validationError) {
+    // If it's an ApiError, rethrow it
+    if (validationError instanceof ApiError) {
+      throw validationError
+    }
+    console.error('[Booking Service] Error validating course class type:', validationError)
+    // Continue with booking if validation fails (fail open for backwards compatibility)
+  }
 
   // 1. Find all child instances (sessions) for this course
   const { data: allSessions, error: sessionsError } = await adminClient
@@ -1158,6 +1225,7 @@ function mapClassToSchema(row: Record<string, unknown>) {
     description: row.description as string | null,
     classType: row.class_type as 'zumba',
     level: row.level as 'all_levels',
+    ageGroup: (row.age_group as 'adult' | 'kid' | 'all') || 'all',
     instructorId: row.instructor_id as string | null,
     instructorName: row.instructor_name as string | null,
     scheduledAt: row.scheduled_at as string,

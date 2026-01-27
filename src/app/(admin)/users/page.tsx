@@ -440,16 +440,74 @@ export default function UsersPage() {
       const userId = (response.data as any)?.id || (response.data as any)?.data?.id;
       const userName = newUser.name;
 
-      // Send welcome email separately (don't fail user creation if email fails)
+      // Send welcome email and registration form email separately (don't fail user creation if emails fail)
       if (userId) {
+        let welcomeEmailSent = false;
+        let registrationFormSent = false;
+        
+        // Step 1: Send welcome email
         try {
           await api.post(`/api/users/${userId}/send-welcome-email`, {
             temporaryPassword: tempPassword,
           });
-          toast.showToast(`User "${userName}" created successfully! Welcome email sent to ${newUser.email}.`, "success");
+          welcomeEmailSent = true;
         } catch (emailError: any) {
           console.error("Failed to send welcome email:", emailError);
-          toast.showToast(`User "${userName}" created successfully, but email sending failed. You can resend it using the email icon.`, "warning");
+        }
+
+        // Step 2: Send registration form email (after welcome email)
+        try {
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          
+          if (sessionError) {
+            console.error("Failed to get session for registration form:", sessionError);
+          } else if (!session?.access_token) {
+            console.error("No access token available for registration form");
+          } else {
+            console.log("Sending registration form email for user:", userId);
+            const formResponse = await fetch('/api/registration-form/send', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({ userId }),
+            });
+
+            if (!formResponse.ok) {
+              const errorText = await formResponse.text();
+              console.error("Registration form API error:", {
+                status: formResponse.status,
+                statusText: formResponse.statusText,
+                body: errorText,
+              });
+            } else {
+              const formResult = await formResponse.json();
+              if (formResult.success) {
+                registrationFormSent = true;
+                console.log("Registration form email sent successfully");
+              } else {
+                console.error("Failed to send registration form:", formResult.error);
+              }
+            }
+          }
+        } catch (formError: any) {
+          console.error("Failed to send registration form email:", formError);
+          console.error("Error details:", {
+            message: formError?.message,
+            stack: formError?.stack,
+          });
+        }
+
+        // Show appropriate toast message based on what was sent
+        if (welcomeEmailSent && registrationFormSent) {
+          toast.showToast(`User "${userName}" created successfully! Welcome email and registration form sent to ${newUser.email}.`, "success");
+        } else if (welcomeEmailSent) {
+          toast.showToast(`User "${userName}" created successfully! Welcome email sent, but registration form failed. You can resend it from the user details page.`, "warning");
+        } else if (registrationFormSent) {
+          toast.showToast(`User "${userName}" created successfully! Registration form sent, but welcome email failed. You can resend it using the email icon.`, "warning");
+        } else {
+          toast.showToast(`User "${userName}" created successfully, but email sending failed. You can resend emails from the user details page.`, "warning");
         }
       } else {
         toast.showToast(`User "${userName}" created successfully!`, "success");
@@ -1380,6 +1438,7 @@ export default function UsersPage() {
               <option value="AB-">AB-</option>
               <option value="O+">O+</option>
               <option value="O-">O-</option>
+              <option value="Not sure">Not sure</option>
             </select>
           </div>
 

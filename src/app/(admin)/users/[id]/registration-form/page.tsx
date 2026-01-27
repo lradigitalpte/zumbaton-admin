@@ -14,6 +14,7 @@ interface RegistrationFormData {
   date_of_birth: string
   email: string
   phone: string
+  gender: string | null
   blood_group: string
   emergency_contact: string
   emergency_contact_phone: string
@@ -351,6 +352,10 @@ export default function ViewRegistrationForm() {
                 <div>
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Phone</label>
                   <p className="mt-1 text-base text-gray-900 font-medium">{formData.phone}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Gender</label>
+                  <p className="mt-1 text-base text-gray-900 font-medium">{formData.gender || 'Not specified'}</p>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Blood Group</label>

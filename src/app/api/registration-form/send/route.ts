@@ -70,22 +70,17 @@ export async function POST(request: Request) {
       .update({ registration_form_sent_at: new Date().toISOString() })
       .eq('id', userId)
 
-    // Generate form URL - CRITICAL: Must use production URL
-    // Use NEXT_PUBLIC_WEB_APP_URL (which is set in Vercel) or fallback to NEXT_PUBLIC_APP_URL
-    const baseUrl = process.env.NEXT_PUBLIC_WEB_APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://zumbaton.sg'
-    if (!baseUrl || baseUrl === 'http://localhost:3000') {
-      console.error('[Registration Form] CRITICAL: Invalid or missing web URL in production. Got:', baseUrl)
-    }
+    // Generate form URL - CRITICAL: Must use production URL, never localhost in production
+    // Use the same helper function that validates production URLs
+    const { getWebAppUrl } = await import('@/lib/email-url')
+    const baseUrl = getWebAppUrl()
     const formUrl = `${baseUrl}/registration-form/${formToken}`
-
+    
     // Send email using the email API
     try {
       const { getWebAppUrl } = await import('@/lib/email-url')
       const webAppUrl = getWebAppUrl()
       const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
-      
-      console.log('[Registration Form] Sending email to:', user.email)
-      console.log('[Registration Form] Email API URL:', `${webAppUrl}/api/email/send`)
       
       const emailResponse = await fetch(`${webAppUrl}/api/email/send`, {
         method: 'POST',
@@ -112,9 +107,6 @@ export async function POST(request: Request) {
         })
         throw new Error(`Email API returned ${emailResponse.status}: ${errorText}`)
       }
-      
-      const emailResult = await emailResponse.json()
-      console.log('[Registration Form] Email sent successfully:', emailResult)
     } catch (emailError) {
       console.error('[Registration Form] Error sending email:', emailError)
       // Don't fail the request if email fails, form record is created

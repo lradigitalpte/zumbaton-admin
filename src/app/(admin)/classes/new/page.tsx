@@ -99,6 +99,7 @@ function NewClassPageContent() {
     instructor: [] as string[], // Changed to array for multiple instructors
     room: "",
     level: "all_levels",
+    ageGroup: "all", // Adult/Kid/Both
     // Single class fields
     date: "",
     // Recurring class fields
@@ -202,6 +203,9 @@ function NewClassPageContent() {
         instructor: instructorArray, // Keep as array
         room: roomId,
         level: level,
+        ageGroup: (existingClass as any).ageGroup || "all", // Default to 'all' if not set
+        allowDropIn: (existingClass as any).allowDropIn || false,
+        dropInTokenCost: (existingClass as any).dropInTokenCost ? String((existingClass as any).dropInTokenCost) : "",
         date: (detectedClassType === "single" || isIndividualInstance) ? dateStr : prev.date,
         startDate: detectedClassType === "recurring" && !isIndividualInstance ? dateStr : prev.startDate,
         endDate: detectedClassType === "recurring" && !isIndividualInstance && existingClass.recurrencePattern 
@@ -388,6 +392,7 @@ function NewClassPageContent() {
       description: formData.description || undefined,
       classType: classTypeValue,
       level: formData.level,
+      ageGroup: (formData.ageGroup ?? 'all') as 'adult' | 'kid' | 'all', // Use ?? instead of || to allow empty string values
       // Only include instructorId if it's a valid UUID (not empty string)
       ...(primaryInstructorId && primaryInstructorId.trim() !== '' ? { instructorId: primaryInstructorId } : {}),
       // Only include instructorIds if it's a valid array with UUIDs
@@ -670,6 +675,23 @@ function NewClassPageContent() {
                     onChange={handleChange("level")}
                     value={formData.level}
                   />
+                </div>
+
+                <div>
+                  <Label htmlFor="ageGroup">Target Audience</Label>
+                  <Select
+                    options={[
+                      { value: "all", label: "All (Adults & Kids)" },
+                      { value: "adult", label: "Adults Only (13+)" },
+                      { value: "kid", label: "Kids Only (<13)" },
+                    ]}
+                    placeholder="Select target audience"
+                    onChange={handleChange("ageGroup")}
+                    value={formData.ageGroup}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Determines who can book this class based on their age
+                  </p>
                 </div>
 
                 <div className="md:col-span-2">
@@ -983,43 +1005,50 @@ function NewClassPageContent() {
               )}
             </div>
 
-            {classType === "course" && (
-              <div className="mt-4">
-                <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setFormData(prev => ({ ...prev, allowDropIn: !prev.allowDropIn }))}
-                      className={`relative h-6 w-11 rounded-full transition-colors ${
-                        formData.allowDropIn ? "bg-amber-500" : "bg-gray-300 dark:bg-gray-600"
-                      }`}
-                    >
-                      <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                        formData.allowDropIn ? "translate-x-5" : ""
-                      }`} />
-                    </button>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">Allow Drop-in</p>
-                      <p className="text-xs text-gray-500">Let non-enrolled students join with tokens</p>
-                    </div>
-                  </div>
-                {formData.allowDropIn && (
-              <div className="mt-4">
-                    <Label htmlFor="dropInTokenCost">Drop-in Token Cost (per session)</Label>
-                <Input
-                      id="dropInTokenCost"
-                  type="number"
-                  min="1"
-                  value={formData.tokenCost}
-                  onChange={(e) => handleChange("tokenCost")(e.target.value)}
-                      placeholder="Same as course token cost"
-                />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Tokens required for students not enrolled in the full course
-                    </p>
-                  </div>
-                )}
+            {/* Walk-in/Drop-in option for all class types */}
+            <div className="mt-4">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, allowDropIn: !prev.allowDropIn }))}
+                  className={`relative h-6 w-11 rounded-full transition-colors ${
+                    formData.allowDropIn ? "bg-amber-500" : "bg-gray-300 dark:bg-gray-600"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                    formData.allowDropIn ? "translate-x-5" : ""
+                  }`} />
+                </button>
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">Allow Walk-in</p>
+                  <p className="text-xs text-gray-500">
+                    {classType === "course" 
+                      ? "Let non-enrolled students join individual sessions with tokens"
+                      : "Allow users to check in via QR code without pre-booking"}
+                  </p>
+                </div>
               </div>
-            )}
+              {formData.allowDropIn && (
+                <div className="mt-4">
+                  <Label htmlFor="dropInTokenCost">
+                    Walk-in Token Cost {classType === "course" ? "(per session)" : ""}
+                  </Label>
+                  <Input
+                    id="dropInTokenCost"
+                    type="number"
+                    min="1"
+                    value={formData.dropInTokenCost}
+                    onChange={(e) => handleChange("dropInTokenCost")(e.target.value)}
+                    placeholder={`Same as regular token cost (${formData.tokenCost})`}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {classType === "course" 
+                      ? "Tokens required for students not enrolled in the full course. Leave empty to use regular token cost."
+                      : "Tokens required for walk-in attendance. Leave empty to use regular token cost."}
+                  </p>
+                </div>
+              )}
+            </div>
           </ComponentCard>
 
           {/* Summary Preview */}
