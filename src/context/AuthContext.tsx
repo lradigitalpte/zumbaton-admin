@@ -64,7 +64,7 @@ async function mapSupabaseUserToUser(supabaseUser: SupabaseUser | null): Promise
     // Add a timeout to prevent hanging (RLS can cause circular dependency)
     const profilePromise = client
       .from('user_profiles')
-      .select('id, email, name, role')
+      .select('id, email, name, role, is_active')
       .eq('id', supabaseUser.id)
       .maybeSingle()
     
@@ -85,6 +85,11 @@ async function mapSupabaseUserToUser(supabaseUser: SupabaseUser | null): Promise
       if (error) {
         console.error('[Auth] Error fetching user profile:', error.message, error.code)
       } else if (profile) {
+        // Check if user is active - deactivated users cannot log in
+        if (profile.is_active === false) {
+          console.warn('[Auth] User account is deactivated:', profile.email)
+          return null // Return null to prevent login
+        }
         
         const profileRole = profile.role as User['role']
         return {
@@ -366,6 +371,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(userData)
             setIsLoading(false)
           } else {
+            // User might be deactivated or not have admin role
+            if (!userData) {
+              console.warn('[Auth] User account may be deactivated, signing out...')
+              supabase.auth.signOut()
+            }
             setUser(null)
             setIsLoading(false)
           }
@@ -376,6 +386,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const userData = await mapSupabaseUserToUser(session.user)
           if (userData && ADMIN_ROLES.includes(userData.role)) {
             setUser(userData)
+          } else {
+            // User might be deactivated - sign them out
+            if (!userData) {
+              console.warn('[Auth] User account may be deactivated during token refresh, signing out...')
+              supabase.auth.signOut()
+              setUser(null)
+            }
           }
         }
       }
@@ -493,6 +510,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (userData) {
             finalRole = userData.role
             userName = userData.name
+          } else {
+            // User might be deactivated - sign them out
+            await supabase.auth.signOut()
+            return {
+              success: false,
+              error: 'Your account has been deactivated. Please contact support for assistance.',
+            }
           }
         }
 

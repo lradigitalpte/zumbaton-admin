@@ -33,6 +33,7 @@ function toUserProfile(row: Record<string, unknown>): UserProfile {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     dateOfBirth: row.date_of_birth as string | null,
+    gender: row.gender as string | null,
     bloodGroup: row.blood_group as string | null,
     physicalFormUrl: row.physical_form_url as string | null,
     registrationFormId: row.registration_form_id as string | null,
@@ -174,19 +175,26 @@ export async function listUsers(
 
   const total = count || 0
 
-  // Fetch last_sign_in_at from auth.users for all user IDs using Admin API
+  // Fetch last_sign_in_at from auth.users for paginated user IDs only
+  // OPTIMIZED: Skip this expensive operation for large result sets or make it async
   const userIds = (data || []).map((row: Record<string, unknown>) => row.id as string)
   const lastLoginMap: Record<string, string | null> = {}
   
-  if (userIds.length > 0) {
+  // Only fetch last login for small result sets to avoid performance issues
+  // For larger sets, skip it (last login is non-critical data)
+  if (userIds.length > 0 && userIds.length <= 50) {
     try {
-      // Use Admin API to list users and get their last_sign_in_at
+      // Fetch ALL auth users and filter (Supabase Admin API doesn't support filtering by IDs)
+      // This is still expensive but acceptable for small result sets
       const { data: authUsersData, error: authError } = await getSupabaseAdminClient().auth.admin.listUsers()
       
       if (!authError && authUsersData?.users) {
-        // Filter to only the users we need and create a map
+        // Create a Set for O(1) lookup instead of O(n) includes()
+        const userIdSet = new Set(userIds)
+        
+        // Filter to only the users we need
         for (const authUser of authUsersData.users) {
-          if (userIds.includes(authUser.id)) {
+          if (userIdSet.has(authUser.id)) {
             lastLoginMap[authUser.id] = authUser.last_sign_in_at || null
           }
         }
@@ -196,6 +204,7 @@ export async function listUsers(
       console.warn('Failed to fetch last login times:', error)
     }
   }
+  // For result sets > 50 users, skip last login fetch to maintain performance
 
   // Map from view data (already has stats + balances) to UserProfile with stats
   const users = (data || []).map((row: Record<string, unknown>) => {
@@ -277,6 +286,7 @@ export async function updateUserProfile(
   const adminUpdates = updates as any
   if (adminUpdates.email !== undefined) updateData.email = adminUpdates.email
   if (adminUpdates.dateOfBirth !== undefined) updateData.date_of_birth = adminUpdates.dateOfBirth
+  if (adminUpdates.gender !== undefined) updateData.gender = adminUpdates.gender
   if (adminUpdates.bloodGroup !== undefined) updateData.blood_group = adminUpdates.bloodGroup
 
   const { data, error } = await getSupabaseAdminClient()

@@ -41,6 +41,7 @@ export interface ClassWithAvailability {
   description?: string | null
   classType: string
   level: string
+  ageGroup?: 'adult' | 'kid' | 'all' // Target audience: adult (13+), kid (<13), or all (both)
   instructorId?: string | null
   instructorName?: string | null
   scheduledAt: string
@@ -68,6 +69,7 @@ export interface CreateClassData {
   description?: string
   classType: string
   level?: string
+  ageGroup?: 'adult' | 'kid' | 'all' // Target audience: adult (13+), kid (<13), or all (both)
   instructorId?: string
   instructorIds?: string[] // Multiple instructor IDs
   scheduledAt: string

@@ -483,6 +483,7 @@ function mapWaitlistToSchema(row: Record<string, unknown>): WaitlistWithClass {
       description: classData.description as string | null,
       classType: classData.class_type as 'zumba',
       level: classData.level as 'all_levels',
+      ageGroup: (classData.age_group as 'adult' | 'kid' | 'all') || 'all',
       instructorId: classData.instructor_id as string | null,
       instructorName: classData.instructor_name as string | null,
       scheduledAt: classData.scheduled_at as string,

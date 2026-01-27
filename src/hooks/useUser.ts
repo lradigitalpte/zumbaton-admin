@@ -25,6 +25,7 @@ export interface UserDetail {
   notes?: string
   // New fields
   dateOfBirth?: string | null
+  gender?: string | null
   bloodGroup?: string | null
   physicalFormUrl?: string | null
   registrationFormId?: string | null
@@ -102,6 +103,7 @@ async function fetchUserDetail(userId: string, cacheBuster?: number): Promise<Us
     notes: (user.preferences as any)?.notes || undefined,
     // New fields from database
     dateOfBirth: user.dateOfBirth || null,
+    gender: user.gender || null,
     bloodGroup: user.bloodGroup || null,
     physicalFormUrl: user.physicalFormUrl || null,
     registrationFormId: user.registrationFormId || null,
@@ -121,10 +123,12 @@ export function useUser(userId: string, cacheBuster?: number) {
     queryKey: [...userKeys.detail(userId), cacheBuster || 0], // Include cacheBuster in key to force refetch
     queryFn: () => fetchUserDetail(userId, cacheBuster),
     enabled: !!userId, // Only fetch if userId is provided
-    staleTime: 0, // Always stale so refetch works
+    staleTime: 30 * 1000, // 30 seconds - allow some caching to prevent excessive refetches
     gcTime: 10 * 60 * 1000, // 10 minutes
-    retry: 1,
+    retry: 2, // Retry twice for better reliability
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
     refetchOnWindowFocus: false,
+    refetchOnMount: true, // Always refetch on mount to ensure fresh data
   })
 }
 

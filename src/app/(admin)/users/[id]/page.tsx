@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import SlidePanel from "@/components/ui/SlidePanel";
@@ -61,6 +61,8 @@ export default function UserDetailPage() {
   const [physicalFormFile, setPhysicalFormFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeactivating, setIsDeactivating] = useState(false);
+  const [isReactivating, setIsReactivating] = useState(false);
   const [forceRefreshKey, setForceRefreshKey] = useState(0);
   const [isEditPanelOpen, setIsEditPanelOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -69,6 +71,7 @@ export default function UserDetailPage() {
     email: "",
     phone: "",
     dateOfBirth: "",
+    gender: "",
     bloodGroup: "",
   });
   const [classHistory, setClassHistory] = useState<ClassHistory[]>([]);
@@ -84,14 +87,8 @@ export default function UserDetailPage() {
   const toast = useToast();
 
   // Fetch user detail with React Query caching
+  // cacheBuster already handles cache invalidation, no need to manually clear
   const { data: user, isLoading: loading, error: queryError, refetch } = useUser(userId, forceRefreshKey);
-
-  // Force clear cache on mount to get new fields
-  useEffect(() => {
-    queryClient.removeQueries({
-      queryKey: ['user', 'detail', userId],
-    });
-  }, [userId, queryClient]);
 
   // Initialize edit form when user data loads
   useEffect(() => {
@@ -101,6 +98,7 @@ export default function UserDetailPage() {
         email: user.email || "",
         phone: user.phone || "",
         dateOfBirth: user.dateOfBirth ? new Date(user.dateOfBirth).toISOString().split('T')[0] : "",
+        gender: user.gender || "",
         bloodGroup: user.bloodGroup || "",
       });
       setNotes(user.notes || "");
@@ -297,8 +295,8 @@ export default function UserDetailPage() {
     );
   }
 
-  // Show error state
-  if (queryError || !user) {
+  // Show error state - only show if we have an error AND we're not still loading
+  if (queryError && !loading) {
     return (
       <div>
         <PageBreadCrumb pageTitle="User Details" />
@@ -315,6 +313,34 @@ export default function UserDetailPage() {
               className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
             >
               Try Again
+            </button>
+            <button
+              onClick={() => router.push("/users")}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300"
+            >
+              Back to Users
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error if no user data after loading completes
+  if (!loading && !user && !queryError) {
+    return (
+      <div>
+        <PageBreadCrumb pageTitle="User Details" />
+        <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-6 dark:border-yellow-800 dark:bg-yellow-900/20">
+          <p className="text-sm font-semibold text-yellow-600 dark:text-yellow-400 mb-2">
+            No user data available
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={handleRefresh}
+              className="rounded-lg bg-yellow-600 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-700"
+            >
+              Retry
             </button>
             <button
               onClick={() => router.push("/users")}
@@ -599,7 +625,7 @@ export default function UserDetailPage() {
   };
 
   const handleDeletePhysicalForm = async () => {
-    if (!user.physicalFormUrl) {
+    if (!user || !user.physicalFormUrl) {
       return;
     }
 
@@ -724,6 +750,96 @@ export default function UserDetailPage() {
     }
   };
 
+  const handleDeactivateUser = async () => {
+    if (!user) {
+      toast.showToast('User data not available', 'error');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to deactivate ${user.name}? This will prevent them from booking classes.`)) {
+      return;
+    }
+
+    setIsDeactivating(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Please sign in to deactivate users');
+      }
+
+      const response = await fetch(`/api/users/${userId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result.error) {
+        throw new Error(result.error?.message || result.message || 'Failed to deactivate user');
+      }
+
+      toast.showToast('User deactivated successfully', 'success');
+      
+      // Refresh user data
+      invalidateDetail(userId);
+      await refetch();
+      setForceRefreshKey(prev => prev + 1);
+    } catch (error: any) {
+      console.error('Error deactivating user:', error);
+      toast.showToast(error.message || 'Failed to deactivate user', 'error');
+    } finally {
+      setIsDeactivating(false);
+    }
+  };
+
+  const handleReactivateUser = async () => {
+    if (!user) {
+      toast.showToast('User data not available', 'error');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to reactivate ${user.name}? They will be able to book classes again.`)) {
+      return;
+    }
+
+    setIsReactivating(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Please sign in to reactivate users');
+      }
+
+      const response = await fetch(`/api/users/${userId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result.error) {
+        throw new Error(result.error?.message || result.message || 'Failed to reactivate user');
+      }
+
+      toast.showToast('User reactivated successfully', 'success');
+      
+      // Refresh user data
+      invalidateDetail(userId);
+      await refetch();
+      setForceRefreshKey(prev => prev + 1);
+    } catch (error: any) {
+      console.error('Error reactivating user:', error);
+      toast.showToast(error.message || 'Failed to reactivate user', 'error');
+    } finally {
+      setIsReactivating(false);
+    }
+  };
+
   const handleUpdateUser = async () => {
     if (!editForm.name || !editForm.email) {
       toast.showToast('Name and email are required', 'error');
@@ -749,6 +865,7 @@ export default function UserDetailPage() {
           email: editForm.email,
           phone: editForm.phone || null,
           dateOfBirth: editForm.dateOfBirth || null,
+          gender: editForm.gender || null,
           bloodGroup: editForm.bloodGroup || null,
         }),
       });
@@ -805,9 +922,28 @@ export default function UserDetailPage() {
   ];
 
   // Cache-buster so non-technical users always see the latest file without clearing cache
-  const physicalFormUrlWithNoCache = user.physicalFormUrl
+  const physicalFormUrlWithNoCache = user?.physicalFormUrl
     ? `${user.physicalFormUrl}?cb=${Date.now()}`
     : null;
+
+  // Early return if user is not loaded yet
+  if (loading || !user) {
+    return (
+      <div>
+        <PageBreadCrumb pageTitle="User Details" />
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="mb-4 text-gray-500 dark:text-gray-400">Loading user details...</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // TypeScript type guard: user is guaranteed to be defined after the check above
+  // Use non-null assertion since we've already checked
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const userData = user!;
 
   return (
     <div>
@@ -837,6 +973,23 @@ export default function UserDetailPage() {
           >
             Edit User
           </button>
+          {userData.isActive ? (
+            <button 
+              onClick={handleDeactivateUser}
+              disabled={isDeactivating}
+              className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isDeactivating ? 'Deactivating...' : 'Deactivate User'}
+            </button>
+          ) : (
+            <button 
+              onClick={handleReactivateUser}
+              disabled={isReactivating}
+              className="rounded-lg bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isReactivating ? 'Reactivating...' : 'Reactivate User'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -844,48 +997,48 @@ export default function UserDetailPage() {
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-4">
-            {user.avatarUrl ? (
+            {userData.avatarUrl ? (
               <img
-                src={user.avatarUrl}
-                alt={user.name}
+                src={userData.avatarUrl}
+                alt={userData.name}
                 className="h-16 w-16 rounded-full object-cover"
               />
             ) : (
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-xl font-bold text-white">
-                {getInitials(user.name)}
+                {getInitials(userData.name)}
               </div>
             )}
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">{user.name}</h1>
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white">{userData.name}</h1>
                 <span
                   className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${getStatusStyle(
-                    user.status
+                    userData.status
                   )}`}
                 >
-                  {user.status.charAt(0).toUpperCase() + user.status.slice(1)}
+                  {userData.status.charAt(0).toUpperCase() + userData.status.slice(1)}
                 </span>
               </div>
               <div className="mt-1 flex flex-col gap-1 text-sm text-gray-500 dark:text-gray-400 sm:flex-row sm:gap-4">
-                <span>{user.email}</span>
-                <span>{user.phone}</span>
+                <span>{userData.email}</span>
+                <span>{userData.phone}</span>
               </div>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-6 text-center">
             <div>
-              <div className={`text-2xl font-bold ${user.tokenBalance === 0 ? "text-red-600" : user.tokenBalance < 3 ? "text-amber-600" : "text-emerald-600"}`}>
-                {user.tokenBalance}
+              <div className={`text-2xl font-bold ${userData.tokenBalance === 0 ? "text-red-600" : userData.tokenBalance < 3 ? "text-amber-600" : "text-emerald-600"}`}>
+                {userData.tokenBalance}
               </div>
               <div className="text-xs text-gray-500 dark:text-gray-400">Tokens</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">{user.totalClasses}</div>
+              <div className="text-2xl font-bold text-gray-900 dark:text-white">{userData.totalClasses}</div>
               <div className="text-xs text-gray-500 dark:text-gray-400">Classes</div>
             </div>
             <div>
-              <div className={`text-2xl font-bold ${user.noShows >= 3 ? "text-red-600" : user.noShows > 0 ? "text-amber-600" : "text-gray-900 dark:text-white"}`}>
-                {user.noShows}
+              <div className={`text-2xl font-bold ${userData.noShows >= 3 ? "text-red-600" : userData.noShows > 0 ? "text-amber-600" : "text-gray-900 dark:text-white"}`}>
+                {userData.noShows}
               </div>
               <div className="text-xs text-gray-500 dark:text-gray-400">No-Shows</div>
             </div>
@@ -927,54 +1080,56 @@ export default function UserDetailPage() {
                 <dl className="space-y-3">
                   <div className="flex justify-between">
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Full Name</dt>
-                    <dd className="text-sm font-medium text-gray-900 dark:text-white">{user.name}</dd>
+                    <dd className="text-sm font-medium text-gray-900 dark:text-white">{userData.name}</dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Email</dt>
-                    <dd className="text-sm font-medium text-gray-900 dark:text-white">{user.email}</dd>
+                    <dd className="text-sm font-medium text-gray-900 dark:text-white">{userData.email}</dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Phone</dt>
-                    <dd className="text-sm font-medium text-gray-900 dark:text-white">{user.phone || "-"}</dd>
+                    <dd className="text-sm font-medium text-gray-900 dark:text-white">{userData.phone || "-"}</dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Date of Birth</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">
-                      {user.dateOfBirth 
-                        ? new Date(user.dateOfBirth).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+                      {userData.dateOfBirth 
+                        ? new Date(userData.dateOfBirth).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
                         : "-"}
                     </dd>
                   </div>
                   <div className="flex justify-between">
+                    <dt className="text-sm text-gray-500 dark:text-gray-400">Gender</dt>
+                    <dd className="text-sm font-medium text-gray-900 dark:text-white">{userData.gender || "-"}</dd>
+                  </div>
+                  <div className="flex justify-between">
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Blood Group</dt>
-                    <dd className="text-sm font-medium text-gray-900 dark:text-white">{user.bloodGroup || "-"}</dd>
+                    <dd className="text-sm font-medium text-gray-900 dark:text-white">{userData.bloodGroup || "-"}</dd>
                   </div>
                   <div className="flex justify-between items-center">
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Registration Form</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">
                       {/* Digital Form Status & Actions */}
-                      {user.registrationFormSentAt && !user.registrationFormId && (
+                      {userData.registrationFormSentAt && !userData.registrationFormId && (
                         <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-yellow-50 text-yellow-700 ring-1 ring-inset ring-yellow-600/20">
                           📤 Sent - Awaiting User
                         </span>
                       )}
-                      {user.registrationFormId && (
-                        <>
-                          <a
-                            href={`/users/${user.id}/registration-form`}
-                            className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
-                            title="View and sign digital registration form"
-                          >
-                            ✓ View & Sign Digital Form
-                          </a>
-                        </>
+                      {userData.registrationFormId && (
+                        <a
+                          href={`/users/${userData.id}/registration-form`}
+                          className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
+                          title="View and sign digital registration form"
+                        >
+                          ✓ View & Sign Digital Form
+                        </a>
                       )}
                       
                       {/* Physical Form Actions */}
-                      {user.physicalFormUrl ? (
+                      {userData.physicalFormUrl ? (
                         <>
                           <a
-                            href={physicalFormUrlWithNoCache || user.physicalFormUrl}
+                            href={physicalFormUrlWithNoCache || userData.physicalFormUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
@@ -998,7 +1153,7 @@ export default function UserDetailPage() {
                           </button>
                         </>
                       ) : (
-                        !user.registrationFormId && (
+                        !userData.registrationFormId && (
                           <button
                             onClick={() => setIsUploadPanelOpen(true)}
                             className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
@@ -1012,11 +1167,11 @@ export default function UserDetailPage() {
                       {/* Send Digital Form Button */}
                       <button
                         onClick={handleSendRegistrationForm}
-                        disabled={isSendingForm || !user.email}
+                        disabled={isSendingForm || !userData.email}
                         className="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        title={user.registrationFormSentAt ? "Resend digital registration form" : "Send digital registration form"}
+                        title={userData.registrationFormSentAt ? "Resend digital registration form" : "Send digital registration form"}
                       >
-                        {isSendingForm ? 'Sending...' : (user.registrationFormSentAt ? 'Resend Form' : 'Send Form')}
+                        {isSendingForm ? 'Sending...' : (userData.registrationFormSentAt ? 'Resend Form' : 'Send Form')}
                       </button>
                     </dd>
                   </div>
@@ -1459,7 +1614,7 @@ export default function UserDetailPage() {
             )}
           </div>
 
-          {user.physicalFormUrl && (
+          {userData.physicalFormUrl && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
               <p className="text-sm text-amber-800 dark:text-amber-200">
                 <strong>Note:</strong> Uploading a new file will replace the existing physical form.
@@ -1500,6 +1655,7 @@ export default function UserDetailPage() {
               email: user.email || "",
               phone: user.phone || "",
               dateOfBirth: user.dateOfBirth ? new Date(user.dateOfBirth).toISOString().split('T')[0] : "",
+              gender: user.gender || "",
               bloodGroup: user.bloodGroup || "",
             });
           }
@@ -1562,6 +1718,21 @@ export default function UserDetailPage() {
           </div>
 
           <div>
+            <Label htmlFor="editGender">Gender</Label>
+            <select
+              id="editGender"
+              value={editForm.gender}
+              onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+            >
+              <option value="">Select gender</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Not sure">Not sure</option>
+            </select>
+          </div>
+
+          <div>
             <Label htmlFor="editBloodGroup">Blood Group</Label>
             <select
               id="editBloodGroup"
@@ -1591,6 +1762,7 @@ export default function UserDetailPage() {
                     email: user.email || "",
                     phone: user.phone || "",
                     dateOfBirth: user.dateOfBirth ? new Date(user.dateOfBirth).toISOString().split('T')[0] : "",
+                    gender: user.gender || "",
                     bloodGroup: user.bloodGroup || "",
                   });
                 }

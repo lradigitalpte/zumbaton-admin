@@ -175,6 +175,7 @@ export async function createClass(data: CreateClassRequest & {
     description: data.description || null,
     class_type: data.classType,
     level: data.level || 'all_levels',
+    age_group: data.ageGroup ?? 'all', // Target audience: adult, kid, or all (use ?? instead of || to allow 'kid'/'adult')
     instructor_id: primaryInstructorId, // Primary instructor (first one for backward compatibility)
     instructor_name: instructorName, // Comma-separated names for multiple instructors
     duration_minutes: data.durationMinutes || 60,
@@ -507,6 +508,7 @@ export async function updateClass(
   if (data.description !== undefined) updateData.description = data.description
   if (data.classType !== undefined) updateData.class_type = data.classType
   if (data.level !== undefined) updateData.level = data.level
+  if (data.ageGroup !== undefined) updateData.age_group = data.ageGroup
   if (data.scheduledAt !== undefined) updateData.scheduled_at = data.scheduledAt
   if (data.durationMinutes !== undefined) updateData.duration_minutes = data.durationMinutes
   if (data.capacity !== undefined) updateData.capacity = data.capacity
@@ -517,6 +519,8 @@ export async function updateClass(
   if (data.categoryId !== undefined) updateData.category_id = data.categoryId
   if (data.recurrenceType !== undefined) updateData.recurrence_type = data.recurrenceType
   if (data.recurrencePattern !== undefined) updateData.recurrence_pattern = data.recurrencePattern
+  if (data.allowDropIn !== undefined) updateData.allow_drop_in = data.allowDropIn
+  if (data.dropInTokenCost !== undefined) updateData.drop_in_token_cost = data.dropInTokenCost
 
   // Handle instructor update
     // Handle multiple instructors (instructorIds takes precedence over instructorId)
@@ -577,10 +581,14 @@ export async function updateClass(
     if (data.durationMinutes !== undefined) childUpdateData.duration_minutes = data.durationMinutes
     if (data.level !== undefined) childUpdateData.level = data.level
     if (data.classType !== undefined) childUpdateData.class_type = data.classType
+    if (data.level !== undefined) childUpdateData.level = data.level
+    if (data.ageGroup !== undefined) childUpdateData.age_group = data.ageGroup
     if (data.description !== undefined) childUpdateData.description = data.description
     if (data.location !== undefined) childUpdateData.location = data.location
     if (data.roomId !== undefined) childUpdateData.room_id = data.roomId
     if (data.categoryId !== undefined) childUpdateData.category_id = data.categoryId
+    if (data.allowDropIn !== undefined) childUpdateData.allow_drop_in = data.allowDropIn
+    if (data.dropInTokenCost !== undefined) childUpdateData.drop_in_token_cost = data.dropInTokenCost
 
     // Handle instructor update for children
     if (data.instructorId !== undefined) {
@@ -950,6 +958,7 @@ export async function generateFutureOccurrences(parentClassId: string, weeksToGe
     description: parentClass.description,
     class_type: parentClass.class_type,
     level: parentClass.level,
+    age_group: parentClass.age_group || 'all',
     instructor_id: parentClass.instructor_id,
     instructor_name: parentClass.instructor_name,
     scheduled_at: occurrenceDate.toISOString(),
@@ -1006,6 +1015,7 @@ function mapClassToSchema(row: Record<string, unknown>): Class {
     description: row.description as string | null,
     classType: row.class_type as 'zumba',
     level: row.level as 'all_levels',
+    ageGroup: (row.age_group as 'adult' | 'kid' | 'all') || 'all',
     instructorId: row.instructor_id as string | null,
     instructorName: row.instructor_name as string | null,
     scheduledAt: row.scheduled_at as string,

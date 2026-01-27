@@ -73,11 +73,11 @@ export async function getAuthenticatedUser(
       return null
     }
 
-    // Get user profile with role
+    // Get user profile with role and active status
     // Note: user_profiles.id is the same as auth.users.id (primary key reference)
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('user_profiles')
-      .select('role')
+      .select('role, is_active')
       .eq('id', user.id)
       .single()
 
@@ -89,6 +89,12 @@ export async function getAuthenticatedUser(
         role: 'user',
         permissions: []
       }
+    }
+
+    // Check if user is active - deactivated users cannot access the API
+    if (profile.is_active === false) {
+      console.warn('[RBAC] User account is deactivated:', user.email)
+      return null // Return null to reject the request
     }
 
     // Get role permissions

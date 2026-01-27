@@ -46,8 +46,14 @@ export async function POST(request: NextRequest) {
     // Validate request body (now includes roomId, categoryId, recurrenceType, recurrencePattern)
     const validatedData = CreateClassRequestSchema.parse(body)
 
+    // Convert null to undefined for dropInTokenCost to match service function signature
+    const classData = {
+      ...validatedData,
+      dropInTokenCost: validatedData.dropInTokenCost ?? undefined,
+    }
+
     // Create class with all validated fields
-    const result = await createClass(validatedData)
+    const result = await createClass(classData)
 
     return NextResponse.json({
       success: true,

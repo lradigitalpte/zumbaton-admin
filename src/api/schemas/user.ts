@@ -25,6 +25,7 @@ export const UserProfileSchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   dateOfBirth: z.string().nullable().optional(),
+  gender: z.string().nullable().optional(),
   bloodGroup: z.string().nullable().optional(),
   physicalFormUrl: z.string().url().nullable().optional(),
   registrationFormId: z.string().uuid().nullable().optional(),
@@ -118,6 +119,7 @@ export const UpdateUserProfileAdminRequestSchema = z.object({
   phone: z.string().nullable().optional(),
   avatarUrl: z.string().url().nullable().optional(),
   dateOfBirth: z.string().nullable().optional(), // ISO date string
+  gender: z.string().nullable().optional(), // e.g., "Male", "Female", "Not sure"
   bloodGroup: z.string().nullable().optional(), // e.g., "A+", "B-", "O+", "AB+"
   preferences: z.record(z.unknown()).optional(),
 })

@@ -55,8 +55,6 @@ export async function POST(
       )
     }
 
-    console.log('[Sign Form] Signature saved successfully')
-
     return NextResponse.json({
       success: true,
       message: 'Signature saved successfully',

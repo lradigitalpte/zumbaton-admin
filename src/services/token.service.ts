@@ -131,6 +131,38 @@ async function getAvailablePackages(
   let packages = data || []
   if (classType && classType !== 'all') {
     packages = packages.filter((pkg: UserPackage & { package: Package }) => {
+      // First check package_type compatibility (adult/kid restriction)
+      const packageType = pkg.package?.packageType || 'adult'
+      const normalizedClassType = classType.toLowerCase()
+      
+      // 'all' packages can be used for any class type
+      if (packageType === 'all') {
+        // Still check classTypes array for additional restrictions
+        const classTypes = pkg.package?.classTypes || ['all']
+        return classTypes.includes('all') || classTypes.includes(classType as 'zumba')
+      }
+      
+      // Adult packages can only be used for adult classes
+      if (packageType === 'adult') {
+        if (normalizedClassType !== 'adult') {
+          return false
+        }
+        // Also check classTypes array
+        const classTypes = pkg.package?.classTypes || ['all']
+        return classTypes.includes('all') || classTypes.includes(classType as 'zumba')
+      }
+      
+      // Kid packages can only be used for kid classes
+      if (packageType === 'kid') {
+        if (normalizedClassType !== 'kid') {
+          return false
+        }
+        // Also check classTypes array
+        const classTypes = pkg.package?.classTypes || ['all']
+        return classTypes.includes('all') || classTypes.includes(classType as 'zumba')
+      }
+      
+      // Fallback: check classTypes array only
       const classTypes = pkg.package?.classTypes || ['all']
       return classTypes.includes('all') || classTypes.includes(classType as 'zumba')
     })
