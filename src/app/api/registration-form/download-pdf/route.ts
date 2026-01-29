@@ -67,6 +67,7 @@ export async function GET(request: NextRequest) {
         dateOfBirth: form.date_of_birth,
         email: form.email,
         phone: form.phone,
+        gender: form.gender || '',
         bloodGroup: form.blood_group,
         emergencyContact: form.emergency_contact,
         emergencyContactPhone: form.emergency_contact_phone,
