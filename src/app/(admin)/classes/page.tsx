@@ -127,6 +127,34 @@ function getInitials(name: string | null): string {
     .slice(0, 2);
 }
 
+// Helper: true if string looks like an avatar URL
+function isAvatarUrl(s: string): boolean {
+  return typeof s === 'string' && (s.startsWith('http://') || s.startsWith('https://'));
+}
+
+// Instructor avatar: show image if URL, else initials in a colored circle
+function InstructorAvatar({ avatarOrInitials, initials, className = "h-8 w-8", gradientClass = "bg-linear-to-br from-blue-500 to-purple-600" }: {
+  avatarOrInitials: string;
+  initials: string;
+  className?: string;
+  gradientClass?: string;
+}) {
+  if (isAvatarUrl(avatarOrInitials)) {
+    return (
+      <img
+        src={avatarOrInitials}
+        alt=""
+        className={`${className} rounded-full object-cover`}
+      />
+    );
+  }
+  return (
+    <div className={`flex items-center justify-center rounded-full text-xs font-medium text-white ${gradientClass} ${className}`}>
+      {initials}
+    </div>
+  );
+}
+
 // Transform API class to display class
 function transformClass(cls: ClassWithAvailability): DisplayClass {
   // Determine display status
@@ -293,6 +321,38 @@ export default function ClassesPage() {
   const totalClasses = classesResponse?.total || 0;
   const hasMore = classesResponse?.hasMore || false;
   const apiStats = classesResponse?.stats; // Aggregated stats from API
+
+  // Fetch instructors for avatar URLs
+  const { data: instructorsResponse } = useQuery({
+    queryKey: ["instructors", "list"],
+    queryFn: async () => {
+      const res = await api.get<{ data: { instructors: Array<{ id: string; name: string; avatarUrl: string | null }> } }>("/api/instructors");
+      if (res.error) throw new Error(res.error.message);
+      return res.data?.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const instructorsList = instructorsResponse?.instructors ?? [];
+
+  // Map instructor id / name -> avatar URL for lookup
+  const avatarByInstructorId = useMemo(() => {
+    const map = new Map<string, string>();
+    instructorsList.forEach((i) => {
+      if (i.avatarUrl) map.set(i.id, i.avatarUrl);
+    });
+    return map;
+  }, [instructorsList]);
+  const avatarByInstructorName = useMemo(() => {
+    const map = new Map<string, string>();
+    instructorsList.forEach((i) => {
+      if (!i.avatarUrl) return;
+      const n = (i.name || "").toLowerCase().trim().replace(/\s+/g, " ");
+      if (n) map.set(n, i.avatarUrl);
+      const first = (i.name || "").trim().split(/\s+/)[0]?.toLowerCase();
+      if (first && !map.has(first)) map.set(first, i.avatarUrl);
+    });
+    return map;
+  }, [instructorsList]);
   
   // Reset to page 1 when filter changes
   useEffect(() => {
@@ -328,7 +388,7 @@ export default function ClassesPage() {
     refetch();
   }, [invalidateAll, refetch]);
 
-  // Transform API data to display format
+  // Transform API data to display format (with instructor avatar lookup)
   const classes = useMemo(() => {
     return apiClasses.map(cls => {
       const displayClass = transformClass(cls);
@@ -336,9 +396,17 @@ export default function ClassesPage() {
       if (displayClass.roomId && roomMap.has(displayClass.roomId)) {
         displayClass.roomName = roomMap.get(displayClass.roomId) || null;
       }
+      // Resolve instructor avatar: by id first, then by name (full or first name)
+      const avatarUrl =
+        (cls.instructorId && avatarByInstructorId.get(cls.instructorId)) ??
+        (cls.instructorName
+          ? avatarByInstructorName.get(cls.instructorName.trim().toLowerCase().replace(/\s+/g, " ")) ??
+            avatarByInstructorName.get(cls.instructorName.trim().split(/\s+/)[0]?.toLowerCase() ?? "")
+          : null);
+      displayClass.instructorAvatar = avatarUrl || getInitials(cls.instructorName);
       return displayClass;
     });
-  }, [apiClasses, roomMap]);
+  }, [apiClasses, roomMap, avatarByInstructorId, avatarByInstructorName]);
 
   // Group recurring classes - show only the first occurrence as the parent
   // For recurring classes, we show a special parent card that represents the series
@@ -996,13 +1064,14 @@ export default function ClassesPage() {
               }`}>
                 {/* Instructor */}
                 <div className="flex items-center gap-3">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-medium text-white ${
-                    (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
+                  <InstructorAvatar
+                    avatarOrInitials={cls.instructorAvatar}
+                    initials={getInitials(cls.instructor)}
+                    className="h-10 w-10"
+                    gradientClass={(cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
                       ? 'bg-gradient-to-br from-blue-500 to-cyan-600'
-                      : 'bg-linear-to-br from-blue-500 to-purple-600'
-                  }`}>
-                    {cls.instructorAvatar}
-                  </div>
+                      : 'bg-linear-to-br from-blue-500 to-purple-600'}
+                  />
                   <div>
                     <p className={`text-sm font-medium ${
                       (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course')
@@ -1296,9 +1365,11 @@ export default function ClassesPage() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-linear-to-br from-blue-500 to-purple-600 text-xs font-medium text-white">
-                          {cls.instructorAvatar}
-                        </div>
+                        <InstructorAvatar
+                          avatarOrInitials={cls.instructorAvatar}
+                          initials={getInitials(cls.instructor)}
+                          className="h-8 w-8"
+                        />
                         <span className="text-sm text-gray-900 dark:text-white">{cls.instructor}</span>
                       </div>
                     </td>
@@ -1708,9 +1779,11 @@ export default function ClassesPage() {
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Instructor</h3>
                   <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-xs font-medium text-white">
-                      {detailsPanel.classData.instructorAvatar}
-                    </div>
+                    <InstructorAvatar
+                      avatarOrInitials={detailsPanel.classData.instructorAvatar}
+                      initials={getInitials(detailsPanel.classData.instructor)}
+                      className="h-8 w-8"
+                    />
                     <p className="text-sm text-gray-600 dark:text-gray-400">{detailsPanel.classData.instructor}</p>
                   </div>
                 </div>

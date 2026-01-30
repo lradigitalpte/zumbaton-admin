@@ -36,10 +36,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       )
     }
 
-    // Get ALL bookings for this class
+    // Get ALL bookings for this class (include guest_name for trial/guest bookings)
     const { data: allBookingsRaw, error: allBookingsError } = await supabase
       .from('bookings')
-      .select('id, user_id, status, booked_at')
+      .select('id, user_id, status, booked_at, guest_name, is_trial_booking')
       .eq('class_id', classId)
       .order('booked_at', { ascending: true })
 
@@ -101,8 +101,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       attendances = attendanceData || []
     }
 
-    // Get user IDs from bookings (for checked-in attendees)
-    const userIds = [...new Set(bookings.map(b => b.user_id))]
+    // Get user IDs from bookings (exclude null for guest/trial bookings)
+    const userIds = [...new Set(bookings.map(b => b.user_id).filter(Boolean))] as string[]
 
     // Fetch user profiles separately
     let userProfiles: Record<string, { id: string; name: string; email: string; avatar_url: string | null }> = {}
@@ -127,23 +127,24 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // Format ALL enrolled attendees (not just checked-in ones)
     // This allows the UI to show all students who registered, whether they've checked in or not
     const attendees = bookings.map(booking => {
-        const user = userProfiles[booking.user_id]
+        const user = booking.user_id ? userProfiles[booking.user_id] : null
         const checkedInAt = attendanceMap.get(booking.id)
-        
-        // Generate avatar initials
-        const name = user?.name || 'Unknown'
+        // Use guest_name for trial/guest bookings (user_id null), otherwise profile name
+        const name = user?.name ?? (booking.guest_name?.trim() || 'Guest')
         const initials = name
           .split(' ')
-          .map(n => n[0])
+          .map((n: string) => n[0])
+          .filter(Boolean)
           .join('')
           .toUpperCase()
-          .slice(0, 2)
+          .slice(0, 2) || 'G'
 
         return {
           id: booking.id,
           userId: booking.user_id,
-          name: name,
+          name,
           avatar: initials,
+          isGuest: !!booking.is_trial_booking || !booking.user_id,
           checkedInAt: checkedInAt ? new Date(checkedInAt).toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
