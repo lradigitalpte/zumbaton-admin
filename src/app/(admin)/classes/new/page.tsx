@@ -20,6 +20,7 @@ import {
 } from "@/hooks/useClasses";
 import { useClassCategories as useCategoriesHook } from "@/hooks/useClassCategories";
 import CategoryCreatePanel from "@/components/categories/CategoryCreatePanel";
+import { useToast } from "@/components/ui/Toast";
 
 const classTypes = [
   { value: "single", label: "Single Class - One-time class" },
@@ -67,6 +68,7 @@ const FormSectionSkeleton = () => (
 function NewClassPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const toast = useToast();
   const classId = searchParams.get("id");
   const isEditMode = !!classId;
   
@@ -92,6 +94,10 @@ function NewClassPageContent() {
   const [formPopulated, setFormPopulated] = useState(false);
   const previousRoomRef = useRef<string>("");
   const isInitialPopulationRef = useRef<boolean>(false);
+  // Multiple time slots for single-class create (same day, same tutor, different times)
+  const [timeSlots, setTimeSlots] = useState<Array<{ startTime: string; duration: string }>>([
+    { startTime: "08:00", duration: "60" },
+  ]);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -289,36 +295,58 @@ function NewClassPageContent() {
     // Check if editing an individual instance (has date suffix in title)
     const isIndividualInstance = existingClass && /-\s*\d{1,2}\/\d{1,2}\/\d{4}$/.test(existingClass.title || "");
 
+    // Validate date and time before any conversion (avoid uncaught throw)
+    const dateStr = classType === "single" || isIndividualInstance ? formData.date : classType === "recurring" ? formData.startDate : formData.courseStartDate;
+    // Single class with multiple time slots uses timeSlots[].startTime, not formData.startTime
+    const hasTime = classType === "single" && !isIndividualInstance && timeSlots.length > 0
+      ? timeSlots.some((s) => s.startTime?.trim())
+      : Boolean(formData.startTime?.trim());
+    if (!dateStr?.trim() || !hasTime) {
+      toast.showToast("Please enter both date and time.", "error");
+      return;
+    }
+
     // Build scheduled datetime
     // IMPORTANT: The time input is ALWAYS in Singapore time (SGT, UTC+8)
     // We need to convert it to UTC for storage, regardless of admin's location
     const convertSGTimeToUTC = (dateStr: string, timeStr: string): string => {
-      // Parse the date and time components
+      if (!dateStr?.trim() || !timeStr?.trim()) {
+        throw new Error("Please enter both date and time.");
+      }
       const [hours, minutes] = timeStr.split(':').map(Number);
-      
-      // Create a date object for the date (treat as UTC midnight)
+      if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+        throw new Error("Please enter a valid time (e.g. 09:00).");
+      }
       const dateParts = dateStr.split('-').map(Number);
+      if (dateParts.length !== 3 || dateParts.some((n) => Number.isNaN(n))) {
+        throw new Error("Please enter a valid date.");
+      }
       const baseDate = new Date(Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2], 0, 0, 0));
-      
+      if (Number.isNaN(baseDate.getTime())) {
+        throw new Error("Please enter a valid date.");
+      }
       // The time entered is Singapore time (SGT = UTC+8)
       // So we subtract 8 hours to get UTC
-      // Example: User enters "10:00" (Singapore time) = UTC 02:00
       const utcHours = hours - 8;
-      
-      // Handle day rollover if UTC hours go negative
       if (utcHours < 0) {
         baseDate.setUTCDate(baseDate.getUTCDate() - 1);
         baseDate.setUTCHours(utcHours + 24, minutes, 0, 0);
       } else {
         baseDate.setUTCHours(utcHours, minutes, 0, 0);
       }
-      
-      return baseDate.toISOString();
+      const iso = baseDate.toISOString();
+      if (iso === undefined || iso === "Invalid Date") {
+        throw new Error("Invalid date or time. Please check and try again.");
+      }
+      return iso;
     };
 
+    try {
     let scheduledAt: string;
-    if (classType === "single" || isIndividualInstance) {
-      // For individual instances, use the date field
+    // Single class with multiple time slots uses slot.startTime per slot, not formData.startTime — skip here
+    if (classType === "single" && timeSlots.length > 0 && !isIndividualInstance) {
+      scheduledAt = ""; // not used; we compute per-slot in the loop below
+    } else if (classType === "single" || isIndividualInstance) {
       scheduledAt = convertSGTimeToUTC(formData.date, formData.startTime);
     } else if (classType === "recurring") {
       scheduledAt = convertSGTimeToUTC(formData.startDate, formData.startTime);
@@ -387,47 +415,75 @@ function NewClassPageContent() {
     const primaryInstructorId = instructorArray.length > 0 && instructorArray[0] ? instructorArray[0] : undefined;
     const allInstructorIds = instructorArray.length > 0 ? instructorArray : undefined;
 
-    const classData: CreateClassData = {
+    const baseClassData: Omit<CreateClassData, 'scheduledAt' | 'durationMinutes'> = {
       title: formData.name,
       description: formData.description || undefined,
       classType: classTypeValue,
       level: formData.level,
-      ageGroup: (formData.ageGroup ?? 'all') as 'adult' | 'kid' | 'all', // Use ?? instead of || to allow empty string values
-      // Only include instructorId if it's a valid UUID (not empty string)
+      ageGroup: (formData.ageGroup ?? 'all') as 'adult' | 'kid' | 'all',
       ...(primaryInstructorId && primaryInstructorId.trim() !== '' ? { instructorId: primaryInstructorId } : {}),
-      // Only include instructorIds if it's a valid array with UUIDs
       ...(allInstructorIds && allInstructorIds.length > 0 && allInstructorIds.every(id => id && id.trim() !== '') 
         ? { instructorIds: allInstructorIds } 
         : {}),
-      scheduledAt,
-      durationMinutes: parseInt(formData.duration),
       capacity: parseInt(formData.capacity),
       tokenCost: parseInt(formData.tokenCost),
       roomId: formData.room || undefined,
       categoryId: formData.category || undefined,
-      // For individual instances, preserve the original recurrence info
       recurrenceType: isIndividualInstance 
         ? (existingClass?.recurrenceType as 'single' | 'recurring' | 'course' | undefined)
         : (classType as 'single' | 'recurring' | 'course'),
       recurrencePattern: isIndividualInstance 
         ? (existingClass?.recurrencePattern && typeof existingClass.recurrencePattern === 'object' && 'days' in existingClass.recurrencePattern ? existingClass.recurrencePattern : undefined)
         : recurrencePattern,
-      // Walk-in/drop-in settings
       allowDropIn: formData.allowDropIn || false,
       dropInTokenCost: formData.allowDropIn && formData.dropInTokenCost 
         ? parseInt(formData.dropInTokenCost) 
         : undefined,
     };
 
-    try {
       if (isEditMode && classId) {
+        const classData: CreateClassData = {
+          ...baseClassData,
+          scheduledAt,
+          durationMinutes: parseInt(formData.duration),
+        };
         await updateClass.mutateAsync({ id: classId, data: classData });
-      } else {
-      await createClass.mutateAsync(classData);
+        router.push("/classes");
+        return;
       }
+
+      // Create mode: single class with multiple time slots = create one class per slot
+      if (classType === "single" && timeSlots.length > 0) {
+        const validSlots = timeSlots.filter(s => s.startTime && s.duration && parseInt(s.duration) >= 1);
+        if (validSlots.length === 0) {
+          console.error("No valid time slots");
+          return;
+        }
+        for (let i = 0; i < validSlots.length; i++) {
+          const slot = validSlots[i];
+          const slotScheduledAt = convertSGTimeToUTC(formData.date, slot.startTime);
+          const classData: CreateClassData = {
+            ...baseClassData,
+            scheduledAt: slotScheduledAt,
+            durationMinutes: parseInt(slot.duration) || 60,
+          };
+          await createClass.mutateAsync(classData);
+        }
+        router.push("/classes");
+        return;
+      }
+
+      // Create mode: one class (recurring, course, or single with legacy single slot)
+      const classData: CreateClassData = {
+        ...baseClassData,
+        scheduledAt,
+        durationMinutes: parseInt(formData.duration),
+      };
+      await createClass.mutateAsync(classData);
       router.push("/classes");
     } catch (error) {
       console.error(`Failed to ${isEditMode ? 'update' : 'create'} class:`, error);
+      toast.showToast(error instanceof Error ? error.message : `Failed to ${isEditMode ? 'update' : 'create'} class. Please try again.`, "error");
     }
   };
 
@@ -445,6 +501,17 @@ function NewClassPageContent() {
     setSelectedDays(prev => 
       prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
     );
+  };
+
+  // Multiple time slots (single-class create only)
+  const addTimeSlot = () => {
+    setTimeSlots(prev => [...prev, { startTime: "09:00", duration: "60" }]);
+  };
+  const removeTimeSlot = (index: number) => {
+    setTimeSlots(prev => prev.filter((_, i) => i !== index));
+  };
+  const updateTimeSlot = (index: number, field: "startTime" | "duration", value: string) => {
+    setTimeSlots(prev => prev.map((slot, i) => i === index ? { ...slot, [field]: value } : slot));
   };
 
   const calculateEndDate = () => {
@@ -729,7 +796,7 @@ function NewClassPageContent() {
               </div>
             )}
             {classType === "single" && (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+              <div className="space-y-6">
                 <div>
                   <Label htmlFor="date">Date</Label>
                   <Input
@@ -738,28 +805,93 @@ function NewClassPageContent() {
                     value={formData.date}
                     onChange={(e) => handleChange("date")(e.target.value)}
                   />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Same date for all time slots below
+                  </p>
                 </div>
-                <div>
-                  <Label htmlFor="startTime">
-                    Start Time <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">(SGT)</span>
-                  </Label>
-                  <Input
-                    id="startTime"
-                    type="time"
-                    value={formData.startTime}
-                    onChange={(e) => handleChange("startTime")(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="duration">Duration (minutes)</Label>
-                  <Input
-                    id="duration"
-                    type="number"
-                    min="1"
-                    value={formData.duration}
-                    onChange={(e) => handleChange("duration")(e.target.value)}
-                  />
-                </div>
+
+                {isEditMode ? (
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="startTime">
+                        Start Time <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">(SGT)</span>
+                      </Label>
+                      <Input
+                        id="startTime"
+                        type="time"
+                        value={formData.startTime}
+                        onChange={(e) => handleChange("startTime")(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="duration">Duration (minutes)</Label>
+                      <Input
+                        id="duration"
+                        type="number"
+                        min="1"
+                        value={formData.duration}
+                        onChange={(e) => handleChange("duration")(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <div className="flex items-center justify-between gap-4 mb-2">
+                        <Label>Time slots</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={addTimeSlot}
+                        >
+                          + Add time slot
+                        </Button>
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                        Add multiple slots for the same day and instructor. One class will be created per slot.
+                      </p>
+                      <div className="space-y-3">
+                        {timeSlots.map((slot, index) => (
+                          <div
+                            key={index}
+                            className="flex flex-wrap items-end gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30"
+                          >
+                            <div className="flex-1 min-w-[120px]">
+                              <Label className="text-xs">Start time (SGT)</Label>
+                              <Input
+                                type="time"
+                                value={slot.startTime}
+                                onChange={(e) => updateTimeSlot(index, "startTime", e.target.value)}
+                              />
+                            </div>
+                            <div className="w-28">
+                              <Label className="text-xs">Duration (min)</Label>
+                              <Input
+                                type="number"
+                                min="1"
+                                max="240"
+                                value={slot.duration}
+                                onChange={(e) => updateTimeSlot(index, "duration", e.target.value)}
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => removeTimeSlot(index)}
+                              disabled={timeSlots.length === 1}
+                              className="shrink-0"
+                              title={timeSlots.length === 1 ? "Keep at least one slot" : "Remove slot"}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -1122,13 +1254,21 @@ function NewClassPageContent() {
             </Button>
             <Button 
               type="submit" 
-              disabled={(createClass.isPending || updateClass.isPending) || !formData.name || !formData.startTime}
+              disabled={
+                (createClass.isPending || updateClass.isPending) ||
+                !formData.name ||
+                (classType === "single" && !isEditMode
+                  ? !formData.date || timeSlots.length === 0 || !timeSlots.some(s => s.startTime && s.duration)
+                  : !formData.startTime)
+              }
             >
               {(createClass.isPending || updateClass.isPending) 
-                ? (isEditMode ? "Updating..." : "Creating...") 
+                ? (isEditMode ? "Updating..." : timeSlots.length > 1 ? "Creating classes..." : "Creating...") 
                 : (isEditMode 
-                  ? `Update ${classType === "course" ? "Course" : "Class"}` 
-                  : `Create ${classType === "course" ? "Course" : "Class"}`
+                  ? `Update ${classType === "course" ? "Course" : "Class"}`
+                  : classType === "single" && timeSlots.length > 1
+                    ? `Create ${timeSlots.length} classes`
+                    : `Create ${classType === "course" ? "Course" : "Class"}`
                 )
               }
             </Button>

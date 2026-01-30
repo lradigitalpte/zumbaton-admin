@@ -20,7 +20,7 @@ interface AttendanceModalProps {
     time: string;
     enrolled: number;
     capacity: number;
-    status?: string; // Add status to determine if class is completed
+    status?: string; // From DB; cron marks class 'completed' when done — only then show "No-show"
   };
 }
 
@@ -44,7 +44,8 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
   const [attendees, setAttendees] = useState<AttendeeWithStatus[]>([]);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const isCompleted = classData.status === 'completed';
+  // Status from DB: cron marks class 'completed' when done — only then show "No-show" for unchecked-in
+  const isCompleted = Boolean(classData.status === 'completed');
 
   // Fetch real attendees for ALL classes (not just completed)
   useEffect(() => {
@@ -250,7 +251,7 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
                       <div className="flex-1">
                         <p className="font-medium text-white">{attendee.name}</p>
                         <p className="text-xs text-gray-400">
-                          {isAttended ? `Checked in at ${attendee.checkedInAt || 'N/A'}` : 'No-show'}
+                          {isAttended ? `Checked in at ${attendee.checkedInAt || 'N/A'}` : isCompleted ? 'No-show' : 'Pending'}
                         </p>
                       </div>
                       <div className={`flex h-8 w-8 items-center justify-center rounded-full ${
@@ -385,7 +386,7 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
                             {attendee.name}
                           </p>
                           <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {isAttended ? (attendee.checkedInAt || 'Checked in') : 'No-show'}
+                            {isAttended ? (attendee.checkedInAt || 'Checked in') : isCompleted ? 'No-show' : 'Pending'}
                           </p>
                         </div>
                         {isAttended ? (
