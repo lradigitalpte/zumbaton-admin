@@ -109,6 +109,7 @@ export default function UsersPage() {
   
   // Slide panel - Create user
   const [showCreatePanel, setShowCreatePanel] = useState(false);
+  const [createAsChild, setCreateAsChild] = useState(false);
   const [newUser, setNewUser] = useState({
     name: "",
     email: "",
@@ -116,6 +117,7 @@ export default function UsersPage() {
     dateOfBirth: "",
     bloodGroup: "",
     physicalForm: null as File | null,
+    username: "", // for child: login identifier, used in plus-address
   });
   const [createError, setCreateError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -390,10 +392,28 @@ export default function UsersPage() {
     }
   };
 
+  // Build unique auth email for child (plus-addressing so emails still go to parent inbox)
+  const getChildAuthEmail = (parentEmail: string, username: string): string => {
+    const at = parentEmail.indexOf("@");
+    if (at === -1) return parentEmail;
+    const local = parentEmail.slice(0, at);
+    const domain = parentEmail.slice(at);
+    const slug = username.trim().toLowerCase().replace(/\s+/g, ".").replace(/[^a-z0-9._-]/g, "") || "child";
+    return `${local}+zumbaton.${slug}${domain}`;
+  };
+
   const handleCreateUser = async () => {
-    if (!newUser.name || !newUser.email || !newUser.phone) {
-      setCreateError("Please fill in all required fields");
-      return;
+    const isChild = createAsChild;
+    if (isChild) {
+      if (!newUser.name || !newUser.email || !newUser.username || !newUser.dateOfBirth) {
+        setCreateError("For a child, please fill in Full Name, Parent/Guardian Email, Username, and Date of Birth.");
+        return;
+      }
+    } else {
+      if (!newUser.name || !newUser.email || !newUser.phone) {
+        setCreateError("Please fill in all required fields (Full Name, Email, Phone).");
+        return;
+      }
     }
 
     // Generate a temporary password (8 characters)
@@ -421,16 +441,21 @@ export default function UsersPage() {
     setIsCreating(true);
     setCreateError(null);
 
+    const emailForAuth = isChild ? getChildAuthEmail(newUser.email, newUser.username) : newUser.email;
+    const phoneForProfile = isChild ? (newUser.phone || null) : newUser.phone;
+
     try {
       const response = await api.post<{ data: any }>("/api/users", {
         name: newUser.name,
-        email: newUser.email,
-        phone: newUser.phone,
+        email: emailForAuth,
+        phone: phoneForProfile || undefined,
         role: "user",
         password: tempPassword,
         dateOfBirth: newUser.dateOfBirth || undefined,
         bloodGroup: newUser.bloodGroup || undefined,
         physicalFormUrl: physicalFormUrl || undefined,
+        ...(isChild && newUser.username ? { username: newUser.username.trim().toLowerCase() } : {}),
+        ...(isChild && newUser.email ? { guardianEmail: newUser.email.trim().toLowerCase() } : {}),
       });
 
       if (response.error) {
@@ -501,7 +526,12 @@ export default function UsersPage() {
 
         // Show appropriate toast message based on what was sent
         if (welcomeEmailSent && registrationFormSent) {
-          toast.showToast(`User "${userName}" created successfully! Welcome email and registration form sent to ${newUser.email}.`, "success");
+          toast.showToast(
+            isChild
+              ? `Child "${userName}" created successfully! Welcome email and registration form sent to parent/guardian (${newUser.email}).`
+              : `User "${userName}" created successfully! Welcome email and registration form sent to ${newUser.email}.`,
+            "success"
+          );
         } else if (welcomeEmailSent) {
           toast.showToast(`User "${userName}" created successfully! Welcome email sent, but registration form failed. You can resend it from the user details page.`, "warning");
         } else if (registrationFormSent) {
@@ -514,6 +544,7 @@ export default function UsersPage() {
       }
 
       // Reset form and close panel
+      setCreateAsChild(false);
       setNewUser({
         name: "",
         email: "",
@@ -521,6 +552,7 @@ export default function UsersPage() {
         dateOfBirth: "",
         bloodGroup: "",
         physicalForm: null,
+        username: "",
       });
       setPhysicalFormUrl(null);
       setShowCreatePanel(false);
@@ -1348,6 +1380,7 @@ export default function UsersPage() {
         onClose={() => {
           setShowCreatePanel(false);
           setCreateError(null);
+          setCreateAsChild(false);
           setNewUser({
             name: "",
             email: "",
@@ -1355,6 +1388,7 @@ export default function UsersPage() {
             dateOfBirth: "",
             bloodGroup: "",
             physicalForm: null,
+            username: "",
           });
           setPhysicalFormUrl(null);
         }}
@@ -1368,27 +1402,80 @@ export default function UsersPage() {
             </div>
           )}
 
+          {/* Adult / Child toggle */}
+          <div>
+            <Label className="mb-2 block">Create as</Label>
+            <div className="flex rounded-lg border border-gray-300 bg-gray-50 p-1 dark:border-gray-600 dark:bg-gray-800">
+              <button
+                type="button"
+                onClick={() => setCreateAsChild(false)}
+                className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  !createAsChild
+                    ? "bg-white text-gray-900 shadow dark:bg-gray-700 dark:text-white"
+                    : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                }`}
+              >
+                Adult
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreateAsChild(true)}
+                className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  createAsChild
+                    ? "bg-white text-gray-900 shadow dark:bg-gray-700 dark:text-white"
+                    : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                }`}
+              >
+                Child
+              </button>
+            </div>
+            {createAsChild && (
+              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                Child account uses parent/guardian email. Welcome and registration emails will be sent there.
+              </p>
+            )}
+          </div>
+
           <div>
             <Label htmlFor="name">
-              Full Name <span className="text-red-500">*</span>
+              {createAsChild ? "Child's Full Name" : "Full Name"} <span className="text-red-500">*</span>
             </Label>
             <Input
               id="name"
               type="text"
-              placeholder="John Doe"
+              placeholder={createAsChild ? "e.g. Jane Doe" : "John Doe"}
               value={newUser.name}
               onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
             />
           </div>
 
+          {createAsChild && (
+            <div>
+              <Label htmlFor="username">
+                Username <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="username"
+                type="text"
+                placeholder="e.g. janedoe (for sign-in)"
+                value={newUser.username}
+                onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                className="lowercase"
+              />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Child will sign in with this username (not email). Letters, numbers, dots, dashes only.
+              </p>
+            </div>
+          )}
+
           <div>
             <Label htmlFor="email">
-              Email Address <span className="text-red-500">*</span>
+              {createAsChild ? "Parent / Guardian Email" : "Email Address"} <span className="text-red-500">*</span>
             </Label>
             <Input
               id="email"
               type="email"
-              placeholder="john.doe@example.com"
+              placeholder={createAsChild ? "parent@example.com" : "john.doe@example.com"}
               value={newUser.email}
               onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
             />
@@ -1396,7 +1483,7 @@ export default function UsersPage() {
 
           <div>
             <Label htmlFor="phone">
-              Phone Number <span className="text-red-500">*</span>
+              Phone Number {!createAsChild && <span className="text-red-500">*</span>}
             </Label>
             <Input
               id="phone"
@@ -1405,11 +1492,16 @@ export default function UsersPage() {
               value={newUser.phone}
               onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
             />
+            {createAsChild && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Optional — parent/guardian phone
+              </p>
+            )}
           </div>
 
           <div>
             <Label htmlFor="dateOfBirth">
-              Date of Birth
+              Date of Birth {createAsChild && <span className="text-red-500">*</span>}
             </Label>
             <Input
               id="dateOfBirth"
@@ -1442,38 +1534,12 @@ export default function UsersPage() {
             </select>
           </div>
 
-          <div>
-            <Label htmlFor="physicalForm">
-              Physical Form (PDF, JPEG, PNG, WebP)
-            </Label>
-            <input
-              id="physicalForm"
-              type="file"
-              accept="application/pdf,image/jpeg,image/png,image/webp"
-              onChange={handlePhysicalFormChange}
-              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-            />
-            {physicalFormUrl && (
-              <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
-                ✓ Physical form uploaded successfully
-              </p>
-            )}
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Maximum file size: 10MB
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-            <p className="text-sm text-blue-800 dark:text-blue-200">
-              <strong>Note:</strong> A temporary password will be automatically generated and sent to the user via email. They can sign in at <strong>zumbaton.sg/signin</strong> and change their password using the "Forgot Password" option if needed.
-            </p>
-          </div>
-
           <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button
               onClick={() => {
                 setShowCreatePanel(false);
                 setCreateError(null);
+                setCreateAsChild(false);
                 setNewUser({
                   name: "",
                   email: "",
@@ -1481,6 +1547,7 @@ export default function UsersPage() {
                   dateOfBirth: "",
                   bloodGroup: "",
                   physicalForm: null,
+                  username: "",
                 });
                 setPhysicalFormUrl(null);
               }}
@@ -1491,10 +1558,15 @@ export default function UsersPage() {
             </button>
             <button
               onClick={handleCreateUser}
-              disabled={!newUser.name || !newUser.email || !newUser.phone || isCreating}
+              disabled={
+                isCreating ||
+                (createAsChild
+                  ? !newUser.name || !newUser.email || !newUser.username || !newUser.dateOfBirth
+                  : !newUser.name || !newUser.email || !newUser.phone)
+              }
               className="flex-1 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isCreating ? "Creating..." : "Create User"}
+              {isCreating ? "Creating..." : createAsChild ? "Create Child" : "Create User"}
             </button>
           </div>
         </div>

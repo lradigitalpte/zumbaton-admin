@@ -87,6 +87,8 @@ export const CreateUserProfileRequestSchema = z.object({
   dateOfBirth: z.string().optional(), // ISO date string
   bloodGroup: z.string().optional(), // e.g., "A+", "B-", "O+", "AB+"
   physicalFormUrl: z.string().url().optional(), // URL to uploaded physical form
+  username: z.string().min(1).max(100).optional(), // For child accounts: login identifier (unique)
+  guardianEmail: z.string().email().optional(), // For child accounts: parent/guardian email (receipts, payments)
 })
 
 export type CreateUserProfileRequest = z.infer<typeof CreateUserProfileRequestSchema>

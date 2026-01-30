@@ -71,8 +71,8 @@ export async function GET(request: NextRequest) {
       throw new ApiError('SERVER_ERROR', 'Failed to fetch transactions', 500, error)
     }
 
-    // Get unique user IDs to fetch user profiles
-    const userIds = [...new Set((transactions || []).map((t: { user_id: string }) => t.user_id))]
+    // Get unique user IDs to fetch user profiles (filter out nulls)
+    const userIds = [...new Set((transactions || []).map((t: { user_id: string | null }) => t.user_id).filter(Boolean) as string[])]
     
     // Fetch user profiles for all users in transactions
     let userProfiles: Record<string, { name: string | null; email: string | null; avatar_url: string | null }> = {}
@@ -90,10 +90,91 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Get booking IDs for transactions without user_id (trial bookings)
+    const bookingIds = [...new Set((transactions || [])
+      .filter((t: { user_id: string | null; booking_id: string | null }) => !t.user_id && t.booking_id)
+      .map((t: { booking_id: string | null }) => t.booking_id)
+      .filter(Boolean) as string[])]
+    
+    // Fetch guest names from bookings
+    const guestBookingsMap: Record<string, { guest_name: string | null; guest_email: string | null }> = {}
+    if (bookingIds.length > 0) {
+      const { data: bookings } = await adminClient
+        .from(TABLES.BOOKINGS)
+        .select('id, guest_name, guest_email')
+        .in('id', bookingIds)
+      
+      if (bookings) {
+        for (const b of bookings) {
+          guestBookingsMap[b.id] = { guest_name: b.guest_name, guest_email: b.guest_email }
+        }
+      }
+    }
+
+    // Get payment IDs for transactions linked via user_package_id (trial purchases)
+    const userPackageIds = [...new Set((transactions || [])
+      .filter((t: { user_id: string | null; user_package_id: string | null }) => !t.user_id && t.user_package_id)
+      .map((t: { user_package_id: string | null }) => t.user_package_id)
+      .filter(Boolean) as string[])]
+    
+    // Fetch guest info from payments linked to user_packages
+    // Map: user_package_id -> guest_name
+    const userPackageToGuestMap: Record<string, string> = {}
+    if (userPackageIds.length > 0) {
+      const { data: userPackages } = await adminClient
+        .from(TABLES.USER_PACKAGES)
+        .select('id, payment_id')
+        .in('id', userPackageIds)
+      
+      const paymentIds = (userPackages || [])
+        .map((up: { payment_id: string | null }) => up.payment_id)
+        .filter(Boolean) as string[]
+      
+      if (paymentIds.length > 0) {
+        // Get bookings linked to these payments (for trial bookings)
+        const { data: paymentBookings } = await adminClient
+          .from(TABLES.BOOKINGS)
+          .select('payment_id, guest_name')
+          .in('payment_id', paymentIds)
+          .eq('is_trial_booking', true)
+        
+        const paymentToGuestMap: Record<string, string> = {}
+        if (paymentBookings) {
+          for (const pb of paymentBookings) {
+            if (pb.payment_id && pb.guest_name) {
+              paymentToGuestMap[pb.payment_id] = pb.guest_name
+            }
+          }
+        }
+        
+        // Also check payment metadata for guest_name
+        const { data: payments } = await adminClient
+          .from(TABLES.PAYMENTS)
+          .select('id, metadata')
+          .in('id', paymentIds)
+        
+        if (payments) {
+          for (const p of payments) {
+            const metadata = p.metadata as { guest_name?: string } | null
+            if (p.id && metadata?.guest_name && !paymentToGuestMap[p.id]) {
+              paymentToGuestMap[p.id] = metadata.guest_name
+            }
+          }
+        }
+        
+        // Map user_package_id -> payment_id -> guest_name
+        for (const up of userPackages || []) {
+          if (up.payment_id && paymentToGuestMap[up.payment_id]) {
+            userPackageToGuestMap[up.id] = paymentToGuestMap[up.payment_id]
+          }
+        }
+      }
+    }
+
     // Transform and add user data
     let result = (transactions || []).map((t: {
       id: string
-      user_id: string
+      user_id: string | null
       user_package_id: string | null
       booking_id: string | null
       transaction_type: string
@@ -104,13 +185,35 @@ export async function GET(request: NextRequest) {
       performed_by: string | null
       created_at: string
     }) => {
-      const profile = userProfiles[t.user_id] || {}
+      // Get user name: from user profile, or guest booking, or guest payment
+      let userName = 'Unknown User'
+      let userEmail = ''
+      
+      // First, try to get from user profile if user_id exists and user exists
+      if (t.user_id && userProfiles[t.user_id]) {
+        const profile = userProfiles[t.user_id]
+        userName = profile.name || 'Unknown User'
+        userEmail = profile.email || ''
+      }
+      // If no user profile found, check guest bookings
+      else if (t.booking_id && guestBookingsMap[t.booking_id]?.guest_name) {
+        userName = guestBookingsMap[t.booking_id].guest_name || 'Unknown User'
+        userEmail = guestBookingsMap[t.booking_id].guest_email || ''
+      }
+      // If no booking found, check user package -> payment -> guest chain
+      else if (t.user_package_id && userPackageToGuestMap[t.user_package_id]) {
+        userName = userPackageToGuestMap[t.user_package_id]
+      }
+      
+      type ProfileInfo = { name?: string | null; email?: string | null; avatar_url?: string | null }
+      const profile: ProfileInfo = t.user_id ? (userProfiles[t.user_id] ?? {}) : {}
+      
       return {
         id: t.id,
         userId: t.user_id,
-        userName: profile.name || 'Unknown User',
-        userEmail: profile.email || '',
-        userAvatar: profile.avatar_url || null,
+        userName,
+        userEmail: userEmail || (profile.email ?? ''),
+        userAvatar: profile.avatar_url ?? null,
         userPackageId: t.user_package_id,
         bookingId: t.booking_id,
         type: t.transaction_type,

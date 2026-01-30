@@ -120,6 +120,8 @@ export const ClassListResponseSchema = z.object({
     completed: z.number().int().nonnegative(),
     cancelled: z.number().int().nonnegative(),
     full: z.number().int().nonnegative(),
+    totalEnrolled: z.number().int().nonnegative().optional(),
+    totalCapacity: z.number().int().nonnegative().optional(),
   }).optional(),
 })
 export type ClassListResponse = z.infer<typeof ClassListResponseSchema>

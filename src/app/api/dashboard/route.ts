@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
         .lt('purchased_at', startOfMonth.toISOString())
         .eq('status', 'active'),
       
-      // Today's classes
+      // Today's classes (exclude cancelled)
       supabase
         .from(TABLES.CLASSES)
         .select(`
@@ -98,6 +98,7 @@ export async function GET(request: NextRequest) {
         `)
         .gte('scheduled_at', startOfToday.toISOString())
         .lte('scheduled_at', endOfToday.toISOString())
+        .neq('status', 'cancelled')
         .order('scheduled_at', { ascending: true }),
       
       // Today's bookings for all classes
@@ -129,7 +130,7 @@ export async function GET(request: NextRequest) {
         .gte('created_at', startOfLastMonth.toISOString())
         .lt('created_at', startOfMonth.toISOString()),
       
-      // Recent bookings (last 24 hours)
+      // Recent bookings (last 24 hours) - include guest info for trial bookings
       supabase
         .from(TABLES.BOOKINGS)
         .select(`
@@ -137,6 +138,8 @@ export async function GET(request: NextRequest) {
           user_id,
           status,
           booked_at,
+          guest_name,
+          is_trial_booking,
           classes (
             id,
             title,
@@ -166,7 +169,7 @@ export async function GET(request: NextRequest) {
         .order('checked_in_at', { ascending: false })
         .limit(10),
       
-      // Recent payments (last 24 hours)
+      // Recent payments (last 24 hours) - include trial booking info
       supabase
         .from(TABLES.PAYMENTS)
         .select(`
@@ -175,6 +178,8 @@ export async function GET(request: NextRequest) {
           amount_cents,
           created_at,
           metadata,
+          is_trial_booking,
+          class_id,
           packages (
             id,
             name,
@@ -273,7 +278,7 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Get user IDs for recent activity
+    // Get user IDs for recent activity (only for registered users)
     const allUserIds = new Set<string>()
     for (const b of recentBookings.data || []) if (b.user_id) allUserIds.add(b.user_id)
     for (const a of recentAttendance.data || []) {
@@ -292,6 +297,26 @@ export async function GET(request: NextRequest) {
     const userMap: Record<string, string> = {}
     for (const u of userProfiles || []) {
       userMap[u.id] = u.name
+    }
+
+    // Guest bookings map is built from the booking data itself (guest_name is already in the query)
+
+    // Fetch guest info for trial payment purchases (lookup by payment_id)
+    const trialPaymentIds = (recentPayments.data || [])
+      .filter(p => !p.user_id && p.is_trial_booking)
+      .map(p => p.id)
+    const trialPaymentBookingsMap: Record<string, string> = {}
+    if (trialPaymentIds.length > 0) {
+      const { data: trialBookings } = await supabase
+        .from(TABLES.BOOKINGS)
+        .select('guest_name, payment_id')
+        .in('payment_id', trialPaymentIds)
+        .eq('is_trial_booking', true)
+      for (const tb of trialBookings || []) {
+        if (tb.payment_id && tb.guest_name) {
+          trialPaymentBookingsMap[tb.payment_id] = tb.guest_name
+        }
+      }
     }
 
     // Format recent activity
@@ -328,10 +353,19 @@ export async function GET(request: NextRequest) {
       const classTime = cls?.scheduled_at 
         ? new Date(cls.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Singapore' })
         : ''
+      
+      // Get user name: registered user from userMap, or guest name for trial bookings
+      let userName = 'Unknown'
+      if (b.user_id) {
+        userName = userMap[b.user_id] || 'Unknown'
+      } else if ((b as any).guest_name) {
+        userName = (b as any).guest_name
+      }
+      
       activities.push({
         id: `booking-${b.id}`,
         type: 'booking',
-        user: userMap[b.user_id] || 'Unknown',
+        user: userName,
         description: `Booked ${cls?.title || 'class'}${classTime ? ` (${classTime})` : ''}`,
         time: getRelativeTime(new Date(b.booked_at)),
         timestamp: new Date(b.booked_at).getTime(),
@@ -343,14 +377,25 @@ export async function GET(request: NextRequest) {
       const packagesData = p.packages as { name?: string; token_count?: number } | { name?: string; token_count?: number }[] | null
       const pkg = Array.isArray(packagesData) ? packagesData[0] : packagesData
       // Use metadata first (what was stored at payment time), then fallback to package join
-      const metadata = p.metadata as { package_name?: string; token_count?: number } | null
+      const metadata = p.metadata as { package_name?: string; token_count?: number; guest_name?: string } | null
       const packageName = metadata?.package_name || pkg?.name || 'package'
       // Prioritize metadata token_count (actual purchase) over package token_count (current value)
       const tokenCount = metadata?.token_count ?? pkg?.token_count ?? 0
+      
+      // Get user name: registered user from userMap, or guest name for trial bookings
+      let userName = 'Unknown'
+      if (p.user_id) {
+        userName = userMap[p.user_id] || 'Unknown'
+      } else if (p.is_trial_booking && trialPaymentBookingsMap[p.id]) {
+        userName = trialPaymentBookingsMap[p.id]
+      } else if (metadata?.guest_name) {
+        userName = metadata.guest_name
+      }
+      
       activities.push({
         id: `purchase-${p.id}`,
         type: 'purchase',
-        user: userMap[p.user_id] || 'Unknown',
+        user: userName,
         description: `Purchased ${packageName}${tokenCount ? ` (${tokenCount} tokens)` : ''}`,
         time: getRelativeTime(new Date(p.created_at)),
         timestamp: new Date(p.created_at).getTime(),
