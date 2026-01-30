@@ -398,13 +398,16 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
     throw new ApiError('SERVER_ERROR', 'Failed to fetch classes', 500, error)
   }
 
-  // Get ALL classes for stats calculation (without pagination)
-  const { data: allClassesData } = await supabase
+  // Get ALL classes for stats calculation (same date range as list when filtered)
+  let allClassesQuery = supabase
     .from(TABLES.CLASSES)
     .select('id, status, scheduled_at, duration_minutes, capacity')
     .order('scheduled_at', { ascending: true })
+  if (startDate) allClassesQuery = allClassesQuery.gte('scheduled_at', startDate)
+  if (endDate) allClassesQuery = allClassesQuery.lte('scheduled_at', endDate)
+  const { data: allClassesData } = await allClassesQuery
 
-  // Calculate stats from ALL classes
+  // Calculate stats from ALL classes in the filtered set (same date range as list)
   const now = new Date()
   let stats = {
     total: count || 0,
@@ -412,10 +415,11 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
     completed: 0,
     cancelled: 0,
     full: 0,
+    totalEnrolled: 0,
+    totalCapacity: 0,
   }
 
   if (allClassesData) {
-    // Get booking counts for all classes to determine "full" status
     const allClassIds = allClassesData.map((c: Record<string, unknown>) => c.id as string)
     const allBookingCounts = await getBookingCounts(allClassIds)
 
@@ -427,15 +431,16 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
       const capacity = classData.capacity as number
       const bookedCount = allBookingCounts[id] || 0
 
+      stats.totalCapacity += capacity
+      stats.totalEnrolled += bookedCount
+
       if (status === 'cancelled') {
         stats.cancelled++
       } else if (status === 'completed') {
         stats.completed++
       } else {
-        // Check if class end time has passed (client-side logic for "completed")
         const classDate = new Date(scheduledAt)
         const classEndTime = new Date(classDate.getTime() + durationMinutes * 60 * 1000)
-        
         if (classEndTime < now && status === 'scheduled') {
           stats.completed++
         } else if (bookedCount >= capacity) {

@@ -14,18 +14,30 @@ import {
   type Attendee,
 } from "@/hooks/useAttendance";
 
+function todayYMD(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function AttendancePage() {
   const { user } = useAuth();
   const router = useRouter();
   const { showToast } = useToast();
+  const [selectedDate, setSelectedDate] = useState<string>(() => todayYMD());
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "checked-in" | "no-show">("all");
   const [showQuickCheckIn, setShowQuickCheckIn] = useState(false);
   const [quickCheckInId, setQuickCheckInId] = useState("");
 
-  // API hooks
-  const { data, isLoading, error, refetch } = useAttendance();
+  const isViewingToday = selectedDate === todayYMD();
+  const isViewingPast = selectedDate < todayYMD();
+
+  // API hooks – pass selected date so we can roll back to past days
+  const { data, isLoading, error, refetch } = useAttendance(selectedDate);
   const checkIn = useCheckIn();
   const bulkCheckIn = useBulkCheckIn();
   const markNoShow = useMarkNoShow();
@@ -57,9 +69,8 @@ export default function AttendancePage() {
     }
   }, [sessions, selectedSession]);
 
-  // Get current time for display (Singapore time)
   const currentTime = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Singapore" });
-  const currentDate = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Singapore" });
+  const viewingDateFormatted = new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Singapore" });
 
   const handleCheckIn = async (bookingId: string) => {
     if (!user?.id) return;
@@ -194,7 +205,7 @@ export default function AttendancePage() {
       {/* Header with Date/Time and Quick Actions */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-brand-500 to-brand-600 text-white">
               <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -202,14 +213,41 @@ export default function AttendancePage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Check-In Station</h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{currentDate} • {currentTime}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {isViewingToday ? viewingDateFormatted + " • " + currentTime : viewingDateFormatted}
+                {isViewingPast && (
+                  <span className="ml-2 inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                    Past day (read-only)
+                  </span>
+                )}
+              </p>
+            </div>
+            {/* Date picker: roll back to past days or today */}
+            <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+              <label htmlFor="attendance-date" className="text-xs font-medium text-gray-500 dark:text-gray-400">View date</label>
+              <input
+                id="attendance-date"
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+              />
+              {!isViewingToday && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(todayYMD())}
+                  className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600"
+                >
+                  Today
+                </button>
+              )}
             </div>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* QR Code Check-In Button */}
-          {selectedSession && (
+          {/* QR Code Check-In Button – only for today */}
+          {selectedSession && isViewingToday && (
             <button
               onClick={() => router.push(`/attendance/qr/${selectedSession.id}`)}
               className="flex items-center gap-2 rounded-xl bg-linear-to-r from-brand-500 to-brand-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-brand-500/25 transition-all hover:shadow-xl hover:shadow-brand-500/30"
@@ -221,10 +259,11 @@ export default function AttendancePage() {
             </button>
           )}
 
-          {/* Quick Check-In Toggle */}
+          {/* Quick Check-In Toggle – only for today */}
           <button
-            onClick={() => setShowQuickCheckIn(!showQuickCheckIn)}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+            onClick={() => isViewingToday && setShowQuickCheckIn(!showQuickCheckIn)}
+            disabled={!isViewingToday}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
               showQuickCheckIn
                 ? "bg-brand-500 text-white"
                 : "bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-600 dark:hover:bg-gray-700"
@@ -287,7 +326,7 @@ export default function AttendancePage() {
         </div>
       )}
 
-      {/* Today's Overview Stats */}
+      {/* Overview Stats */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-800">
           <div className="flex items-center gap-3">
@@ -298,7 +337,7 @@ export default function AttendancePage() {
             </div>
             <div>
               <div className="text-2xl font-bold text-gray-900 dark:text-white">{todayStats.totalClasses}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Classes Today</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">{isViewingToday ? "Classes Today" : "Classes"}</div>
             </div>
           </div>
         </div>
@@ -362,7 +401,9 @@ export default function AttendancePage() {
 
       {/* Class Selection Cards */}
       <div>
-        <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Today&apos;s Classes</h2>
+        <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
+          {isViewingToday ? "Today's Classes" : `Classes on ${viewingDateFormatted}`}
+        </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {sessions.map((session) => {
             const stats = getSessionStats(session);
@@ -460,23 +501,25 @@ export default function AttendancePage() {
                   </div>
                 </div>
 
-                {/* QR Check-In Button */}
-                <div
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    router.push(`/attendance/qr/${session.id}`);
-                  }}
-                  className={`mt-4 flex items-center justify-center gap-2 rounded-xl py-2 text-sm font-medium transition-all cursor-pointer ${
-                    isSelected
-                      ? "bg-white/20 text-white hover:bg-white/30"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                  }`}
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                  </svg>
-                  QR Check-In
-                </div>
+                {/* QR Check-In Button – only for today */}
+                {isViewingToday && (
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      router.push(`/attendance/qr/${session.id}`);
+                    }}
+                    className={`mt-4 flex items-center justify-center gap-2 rounded-xl py-2 text-sm font-medium transition-all cursor-pointer ${
+                      isSelected
+                        ? "bg-white/20 text-white hover:bg-white/30"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                    }`}
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                    </svg>
+                    QR Check-In
+                  </div>
+                )}
               </button>
             );
           })}
@@ -521,8 +564,8 @@ export default function AttendancePage() {
                   QR Check-In
                 </button>
 
-                {/* Bulk Check-In */}
-                {selectedSession.attendees.some((a) => a.status === "pending") && (
+                {/* Bulk Check-In – only when viewing today */}
+                {isViewingToday && selectedSession.attendees.some((a) => a.status === "pending") && (
                   <button
                     onClick={handleBulkCheckIn}
                     disabled={bulkCheckIn.isPending}
@@ -737,26 +780,32 @@ export default function AttendancePage() {
                       <div className="flex items-center justify-end gap-2">
                         {attendee.status === "pending" && (
                           <>
-                            <button
-                              onClick={() => handleCheckIn(attendee.bookingId)}
-                              disabled={checkIn.isPending}
-                              className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
-                            >
-                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                              Check In
-                            </button>
-                            <button
-                              onClick={() => handleMarkNoShow(attendee.bookingId)}
-                              disabled={markNoShow.isPending}
-                              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 ring-1 ring-red-200 transition-colors hover:bg-red-50 dark:text-red-400 dark:ring-red-500/30 dark:hover:bg-red-500/10 disabled:opacity-50"
-                            >
-                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                              No Show
-                            </button>
+                            {!isViewingPast ? (
+                              <>
+                                <button
+                                  onClick={() => handleCheckIn(attendee.bookingId)}
+                                  disabled={checkIn.isPending}
+                                  className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
+                                >
+                                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                  Check In
+                                </button>
+                                <button
+                                  onClick={() => handleMarkNoShow(attendee.bookingId)}
+                                  disabled={markNoShow.isPending}
+                                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 ring-1 ring-red-200 transition-colors hover:bg-red-50 dark:text-red-400 dark:ring-red-500/30 dark:hover:bg-red-500/10 disabled:opacity-50"
+                                >
+                                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                  No Show
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-sm text-gray-400">Past day (read-only)</span>
+                            )}
                           </>
                         )}
                         {attendee.status !== "pending" && (

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
+import DateRangePicker from "@/components/common/DateRangePicker";
 import Button from "@/components/ui/button/Button";
 import AttendanceModal from "@/components/attendance/AttendanceModal";
 import { useInvalidateEntity, createEntityKeys } from "@/hooks/useEntityQuery";
@@ -227,6 +228,9 @@ export default function ClassesPage() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("list"); // Default to table view
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
+  // Date filter: YYYY-MM-DD or empty = no filter
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [attendanceModal, setAttendanceModal] = useState<{
     isOpen: boolean;
     classData: DisplayClass | null;
@@ -285,11 +289,8 @@ export default function ClassesPage() {
     refetch,
     isFetching
   } = useQuery({
-    queryKey: [...keys.list(), filter, currentPage, pageSize], // Include filter, page, and pageSize in query key
+    queryKey: [...keys.list(), filter, currentPage, pageSize, dateFrom, dateTo],
     queryFn: async () => {
-      // For completed filter, fetch with max page size (100) to get more results
-      // Note: We don't filter by status in the API because client-side logic determines
-      // "completed" status based on end time, not just database status field
       const fetchPageSize = filter === "completed" ? 100 : pageSize;
       const fetchPage = filter === "completed" ? 1 : currentPage;
       
@@ -297,9 +298,12 @@ export default function ClassesPage() {
         page: fetchPage.toString(),
         pageSize: fetchPageSize.toString(),
       });
-      
-      // Don't filter by status - let client-side logic determine completion
-      // This ensures we get all classes that might be completed based on end time
+      if (dateFrom) {
+        params.set("startDate", new Date(dateFrom + "T00:00:00.000Z").toISOString());
+      }
+      if (dateTo) {
+        params.set("endDate", new Date(dateTo + "T23:59:59.999Z").toISOString());
+      }
       
       const response = await api.get<{ data: ClassListResponse }>(`/api/classes?${params.toString()}`);
       
@@ -354,10 +358,10 @@ export default function ClassesPage() {
     return map;
   }, [instructorsList]);
   
-  // Reset to page 1 when filter changes
+  // Reset to page 1 when filter or date range changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter]);
+  }, [filter, dateFrom, dateTo]);
 
   // Cache invalidation hook
   const { invalidateAll } = useInvalidateEntity("classes");
@@ -683,17 +687,19 @@ export default function ClassesPage() {
     // For completed filter, displayClasses already contains only completed classes
     // For other filters, apply the filter logic
     let matchesFilter = true;
-    if (filter !== "all" && filter !== "completed") {
-      if (filter === "active") {
-        matchesFilter = cls.status === "active";
-      } else if (filter === "cancelled") {
-        matchesFilter = cls.status === "cancelled";
-      } else if (filter === "full") {
-        matchesFilter = cls.status === "full";
-      }
+    if (filter === "all") {
+      // Exclude cancelled classes from "all" filter - they should only show when explicitly filtered
+      matchesFilter = cls.status !== "cancelled";
+    } else if (filter === "completed") {
+      // For "completed" filter, displayClasses already filtered, so all match
+      matchesFilter = true;
+    } else if (filter === "active") {
+      matchesFilter = cls.status === "active";
+    } else if (filter === "cancelled") {
+      matchesFilter = cls.status === "cancelled";
+    } else if (filter === "full") {
+      matchesFilter = cls.status === "full";
     }
-    // For "completed" filter, displayClasses already filtered, so all match
-    // For "all" filter, show everything
     
     const matchesSearch =
       cls.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -724,15 +730,15 @@ export default function ClassesPage() {
     return "bg-gray-300 dark:bg-gray-600";
   };
 
-  // Calculate stats - use API aggregated stats if available, otherwise fallback to current page
+  // Stats: use API aggregated stats (all classes in filter/date range) when available
   const stats = apiStats ? {
     total: apiStats.total,
     active: apiStats.active,
     completed: apiStats.completed,
     full: apiStats.full,
     cancelled: apiStats.cancelled,
-    totalEnrolled: classes.reduce((sum, c) => sum + c.enrolled, 0), // Still from current page
-    totalCapacity: classes.reduce((sum, c) => sum + c.capacity, 0), // Still from current page
+    totalEnrolled: apiStats.totalEnrolled ?? classes.reduce((sum, c) => sum + c.enrolled, 0),
+    totalCapacity: apiStats.totalCapacity ?? classes.reduce((sum, c) => sum + c.capacity, 0),
   } : {
     total: totalClasses,
     active: classes.filter((c) => c.status === "active").length,
@@ -742,6 +748,7 @@ export default function ClassesPage() {
     totalEnrolled: classes.reduce((sum, c) => sum + c.enrolled, 0),
     totalCapacity: classes.reduce((sum, c) => sum + c.capacity, 0),
   };
+  const hasDateFilter = Boolean(dateFrom || dateTo);
 
   // Helper to get class type badge
   const getClassTypeBadge = (recurrenceType?: 'single' | 'recurring' | 'course') => {
@@ -859,7 +866,12 @@ export default function ClassesPage() {
     <div className="space-y-6">
       <PageBreadCrumb pageTitle="Classes Management" />
 
-      {/* Stats Cards */}
+      {/* Stats Cards – all numbers reflect current filter (e.g. date range) */}
+      {hasDateFilter && (
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Stats below are for the selected date range.
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex items-center gap-3">
@@ -896,9 +908,10 @@ export default function ClassesPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
             </div>
-            <div>
+            <div className="min-w-0" title="Total bookings across all classes in current view">
               <p className="text-sm text-gray-500 dark:text-gray-400">Enrolled</p>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.totalEnrolled}<span className="text-sm font-normal text-gray-400">/{stats.totalCapacity}</span></p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 truncate">bookings / capacity</p>
             </div>
           </div>
         </div>
@@ -910,11 +923,28 @@ export default function ClassesPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             </div>
-            <div>
+            <div className="min-w-0" title="Enrolled ÷ total capacity across all classes">
               <p className="text-sm text-gray-500 dark:text-gray-400">Fill Rate</p>
               <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{stats.totalCapacity > 0 ? Math.round((stats.totalEnrolled / stats.totalCapacity) * 100) : 0}%</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 truncate">overall</p>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Date filter - calendar range picker (reusable component) */}
+      <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Date range</span>
+          <DateRangePicker
+            value={{ from: dateFrom, to: dateTo }}
+            onChange={(from, to) => {
+              setDateFrom(from);
+              setDateTo(to);
+            }}
+            placeholder="Select date range"
+            presets={["today", "week", "month", "clear"]}
+          />
         </div>
       </div>
 

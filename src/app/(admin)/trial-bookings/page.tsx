@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
+import DateRangePicker from "@/components/common/DateRangePicker";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/components/ui/Toast";
 import { RefreshCw, Mail, Phone, Calendar, DollarSign, User, Search, Filter, Trash2, CheckCircle, XCircle, MoreVertical } from "lucide-react";
@@ -28,6 +29,7 @@ interface TrialBooking {
     location: string | null;
     instructorName: string | null;
     classType: string;
+    ageGroup?: 'adult' | 'kid' | 'all' | null;
   } | null;
   payment: {
     id: string;
@@ -49,6 +51,9 @@ export default function TrialBookingsPage() {
   const [total, setTotal] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [ageGroupFilter, setAgeGroupFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -75,6 +80,13 @@ export default function TrialBookingsPage() {
         params.append("search", searchQuery.trim());
       }
 
+      if (dateFrom) {
+        params.set("startDate", new Date(dateFrom + "T00:00:00.000Z").toISOString());
+      }
+      if (dateTo) {
+        params.set("endDate", new Date(dateTo + "T23:59:59.999Z").toISOString());
+      }
+
       const response = await api.get<{ success: boolean; data: TrialBooking[]; pagination: { totalPages: number; total: number } }>(`/api/trial-bookings?${params.toString()}`);
       
       if (response.error) {
@@ -97,7 +109,7 @@ export default function TrialBookingsPage() {
 
   useEffect(() => {
     fetchBookings();
-  }, [currentPage, statusFilter]);
+  }, [currentPage, statusFilter, ageGroupFilter, dateFrom, dateTo]);
 
   // Debounced search
   useEffect(() => {
@@ -168,6 +180,16 @@ export default function TrialBookingsPage() {
       age--;
     }
     return age;
+  };
+
+  const isKidBooking = (booking: TrialBooking): boolean => {
+    // Check class age_group first
+    if (booking.class?.ageGroup === 'kid') return true;
+    if (booking.class?.ageGroup === 'adult') return false;
+    
+    // Fallback to age calculation (under 13 is a kid)
+    const age = calculateAge(booking.guestDateOfBirth);
+    return age !== null && age < 13;
   };
 
   const handleStatusUpdate = async (bookingId: string, newStatus: string, reason?: string) => {
@@ -251,6 +273,9 @@ export default function TrialBookingsPage() {
 
       {/* Filters */}
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+        {(dateFrom || dateTo) && (
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Showing bookings for the selected date range (by booked date).</p>
+        )}
         <div className="flex flex-col sm:flex-row gap-4">
           {/* Search */}
           <div className="flex-1">
@@ -283,6 +308,37 @@ export default function TrialBookingsPage() {
               <option value="cancelled">Cancelled</option>
               <option value="no-show">No Show</option>
             </select>
+          </div>
+
+          {/* Age Group Filter */}
+          <div className="sm:w-40">
+            <select
+              value={ageGroupFilter}
+              onChange={(e) => {
+                setAgeGroupFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            >
+              <option value="all">All Ages</option>
+              <option value="kid">Kids Only</option>
+              <option value="adult">Adults Only</option>
+            </select>
+          </div>
+
+          {/* Date range filter (by booked date) */}
+          <div className="sm:min-w-[220px]">
+            <DateRangePicker
+              value={{ from: dateFrom, to: dateTo }}
+              onChange={(from, to) => {
+                setDateFrom(from);
+                setDateTo(to);
+                setCurrentPage(1);
+              }}
+              placeholder="Date range (booked)"
+              presets={["today", "week", "month", "clear"]}
+              className="w-full"
+            />
           </div>
         </div>
       </div>
@@ -370,19 +426,40 @@ export default function TrialBookingsPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
-                  {bookings.map((booking) => {
+                  {bookings
+                    .filter((booking) => {
+                      if (ageGroupFilter === "all") return true;
+                      const isKid = isKidBooking(booking);
+                      return ageGroupFilter === "kid" ? isKid : !isKid;
+                    })
+                    .map((booking) => {
                     const isDraft = booking.status === "draft";
+                    const isKid = isKidBooking(booking);
                     return (
                     <tr 
                       key={booking.id} 
                       className={`hover:bg-gray-50 dark:hover:bg-gray-800 ${
                         isDraft ? "bg-yellow-50/50 dark:bg-yellow-900/10 border-l-4 border-yellow-400" : ""
+                      } ${
+                        isKid ? "bg-purple-50/30 dark:bg-purple-900/10" : ""
                       }`}
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            {booking.guestName}
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm font-medium text-gray-900 dark:text-white">
+                              {booking.guestName}
+                            </div>
+                            {isKidBooking(booking) && (
+                              <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border border-purple-300 dark:border-purple-700">
+                                Kid
+                              </span>
+                            )}
+                            {!isKidBooking(booking) && booking.guestDateOfBirth && (
+                              <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-300 dark:border-blue-700">
+                                Adult
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
                             <Mail className="w-3 h-3" />
@@ -574,6 +651,14 @@ export default function TrialBookingsPage() {
                   <div className="text-sm text-gray-600 dark:text-gray-400">
                     Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to{" "}
                     {Math.min(currentPage * ITEMS_PER_PAGE, total)} of {total} bookings
+                    {ageGroupFilter !== "all" && (
+                      <span className="ml-2 text-xs">
+                        ({bookings.filter((b) => {
+                          const isKid = isKidBooking(b);
+                          return ageGroupFilter === "kid" ? isKid : !isKid;
+                        }).length} {ageGroupFilter === "kid" ? "kids" : "adults"} on this page)
+                      </span>
+                    )}
                   </div>
                   <Pagination
                     currentPage={currentPage}

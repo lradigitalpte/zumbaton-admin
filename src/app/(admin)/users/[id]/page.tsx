@@ -84,6 +84,11 @@ export default function UserDetailPage() {
   const [isProcessingTokens, setIsProcessingTokens] = useState(false);
   const [isSendingForm, setIsSendingForm] = useState(false);
   const [registrationFormStatus, setRegistrationFormStatus] = useState<'pending' | 'completed' | 'expired' | null>(null);
+  const [showReferralPanel, setShowReferralPanel] = useState(false);
+  const [referralDiscountPercent, setReferralDiscountPercent] = useState(8);
+  const [latestVoucher, setLatestVoucher] = useState<{ id: string; voucherCode: string; discountPercent: number; createdAt: string; sentAt: string | null; usedAt: string | null } | null>(null);
+  const [isGeneratingVoucher, setIsGeneratingVoucher] = useState(false);
+  const [isSendingVoucher, setIsSendingVoucher] = useState(false);
   const toast = useToast();
 
   // Fetch user detail with React Query caching
@@ -180,6 +185,17 @@ export default function UserDetailPage() {
         });
     }
   }, [activeTab, user?.id]);
+
+  // Fetch latest referral voucher when user loads or referral panel opens
+  useEffect(() => {
+    if (!user?.id || !showReferralPanel) return;
+    api.get<{ success: boolean; data: { id: string; voucherCode: string; discountPercent: number; createdAt: string; sentAt: string | null; usedAt: string | null } | null }>(`/api/users/${user.id}/referral-voucher`)
+      .then((response: any) => {
+        if (response.error || !response.data?.success) return;
+        setLatestVoucher(response.data.data ?? null);
+      })
+      .catch(() => setLatestVoucher(null));
+  }, [user?.id, showReferralPanel]);
 
   // Fetch user packages
   useEffect(() => {
@@ -750,6 +766,57 @@ export default function UserDetailPage() {
     }
   };
 
+  const handleGenerateVoucher = async () => {
+    if (!user?.id) return;
+    setIsGeneratingVoucher(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Please sign in");
+      const response = await fetch(`/api/users/${userId}/referral-voucher/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ discountPercent: referralDiscountPercent }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error?.message || "Failed to generate voucher");
+      setLatestVoucher({
+        id: result.data.id,
+        voucherCode: result.data.voucherCode,
+        discountPercent: result.data.discountPercent,
+        createdAt: result.data.createdAt,
+        sentAt: null,
+        usedAt: null,
+      });
+      toast.showToast(`Voucher ${result.data.voucherCode} created (${result.data.discountPercent}% off)`, "success");
+    } catch (err: any) {
+      toast.showToast(err.message || "Failed to generate voucher", "error");
+    } finally {
+      setIsGeneratingVoucher(false);
+    }
+  };
+
+  const handleSendVoucherEmail = async () => {
+    if (!user?.id || !latestVoucher?.id) return;
+    setIsSendingVoucher(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Please sign in");
+      const response = await fetch(`/api/users/${userId}/referral-voucher/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ voucherId: latestVoucher.id }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error?.message || "Failed to send email");
+      setLatestVoucher((v) => (v ? { ...v, sentAt: new Date().toISOString() } : null));
+      toast.showToast("Voucher email sent successfully", "success");
+    } catch (err: any) {
+      toast.showToast(err.message || "Failed to send email", "error");
+    } finally {
+      setIsSendingVoucher(false);
+    }
+  };
+
   const handleDeactivateUser = async () => {
     if (!user) {
       toast.showToast('User data not available', 'error');
@@ -1192,6 +1259,18 @@ export default function UserDetailPage() {
                       ) : (
                         <span className="text-gray-500 dark:text-gray-400">Not Eligible</span>
                       )}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <dt className="text-sm text-gray-500 dark:text-gray-400">Referral Discount</dt>
+                    <dd className="text-sm font-medium text-gray-900 dark:text-white">
+                      <button
+                        onClick={() => setShowReferralPanel(true)}
+                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-lime-600 text-white hover:bg-lime-700 transition-colors"
+                        title="Generate and send referral voucher"
+                      >
+                        Referral Discount
+                      </button>
                     </dd>
                   </div>
                   <div className="flex justify-between">
@@ -1638,6 +1717,92 @@ export default function UserDetailPage() {
               className="flex-1 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isUploading ? 'Uploading...' : 'Upload Form'}
+            </button>
+          </div>
+        </div>
+      </SlidePanel>
+
+      {/* Referral Discount Panel */}
+      <SlidePanel
+        isOpen={showReferralPanel}
+        onClose={() => setShowReferralPanel(false)}
+        title="Referral Discount"
+      >
+        <div className="space-y-6">
+          <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-lime-500 text-lg font-semibold text-white">
+              {getInitials(user?.name ?? "")}
+            </div>
+            <div>
+              <div className="font-medium text-gray-900 dark:text-white">{user?.name}</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">{user?.email}</div>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="referralDiscountPercent">Discount percentage</Label>
+            <Input
+              id="referralDiscountPercent"
+              type="number"
+              min="1"
+              max="100"
+              value={referralDiscountPercent}
+              onChange={(e) => setReferralDiscountPercent(Number(e.target.value) || 8)}
+              className="mt-1.5"
+            />
+            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+              Default 8%. User will receive this discount on their next token package purchase.
+            </p>
+          </div>
+
+          {!latestVoucher ? (
+            <button
+              onClick={handleGenerateVoucher}
+              disabled={isGeneratingVoucher}
+              className="w-full rounded-lg bg-lime-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-lime-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isGeneratingVoucher ? "Generating..." : "Generate"}
+            </button>
+          ) : (
+            <>
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800">
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Voucher code</p>
+                <p className="mt-1 font-mono text-lg font-semibold text-gray-900 dark:text-white">{latestVoucher.voucherCode}</p>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{latestVoucher.discountPercent}% off next package</p>
+                {latestVoucher.sentAt && (
+                  <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">Email sent</p>
+                )}
+                {latestVoucher.usedAt && (
+                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">Already used</p>
+                )}
+              </div>
+              {!latestVoucher.sentAt && !latestVoucher.usedAt && (
+                <button
+                  onClick={handleSendVoucherEmail}
+                  disabled={isSendingVoucher || !user?.email}
+                  className="w-full rounded-lg bg-lime-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-lime-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSendingVoucher ? "Sending..." : "Send"}
+                </button>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleGenerateVoucher}
+                  disabled={isGeneratingVoucher}
+                  className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 disabled:opacity-50"
+                >
+                  {isGeneratingVoucher ? "Generating..." : "Generate another"}
+                </button>
+              </div>
+            </>
+          )}
+
+          <div className="flex pt-2">
+            <button
+              onClick={() => setShowReferralPanel(false)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              Close
             </button>
           </div>
         </div>

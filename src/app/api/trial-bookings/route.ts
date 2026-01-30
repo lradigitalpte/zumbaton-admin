@@ -15,11 +15,13 @@ export async function GET(request: NextRequest) {
     const pageSize = parseInt(searchParams.get('pageSize') || '20', 10)
     const status = searchParams.get('status') || undefined
     const search = searchParams.get('search') || undefined
+    const startDate = searchParams.get('startDate') || undefined
+    const endDate = searchParams.get('endDate') || undefined
 
     const supabase = getSupabaseAdminClient()
     const offset = (page - 1) * pageSize
 
-    // Build query - try simpler relation syntax first
+    // Build query
     let query = supabase
       .from('bookings')
       .select(`
@@ -62,6 +64,14 @@ export async function GET(request: NextRequest) {
     // Apply search filter
     if (search) {
       query = query.or(`guest_name.ilike.%${search}%,guest_email.ilike.%${search}%,guest_phone.ilike.%${search}%`)
+    }
+
+    // Apply date filter (by booked_at)
+    if (startDate) {
+      query = query.gte('booked_at', startDate)
+    }
+    if (endDate) {
+      query = query.lte('booked_at', endDate)
     }
 
     // Get total count and paginated results
@@ -126,6 +136,7 @@ export async function GET(request: NextRequest) {
           location: classData.location,
           instructorName: classData.instructor_name,
           classType: classData.class_type,
+          ageGroup: classData.age_group,
         } : null,
         payment: paymentData ? {
           id: paymentData.id,

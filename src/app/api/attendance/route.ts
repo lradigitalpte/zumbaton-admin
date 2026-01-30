@@ -164,7 +164,7 @@ export async function GET(request: NextRequest) {
         time: scheduledAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Singapore' }),
         endTime: endTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Singapore' }),
         capacity: cls.capacity,
-        room: roomName || 'TBD',
+        room: roomName || 'Studio',
         roomId: cls.room_id,
         status: cls.status,
         attendees,

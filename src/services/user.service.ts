@@ -539,6 +539,8 @@ export async function createUser(
         date_of_birth: data.dateOfBirth || null,
         blood_group: data.bloodGroup || null,
         physical_form_url: data.physicalFormUrl || null,
+        username: data.username ? data.username.trim().toLowerCase() : null,
+        guardian_email: data.guardianEmail ? data.guardianEmail.trim().toLowerCase() : null,
       })
       .select()
       .single()
@@ -559,17 +561,25 @@ export async function createUser(
     return toUserProfile(newProfile)
   }
 
-  // If the profile was created by trigger but with wrong role, update it
-  if (profileData.role !== data.role || data.dateOfBirth || data.bloodGroup || data.physicalFormUrl) {
+  // If the profile was created by trigger but with wrong role/fields, update it
+  const needsUpdate =
+    profileData.role !== data.role ||
+    data.dateOfBirth ||
+    data.bloodGroup ||
+    data.physicalFormUrl ||
+    data.username ||
+    data.guardianEmail
+  if (needsUpdate) {
     const updateData: Record<string, unknown> = {
       role: data.role,
       name: data.name,
       phone: data.phone || null,
     }
-    
     if (data.dateOfBirth) updateData.date_of_birth = data.dateOfBirth
     if (data.bloodGroup) updateData.blood_group = data.bloodGroup
     if (data.physicalFormUrl) updateData.physical_form_url = data.physicalFormUrl
+    if (data.username) updateData.username = data.username.trim().toLowerCase()
+    if (data.guardianEmail !== undefined) updateData.guardian_email = data.guardianEmail ? data.guardianEmail.trim().toLowerCase() : null
     
     const { data: updatedProfile, error: updateError } = await getSupabaseAdminClient()
       .from('user_profiles')
