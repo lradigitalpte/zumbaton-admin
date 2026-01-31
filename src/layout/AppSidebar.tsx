@@ -5,6 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSidebar } from "../context/SidebarContext";
 import {
+  BellIcon,
   BoxCubeIcon,
   CalenderIcon,
   ChevronDownIcon,
@@ -79,6 +80,11 @@ const getNavItems = (user: { role: string } | null): NavItem[] => [
       { name: "Attendance", path: "/reports/attendance", pro: false },
       ...(user && isRoleAtLeast(user.role as UserRole, 'admin') ? [{ name: "Audits", path: "/reports/audits", pro: false }] : []),
     ],
+  },
+  {
+    icon: <BellIcon />,
+    name: "Ticker",
+    path: "/ticker",
   },
 ];
 

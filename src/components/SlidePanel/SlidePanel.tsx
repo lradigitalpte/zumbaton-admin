@@ -87,10 +87,10 @@ const SlidePanel = ({
 
   return (
     <div className="fixed inset-0 z-50">
-      {/* Overlay */}
+      {/* Overlay – darker in dark mode for better contrast */}
       {showOverlay && (
         <div
-          className={`absolute inset-0 bg-black/50 transition-opacity duration-300 ${
+          className={`absolute inset-0 bg-black/50 dark:bg-black/60 backdrop-blur-[1px] transition-opacity duration-300 ${
             isOpen ? "opacity-100" : "opacity-0"
           }`}
           aria-hidden="true"
@@ -102,22 +102,22 @@ const SlidePanel = ({
         ref={panelRef}
         className={`absolute top-0 h-full w-full ${sizeClasses[size]} ${positionClasses[position].panel} ${positionClasses[position].translate} transform transition-transform duration-300 ease-in-out`}
       >
-        <div className="h-full flex flex-col bg-white dark:bg-boxdark shadow-xl">
+        <div className="h-full flex flex-col bg-white dark:bg-gray-900 shadow-xl dark:shadow-black/30 border-l border-transparent dark:border-gray-700/80">
           {/* Header */}
-          <div className="flex items-start justify-between p-6 border-b border-stroke dark:border-strokedark">
+          <div className="flex items-start justify-between p-5 sm:p-6 border-b border-gray-200 dark:border-gray-700">
             <div>
-              <h2 className="text-xl font-semibold text-black dark:text-white">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                 {title}
               </h2>
               {description && (
-                <p className="mt-1 text-sm text-body dark:text-bodydark">
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   {description}
                 </p>
               )}
             </div>
             <button
               onClick={onClose}
-              className="p-2 rounded-lg text-body hover:text-black dark:text-bodydark dark:hover:text-white hover:bg-gray-100 dark:hover:bg-meta-4 transition-colors"
+              className="p-2 rounded-lg text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               aria-label="Close panel"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -127,13 +127,13 @@ const SlidePanel = ({
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-5 sm:p-6 bg-gray-50/50 dark:bg-gray-900">
             {children}
           </div>
 
           {/* Footer */}
           {footer && (
-            <div className="flex items-center gap-3 p-6 border-t border-stroke dark:border-strokedark">
+            <div className="flex items-center gap-3 p-5 sm:p-6 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
               {footer}
             </div>
           )}
