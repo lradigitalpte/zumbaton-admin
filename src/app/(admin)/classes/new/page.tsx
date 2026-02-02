@@ -82,7 +82,7 @@ function NewClassPageContent() {
   const allCategories = categories.length > 0 ? categories : categoriesLegacy;
   
   // Fetch class data if editing
-  const { data: existingClass, isLoading: loadingClass } = useClass(classId || "");
+  const { data: existingClass, isLoading: loadingClass, error: classError } = useClass(classId || "");
   
   // Create/Update class mutations
   const createClass = useCreateClass();
@@ -126,18 +126,27 @@ function NewClassPageContent() {
 
   // Populate form when class data is loaded (edit mode)
   useEffect(() => {
+    if (isEditMode) {
+      console.log('[Form Population Check]');
+      console.log('  - existingClass:', !!existingClass);
+      console.log('  - loadingClass:', loadingClass);
+      console.log('  - loadingInstructors:', loadingInstructors);
+      console.log('  - loadingRooms:', loadingRooms);
+      console.log('  - loadingCategories:', loadingCategories);
+      console.log('  - formPopulated:', formPopulated);
+      console.log('  - instructors.length:', instructors.length);
+      console.log('  - rooms.length:', rooms.length);
+      console.log('  - allCategories.length:', allCategories.length);
+    }
+    
     if (
       existingClass && 
       isEditMode && 
       !loadingClass && 
-      !loadingInstructors && 
-      !loadingRooms && 
-      !loadingCategories &&
-      !formPopulated &&
-      instructors.length > 0 &&
-      rooms.length > 0 &&
-      allCategories.length > 0
+      !formPopulated
     ) {
+      console.log('[Form Population] ✓ All conditions met, populating form...');
+      console.log('[Form Population] Class data:', existingClass);
       // Convert UTC time back to Singapore time (UTC+8) for display
       const scheduledDate = new Date(existingClass.scheduledAt);
       // Get UTC date components
@@ -241,26 +250,34 @@ function NewClassPageContent() {
     existingClass, 
     isEditMode, 
     loadingClass, 
-    loadingInstructors, 
-    loadingRooms, 
-    loadingCategories,
-    formPopulated,
-    instructors.length,
-    rooms.length,
-    allCategories.length
+    formPopulated
   ]);
 
+  // Handle class loading errors
+  useEffect(() => {
+    if (classError && isEditMode && !loadingClass) {
+      console.error('[Edit Class] Error loading class:', classError);
+      toast.showToast('Failed to load class details. The class may not exist.', 'error');
+      // Optionally redirect back to classes list after a delay
+      setTimeout(() => {
+        router.push('/admin/classes');
+      }, 2000);
+    }
+  }, [classError, isEditMode, loadingClass, router, toast]);
+
   // Format instructors for Select component
-  const instructorOptions = useMemo(() => 
-    instructors.map((i) => ({ value: i.id, label: i.name })),
-    [instructors]
-  );
+  const instructorOptions = useMemo(() => {
+    console.log('[instructorOptions] instructors:', instructors, 'type:', typeof instructors, 'isArray:', Array.isArray(instructors));
+    if (!Array.isArray(instructors)) return [];
+    return instructors.map((i) => ({ value: i.id, label: i.name }));
+  }, [instructors]);
 
   // Format rooms for Select component
-  const roomOptions = useMemo(() => 
-    rooms.map((r) => ({ value: r.id, label: `${r.name}${r.location ? ` (${r.location})` : ''}` })),
-    [rooms]
-  );
+  const roomOptions = useMemo(() => {
+    console.log('[roomOptions] rooms:', rooms, 'type:', typeof rooms, 'isArray:', Array.isArray(rooms));
+    if (!Array.isArray(rooms)) return [];
+    return rooms.map((r) => ({ value: r.id, label: `${r.name}${r.location ? ` (${r.location})` : ''}` }));
+  }, [rooms]);
 
   // Format categories for Select component
   const categoryOptions = useMemo(() => 

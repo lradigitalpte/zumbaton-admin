@@ -163,67 +163,132 @@ async function fetchClasses(query: ClassListQuery): Promise<{
 }
 
 async function fetchClass(id: string): Promise<ClassWithAvailability> {
-  const response = await api.get<{ data: { class: ClassWithAvailability } }>(`/api/classes/${id}`)
+  const response = await api.get<{ class: ClassWithAvailability }>(`/api/classes/${id}`)
 
   if (response.error) {
+    console.error('[fetchClass] API error:', response.error)
     throw new Error(response.error.message || 'Failed to fetch class')
   }
 
-  return response.data?.data?.class as ClassWithAvailability
+  if (!response.data) {
+    console.error('[fetchClass] No data in response')
+    throw new Error('No class data returned from API')
+  }
+
+  // Handle various response structures from API
+  const data = response.data as any
+  
+  // Try different possible response structures:
+  // 1. Direct class object: response.data.class
+  // 2. Nested class object: response.data.data.class
+  // 3. Class data directly in response.data (no .class property)
+  const classData = data.class || data.data?.class || data.data || data
+  
+  // Validate we got actual class data (should have an id)
+  if (!classData || !classData.id) {
+    console.error('[fetchClass] Invalid class data in response:', response.data)
+    throw new Error('Invalid API response structure - missing class data')
+  }
+
+  return classData
 }
 
 async function fetchInstructors(): Promise<Instructor[]> {
-  const response = await api.get<{ data: { instructors: Instructor[] } }>('/api/instructors')
+  const response = await api.get<{ instructors: Instructor[]; total: number }>('/api/instructors')
+
+  console.log('[fetchInstructors] Full response:', response)
+  console.log('[fetchInstructors] response.data:', response.data)
+  console.log('[fetchInstructors] response.data.data:', (response.data as any)?.data)
 
   if (response.error) {
     throw new Error(response.error.message || 'Failed to fetch instructors')
   }
 
-  return response.data?.data?.instructors || []
+  // The API wraps responses: response.data = {success: true, data: {instructors: [], total: N}}
+  const data = response.data as any
+  const actualData = data?.data || data
+  const instructors = actualData?.instructors || []
+  
+  console.log('[fetchInstructors] Extracted instructors array:', instructors)
+  return instructors
 }
 
 async function fetchRooms(): Promise<Room[]> {
-  const response = await api.get<{ data: { rooms: Room[] } }>('/api/rooms')
+  const response = await api.get<{ rooms: Room[]; stats: any; total: number }>('/api/rooms')
+
+  console.log('[fetchRooms] Full response:', response)
+  console.log('[fetchRooms] response.data:', response.data)
+  console.log('[fetchRooms] response.data.data:', (response.data as any)?.data)
 
   if (response.error) {
     throw new Error(response.error.message || 'Failed to fetch rooms')
   }
 
-  return response.data?.data?.rooms || []
+  // The API wraps responses: response.data = {success: true, data: {rooms: [], total: N}}
+  const data = response.data as any
+  const actualData = data?.data || data
+  const rooms = actualData?.rooms || []
+  
+  console.log('[fetchRooms] Extracted rooms array:', rooms)
+  return rooms
 }
 
 async function fetchCategories(): Promise<ClassCategory[]> {
-  const response = await api.get<{ data: { categories: ClassCategory[] } }>('/api/class-categories')
+  const response = await api.get<{ categories: ClassCategory[]; total: number }>('/api/class-categories')
 
   if (response.error) {
     throw new Error(response.error.message || 'Failed to fetch categories')
   }
 
-  return response.data?.data?.categories || []
+  return response.data?.categories || []
 }
 
 async function createClass(data: CreateClassData): Promise<ClassWithAvailability> {
-  const response = await api.post<{ data: { class: ClassWithAvailability } }>('/api/classes', data)
+  const response = await api.post<{ class: ClassWithAvailability }>('/api/classes', data)
 
   if (response.error) {
+    console.error('[createClass] API error:', response.error)
     throw new Error(response.error.message || 'Failed to create class')
   }
 
-  return response.data?.data?.class as ClassWithAvailability
+  if (!response.data) {
+    console.error('[createClass] No data in response')
+    throw new Error('No class data returned from API')
+  }
+
+  const classData = response.data.class
+  if (!classData) {
+    console.error('[createClass] No class property in response data:', response.data)
+    throw new Error('Invalid API response structure - missing class property')
+  }
+
+  return classData
 }
 
 async function updateClass(id: string, data: Partial<CreateClassData>): Promise<ClassWithAvailability> {
-  const response = await api.put<{ data: { class: ClassWithAvailability } }>(`/api/classes/${id}`, data)
+  const response = await api.put<{ class: ClassWithAvailability }>(`/api/classes/${id}`, data)
 
   if (response.error) {
+    console.error('[updateClass] API error:', response.error)
     throw new Error(response.error.message || 'Failed to update class')
   }
 
-  return response.data?.data?.class as ClassWithAvailability
+  if (!response.data) {
+    console.error('[updateClass] No data in response')
+    throw new Error('No class data returned from API')
+  }
+
+  const classData = response.data.class
+  if (!classData) {
+    console.error('[updateClass] No class property in response data:', response.data)
+    throw new Error('Invalid API response structure - missing class property')
+  }
+
+  return classData
 }
 
 async function cancelClass(id: string): Promise<{ success: boolean; message: string; refundedBookings: number }> {
-  const response = await api.delete<{ data: { success: boolean; message: string; refundedBookings: number } }>(
+  const response = await api.delete<{ success: boolean; message: string; refundedBookings: number }>(
     `/api/classes/${id}`
   )
 
@@ -231,7 +296,7 @@ async function cancelClass(id: string): Promise<{ success: boolean; message: str
     throw new Error(response.error.message || 'Failed to cancel class')
   }
 
-  return response.data?.data || { success: false, message: 'Unknown error', refundedBookings: 0 }
+  return response.data || { success: false, message: 'Unknown error', refundedBookings: 0 }
 }
 
 // =====================================================
@@ -256,6 +321,8 @@ export function useClass(id: string) {
     enabled: !!id,
     staleTime: 0,
     gcTime: 10 * 60 * 1000,
+    retry: 1,
+    throwOnError: false, // Don't throw errors to component; handle gracefully
   })
 }
 

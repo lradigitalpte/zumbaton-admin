@@ -53,7 +53,7 @@ export default function TutorClassesPage() {
           id: child.id,
           name: child.title,
           type: child.class_type.charAt(0).toUpperCase() + child.class_type.slice(1),
-          time: childTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+          time: childTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Singapore" }),
           duration: child.duration_minutes,
           room: child.room_name || child.location || "TBD",
           date: childTime.toISOString().split("T")[0],
@@ -72,7 +72,7 @@ export default function TutorClassesPage() {
         id: cls.id,
         name: cls.title,
         type: cls.class_type.charAt(0).toUpperCase() + cls.class_type.slice(1),
-        time: classTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+        time: classTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Singapore" }),
         duration: cls.duration_minutes,
         room: cls.room_name || cls.location || "TBD",
         date: classTime.toISOString().split("T")[0],
@@ -505,12 +505,14 @@ export default function TutorClassesPage() {
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            </svg>
-                            <span className="truncate">{classItem.room || "TBA"}</span>
-                          </div>
+                          {classItem.room && classItem.room !== "TBD" && classItem.room !== "TBA" && (
+                            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              </svg>
+                              <span className="truncate">{classItem.room}</span>
+                            </div>
+                          )}
                           <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                             <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
