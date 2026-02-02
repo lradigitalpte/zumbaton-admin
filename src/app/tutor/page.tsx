@@ -316,7 +316,9 @@ export default function TutorDashboardPage() {
                           <div className="h-10 w-px bg-gray-200 dark:bg-gray-700"></div>
                           <div>
                             <p className="font-medium text-gray-900 dark:text-white">{classItem.name}</p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{classItem.room}</p>
+                            {classItem.room && classItem.room !== "TBD" && classItem.room !== "TBA" && (
+                              <p className="text-sm text-gray-500 dark:text-gray-400">{classItem.room}</p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
