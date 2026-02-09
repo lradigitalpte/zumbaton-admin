@@ -298,6 +298,17 @@ export default function ClassesPage() {
         page: fetchPage.toString(),
         pageSize: fetchPageSize.toString(),
       });
+      
+      // Add status filter (except for "all" and "full" which require client-side filtering)
+      if (filter === "active") {
+        params.set("status", "scheduled");
+      } else if (filter === "cancelled") {
+        params.set("status", "cancelled");
+      } else if (filter === "completed") {
+        params.set("status", "completed");
+      }
+      // For "all" and "full", fetch all classes and filter on client side
+      
       if (dateFrom) {
         params.set("startDate", new Date(dateFrom + "T00:00:00.000Z").toISOString());
       }

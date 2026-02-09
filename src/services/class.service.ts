@@ -359,7 +359,10 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
     status,
   } = query
 
-  let dbQuery = supabase
+  // Use admin client to bypass RLS for admin operations
+  const adminClient = getSupabaseAdminClient()
+
+  let dbQuery = adminClient
     .from(TABLES.CLASSES)
     .select('*', { count: 'exact' })
     .order('scheduled_at', { ascending: true })
@@ -399,7 +402,7 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
   }
 
   // Get ALL classes for stats calculation (same date range as list when filtered)
-  let allClassesQuery = supabase
+  let allClassesQuery = adminClient
     .from(TABLES.CLASSES)
     .select('id, status, scheduled_at, duration_minutes, capacity')
     .order('scheduled_at', { ascending: true })
@@ -410,7 +413,7 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
   // Calculate stats from ALL classes in the filtered set (same date range as list)
   const now = new Date()
   let stats = {
-    total: count || 0,
+    total: (allClassesData?.length || 0),
     active: 0,
     completed: 0,
     cancelled: 0,
