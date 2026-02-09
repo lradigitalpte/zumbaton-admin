@@ -551,7 +551,7 @@ function NewClassPageContent() {
 
   // Get selected items for preview
   const selectedCategory = categories.find(c => c.id === formData.category);
-  const selectedInstructors = instructors.filter(i => formData.instructor.includes(i.id));
+  const selectedInstructors = Array.isArray(instructors) ? instructors.filter(i => formData.instructor.includes(i.id)) : [];
   const selectedRoom = rooms.find(r => r.id === formData.room);
   const isLoading = loadingInstructors || loadingRooms || loadingCategories || (isEditMode && loadingClass);
 

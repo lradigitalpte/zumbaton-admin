@@ -244,7 +244,7 @@ async function fetchCategories(): Promise<ClassCategory[]> {
 }
 
 async function createClass(data: CreateClassData): Promise<ClassWithAvailability> {
-  const response = await api.post<{ class: ClassWithAvailability }>('/api/classes', data)
+  const response = await api.post<{ success: boolean; data: ClassWithAvailability }>('/api/classes', data)
 
   if (response.error) {
     console.error('[createClass] API error:', response.error)
@@ -256,17 +256,17 @@ async function createClass(data: CreateClassData): Promise<ClassWithAvailability
     throw new Error('No class data returned from API')
   }
 
-  const classData = response.data.class
-  if (!classData) {
-    console.error('[createClass] No class property in response data:', response.data)
-    throw new Error('Invalid API response structure - missing class property')
+  const classData = response.data.data || response.data
+  if (!classData || typeof classData !== 'object') {
+    console.error('[createClass] No valid class data in response:', response.data)
+    throw new Error('Invalid API response structure - missing class data')
   }
 
-  return classData
+  return classData as ClassWithAvailability
 }
 
 async function updateClass(id: string, data: Partial<CreateClassData>): Promise<ClassWithAvailability> {
-  const response = await api.put<{ class: ClassWithAvailability }>(`/api/classes/${id}`, data)
+  const response = await api.put<{ success: boolean; data: ClassWithAvailability }>(`/api/classes/${id}`, data)
 
   if (response.error) {
     console.error('[updateClass] API error:', response.error)
@@ -278,13 +278,13 @@ async function updateClass(id: string, data: Partial<CreateClassData>): Promise<
     throw new Error('No class data returned from API')
   }
 
-  const classData = response.data.class
-  if (!classData) {
-    console.error('[updateClass] No class property in response data:', response.data)
-    throw new Error('Invalid API response structure - missing class property')
+  const classData = response.data.data || response.data
+  if (!classData || typeof classData !== 'object') {
+    console.error('[updateClass] No valid class data in response:', response.data)
+    throw new Error('Invalid API response structure - missing class data')
   }
 
-  return classData
+  return classData as ClassWithAvailability
 }
 
 async function cancelClass(id: string): Promise<{ success: boolean; message: string; refundedBookings: number }> {
