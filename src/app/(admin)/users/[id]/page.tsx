@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import SlidePanel from "@/components/ui/SlidePanel";
@@ -89,6 +89,8 @@ export default function UserDetailPage() {
   const [latestVoucher, setLatestVoucher] = useState<{ id: string; voucherCode: string; discountPercent: number; createdAt: string; sentAt: string | null; usedAt: string | null } | null>(null);
   const [isGeneratingVoucher, setIsGeneratingVoucher] = useState(false);
   const [isSendingVoucher, setIsSendingVoucher] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
 
   // Fetch user detail with React Query caching
@@ -981,6 +983,79 @@ export default function UserDetailPage() {
     }
   };
 
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.showToast('Please upload a JPEG, PNG, WebP, or GIF image.', 'error');
+      return;
+    }
+
+    // Validate file size (5MB max)
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast.showToast('Maximum file size is 5MB.', 'error');
+      return;
+    }
+
+    try {
+      setIsUploadingAvatar(true);
+      
+      // Create form data
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Get session token for upload
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        toast.showToast('Please sign in to upload avatar', 'error');
+        return;
+      }
+
+      const response = await fetch(`/api/users/${userId}/avatar`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        toast.showToast(errorData.error?.message || 'Failed to upload avatar', 'error');
+        return;
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        toast.showToast('User profile picture has been updated successfully.', 'success');
+        // Refresh user data
+        setForceRefreshKey(prev => prev + 1);
+        invalidateDetail(userId);
+        await refetch();
+      }
+    } catch (error) {
+      console.error('Error uploading avatar:', error);
+      toast.showToast('Failed to upload avatar', 'error');
+    } finally {
+      setIsUploadingAvatar(false);
+      // Reset file input
+      if (avatarInputRef.current) {
+        avatarInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleAvatarClick = () => {
+    if (avatarInputRef.current) {
+      avatarInputRef.current.click();
+    }
+  };
+
   const tabs: { key: TabType; label: string }[] = [
     { key: "overview", label: "Overview" },
     { key: "classes", label: "Class History" },
@@ -1064,17 +1139,38 @@ export default function UserDetailPage() {
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-4">
-            {userData.avatarUrl ? (
-              <img
-                src={userData.avatarUrl}
-                alt={userData.name}
-                className="h-16 w-16 rounded-full object-cover"
+            <div className="relative">
+              {userData.avatarUrl ? (
+                <img
+                  src={userData.avatarUrl}
+                  alt={userData.name}
+                  className="h-16 w-16 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-xl font-bold text-white">
+                  {getInitials(userData.name)}
+                </div>
+              )}
+              <button
+                onClick={handleAvatarClick}
+                disabled={isUploadingAvatar}
+                className="absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded-full bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Upload profile picture"
+              >
+                {isUploadingAvatar ? (
+                  <div className="h-3 w-3 animate-spin rounded-full border border-white border-t-transparent"></div>
+                ) : (
+                  <Upload className="h-3 w-3" />
+                )}
+              </button>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={handleAvatarChange}
+                className="hidden"
               />
-            ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-xl font-bold text-white">
-                {getInitials(userData.name)}
-              </div>
-            )}
+            </div>
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-xl font-bold text-gray-900 dark:text-white">{userData.name}</h1>

@@ -4,15 +4,18 @@ import { useState, useEffect } from "react";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import Input from "@/components/form/input/InputField";
 import { useSettings, useUpdateSettings, BusinessSettings, BookingSettings } from "@/hooks/useSettings";
+import { usePromotionsSettings, useUpdatePromotionsSettings, type PromotionsSettings } from "@/hooks/usePromotions";
 import { useOnboarding } from "@/components/onboarding";
 
 export default function GeneralSettingsPage() {
-  const [activeTab, setActiveTab] = useState<"business" | "booking">("business");
+  const [activeTab, setActiveTab] = useState<"business" | "booking" | "promotions">("business");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const { restart: restartOnboarding } = useOnboarding();
 
   const { data: settings, isLoading, error } = useSettings();
   const updateSettings = useUpdateSettings();
+  const { data: promoSettings, isLoading: promoLoading, error: promoError } = usePromotionsSettings();
+  const updatePromoSettings = useUpdatePromotionsSettings();
 
   const [businessSettings, setBusinessSettings] = useState<BusinessSettings>({
     businessName: "",
@@ -36,6 +39,15 @@ export default function GeneralSettingsPage() {
     reminderHoursBefore: 2,
   });
 
+  const [promotionSettings, setPromotionSettings] = useState<PromotionsSettings>({
+    early_bird_enabled: true,
+    early_bird_limit: 40,
+    early_bird_discount_percent: 10,
+    early_bird_validity_months: 2,
+    referral_enabled: true,
+    referral_discount_percent: 8,
+  });
+
   // Load settings from API
   useEffect(() => {
     if (settings) {
@@ -44,12 +56,22 @@ export default function GeneralSettingsPage() {
     }
   }, [settings]);
 
+  useEffect(() => {
+    if (promoSettings) {
+      setPromotionSettings(promoSettings);
+    }
+  }, [promoSettings]);
+
   const handleSave = async () => {
     try {
-      await updateSettings.mutateAsync({
-        business: businessSettings,
-        booking: bookingSettings,
-      });
+      if (activeTab === "promotions") {
+        await updatePromoSettings.mutateAsync(promotionSettings);
+      } else {
+        await updateSettings.mutateAsync({
+          business: businessSettings,
+          booking: bookingSettings,
+        });
+      }
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
@@ -66,6 +88,11 @@ export default function GeneralSettingsPage() {
     { id: "booking", label: "Booking Rules", icon: (
       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    )},
+    { id: "promotions", label: "Promotions", icon: (
+      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     )},
   ];
@@ -137,17 +164,17 @@ export default function GeneralSettingsPage() {
 
         {/* Content */}
         <div className="lg:col-span-3">
-          {isLoading ? (
+          {isLoading || promoLoading ? (
             <div className="rounded-2xl border border-gray-200 bg-white p-12 dark:border-gray-700 dark:bg-gray-800 flex items-center justify-center">
               <div className="text-center">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent mx-auto mb-4" />
                 <p className="text-sm text-gray-500 dark:text-gray-400">Loading settings...</p>
               </div>
             </div>
-          ) : error ? (
+          ) : error || promoError ? (
             <div className="rounded-2xl border border-red-200 bg-red-50 p-6 dark:border-red-800 dark:bg-red-900/20">
               <p className="text-sm text-red-800 dark:text-red-300">
-                Failed to load settings: {error instanceof Error ? error.message : 'Unknown error'}
+                Failed to load settings: {error instanceof Error ? error.message : promoError instanceof Error ? promoError.message : 'Unknown error'}
               </p>
             </div>
           ) : (
@@ -371,6 +398,120 @@ export default function GeneralSettingsPage() {
               </div>
             )}
 
+            {/* Promotions Tab */}
+            {activeTab === "promotions" && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Promotions & Discounts</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Manage early bird and referral discount programs</p>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Early Bird Section */}
+                  <div className="rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-800 p-6">
+                    <div className="flex items-start justify-between mb-6">
+                      <div>
+                        <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-1">Early Bird Program</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">Offer discounts to new users during their first months</p>
+                      </div>
+                      <button
+                        onClick={() => setPromotionSettings({ ...promotionSettings, early_bird_enabled: !promotionSettings.early_bird_enabled })}
+                        className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors ${
+                          promotionSettings.early_bird_enabled ? "bg-amber-600 dark:bg-amber-700" : "bg-gray-300 dark:bg-gray-600"
+                        }`}
+                      >
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          promotionSettings.early_bird_enabled ? "translate-x-6" : "translate-x-1"
+                        }`} />
+                      </button>
+                    </div>
+
+                    {promotionSettings.early_bird_enabled && (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <div>
+                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">User Limit</label>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={promotionSettings.early_bird_limit}
+                              onChange={(e) => setPromotionSettings({ ...promotionSettings, early_bird_limit: Number(e.target.value) })}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">Maximum number of users eligible for early bird discount</p>
+                          </div>
+
+                          <div>
+                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Discount Percentage</label>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={promotionSettings.early_bird_discount_percent}
+                                onChange={(e) => setPromotionSettings({ ...promotionSettings, early_bird_discount_percent: Number(e.target.value) })}
+                              />
+                              <span className="text-sm text-gray-500">%</span>
+                            </div>
+                            <p className="mt-1 text-xs text-gray-500">Discount offered to early bird users</p>
+                          </div>
+
+                          <div className="sm:col-span-2">
+                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Validity Period (Months)</label>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={promotionSettings.early_bird_validity_months}
+                              onChange={(e) => setPromotionSettings({ ...promotionSettings, early_bird_validity_months: Number(e.target.value) })}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">How long the early bird discount is valid after registration</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Referral Section */}
+                  <div className="rounded-xl bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 border border-blue-200 dark:border-blue-800 p-6">
+                    <div className="flex items-start justify-between mb-6">
+                      <div>
+                        <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-1">Referral Program</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">Reward users for referring friends to Zumbaton</p>
+                      </div>
+                      <button
+                        onClick={() => setPromotionSettings({ ...promotionSettings, referral_enabled: !promotionSettings.referral_enabled })}
+                        className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors ${
+                          promotionSettings.referral_enabled ? "bg-blue-600 dark:bg-blue-700" : "bg-gray-300 dark:bg-gray-600"
+                        }`}
+                      >
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          promotionSettings.referral_enabled ? "translate-x-6" : "translate-x-1"
+                        }`} />
+                      </button>
+                    </div>
+
+                    {promotionSettings.referral_enabled && (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Discount Percentage</label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={promotionSettings.referral_discount_percent}
+                              onChange={(e) => setPromotionSettings({ ...promotionSettings, referral_discount_percent: Number(e.target.value) })}
+                            />
+                            <span className="text-sm text-gray-500">%</span>
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500">Discount amount for referred users</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
 
             {/* Save Button */}
             <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
@@ -379,10 +520,10 @@ export default function GeneralSettingsPage() {
               </button>
               <button
                 onClick={handleSave}
-                disabled={updateSettings.isPending || isLoading}
+                disabled={(activeTab === "promotions" ? updatePromoSettings.isPending : updateSettings.isPending) || isLoading || promoLoading}
                 className="px-6 py-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
               >
-                {updateSettings.isPending ? (
+                {(activeTab === "promotions" ? updatePromoSettings.isPending : updateSettings.isPending) ? (
                   <>
                     <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -394,9 +535,9 @@ export default function GeneralSettingsPage() {
                   "Save Changes"
                 )}
               </button>
-              {updateSettings.isError && (
+              {(updateSettings.isError || updatePromoSettings.isError) && (
                 <div className="mt-2 text-sm text-red-600 dark:text-red-400">
-                  {updateSettings.error?.message || "Failed to save settings"}
+                  {updateSettings.error?.message || updatePromoSettings.error?.message || "Failed to save settings"}
                 </div>
               )}
             </div>

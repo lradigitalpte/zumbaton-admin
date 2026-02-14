@@ -498,8 +498,18 @@ export async function createUser(
 ): Promise<UserProfile> {
   await requirePermission(requesterId, 'users', 'edit_all')
 
+  // Check if early bird is enabled in promotions settings
+  const supabase = getSupabaseAdminClient()
+  const { data: promoSettings } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('key', 'promotions')
+    .single()
+
+  const earlyBirdEnabled = promoSettings?.value?.early_bird_enabled ?? true
+
   // Create auth user with role in metadata (this allows immediate auth without DB query)
-  const { data: authData, error: authError } = await getSupabaseAdminClient().auth.admin.createUser({
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email: data.email,
     password: data.password,
     email_confirm: true,
@@ -520,7 +530,7 @@ export async function createUser(
   await new Promise(resolve => setTimeout(resolve, 100))
 
   // Profile should be created automatically via the on_auth_user_created trigger
-  const { data: profileData, error: profileError } = await getSupabaseAdminClient()
+  const { data: profileData, error: profileError } = await supabase
     .from('user_profiles')
     .select('*')
     .eq('id', authData.user.id)
@@ -528,7 +538,7 @@ export async function createUser(
 
   if (profileError || !profileData) {
     // If profile wasn't created by trigger, create it manually
-    const { data: newProfile, error: insertError } = await getSupabaseAdminClient()
+    const { data: newProfile, error: insertError } = await supabase
       .from('user_profiles')
       .insert({
         id: authData.user.id,
@@ -541,12 +551,29 @@ export async function createUser(
         physical_form_url: data.physicalFormUrl || null,
         username: data.username ? data.username.trim().toLowerCase() : null,
         guardian_email: data.guardianEmail ? data.guardianEmail.trim().toLowerCase() : null,
+        early_bird_eligible: false, // Explicitly set to false, trigger will override if enabled
       })
       .select()
       .single()
 
     if (insertError) {
       throw new ApiError('SERVER_ERROR', 'Failed to create user profile', 500, insertError)
+    }
+
+    // If early bird is disabled, ensure it's not set
+    if (!earlyBirdEnabled && newProfile.early_bird_eligible) {
+      await supabase
+        .from('user_profiles')
+        .update({
+          early_bird_eligible: false,
+          early_bird_granted_at: null,
+          early_bird_expires_at: null,
+        })
+        .eq('id', authData.user.id)
+      
+      newProfile.early_bird_eligible = false
+      newProfile.early_bird_granted_at = null
+      newProfile.early_bird_expires_at = null
     }
 
     // Audit log
@@ -559,6 +586,22 @@ export async function createUser(
     })
 
     return toUserProfile(newProfile)
+  }
+
+  // If early bird is disabled, remove it from the triggered profile
+  if (!earlyBirdEnabled && profileData.early_bird_eligible) {
+    await supabase
+      .from('user_profiles')
+      .update({
+        early_bird_eligible: false,
+        early_bird_granted_at: null,
+        early_bird_expires_at: null,
+      })
+      .eq('id', authData.user.id)
+    
+    profileData.early_bird_eligible = false
+    profileData.early_bird_granted_at = null
+    profileData.early_bird_expires_at = null
   }
 
   // If the profile was created by trigger but with wrong role/fields, update it
@@ -581,7 +624,14 @@ export async function createUser(
     if (data.username) updateData.username = data.username.trim().toLowerCase()
     if (data.guardianEmail !== undefined) updateData.guardian_email = data.guardianEmail ? data.guardianEmail.trim().toLowerCase() : null
     
-    const { data: updatedProfile, error: updateError } = await getSupabaseAdminClient()
+    // Also remove early bird if disabled
+    if (!earlyBirdEnabled) {
+      updateData.early_bird_eligible = false
+      updateData.early_bird_granted_at = null
+      updateData.early_bird_expires_at = null
+    }
+    
+    const { data: updatedProfile, error: updateError } = await supabase
       .from('user_profiles')
       .update(updateData)
       .eq('id', authData.user.id)

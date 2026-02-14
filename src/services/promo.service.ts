@@ -77,13 +77,38 @@ export async function checkReferralEligibility(userId: string): Promise<{
 }
 
 /**
- * Check if user is eligible for early bird discount (15% off, first 50 signups)
+ * Check if user is eligible for early bird discount
+ * First checks if early bird is enabled in promotions settings
  */
 export async function checkEarlyBirdEligibility(userId: string): Promise<{
   eligible: boolean
   discountPercent: number
 }> {
   const supabase = getSupabaseAdminClient()
+
+  // Check if early bird is enabled in settings
+  const { data: settings, error: settingsError } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('key', 'promotions')
+    .single()
+
+  // If settings table doesn't exist or record not found, use defaults
+  let promosSettings = {
+    early_bird_enabled: true,
+    early_bird_discount_percent: 10,
+  }
+
+  if (!settingsError && settings?.value) {
+    promosSettings = settings.value
+  }
+
+  if (!promosSettings.early_bird_enabled) {
+    return {
+      eligible: false,
+      discountPercent: 0,
+    }
+  }
 
   // Check if user is marked as early bird eligible
   const { data: user } = await supabase
@@ -99,11 +124,11 @@ export async function checkEarlyBirdEligibility(userId: string): Promise<{
     }
   }
 
-  // Early bird promo: 10% for first N users, valid for 2 months after granted
-  // Users can use this discount multiple times during the validity period
+  // Early bird promo: discount for first N users, valid for months defined in settings
+  const discountPercent = promosSettings.early_bird_discount_percent || 10
   return {
     eligible: true,
-    discountPercent: 10, // Updated to match web app
+    discountPercent,
   }
 }
 
