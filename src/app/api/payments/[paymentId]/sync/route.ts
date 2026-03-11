@@ -62,6 +62,24 @@ async function handleSyncPayment(
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
       console.error('[AdminSync] HitPay API error:', errMsg)
+
+      // HitPay returned 404 — payment request doesn't exist in HitPay at all
+      // (likely a sandbox/test payment or an abandoned checkout). Mark as failed.
+      if (errMsg.toLowerCase().includes('no query results')) {
+        await supabaseAdmin
+          .from('payments')
+          .update({ status: 'failed', updated_at: new Date().toISOString() })
+          .eq('id', paymentId)
+        return NextResponse.json(
+          {
+            error: 'not_found_on_hitpay',
+            message: 'This payment request was not found on HitPay (possibly a test/abandoned payment). It has been marked as failed.',
+            markedFailed: true,
+          },
+          { status: 404 }
+        )
+      }
+
       return NextResponse.json({ error: `Failed to reach HitPay API: ${errMsg}` }, { status: 502 })
     }
 

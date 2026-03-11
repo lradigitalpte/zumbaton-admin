@@ -62,6 +62,8 @@ export function useSyncPayment() {
         tokensIssued?: number
         packageName?: string
         hitpayStatus?: string
+        error?: string
+        markedFailed?: boolean
       }>(`/api/payments/${paymentId}/sync`, {})
 
       if (response.error) {
@@ -69,10 +71,24 @@ export function useSyncPayment() {
           ...prev,
           [paymentId]: { success: false, message: response.error?.message || 'Sync failed' },
         }))
+        setSyncingIds(prev => { const next = new Set(prev); next.delete(paymentId); return next })
         return false
       }
 
       const result = response.data
+
+      // Payment was not found on HitPay — marked as failed
+      if (result?.error === 'not_found_on_hitpay' || result?.markedFailed) {
+        setSyncResults(prev => ({
+          ...prev,
+          [paymentId]: { success: false, message: '⚠ Not found on HitPay — marked as failed (test/abandoned payment)' },
+        }))
+        await queryClient.invalidateQueries({ queryKey: ['pending-payments'] })
+        await queryClient.invalidateQueries({ queryKey: ['token-transactions'] })
+        setSyncingIds(prev => { const next = new Set(prev); next.delete(paymentId); return next })
+        return false
+      }
+
       const isConfirmed = result?.status === 'succeeded' || result?.status === 'completed'
 
       setSyncResults(prev => ({
@@ -86,7 +102,6 @@ export function useSyncPayment() {
       }))
 
       if (isConfirmed) {
-        // Refresh both queries
         await queryClient.invalidateQueries({ queryKey: ['pending-payments'] })
         await queryClient.invalidateQueries({ queryKey: ['token-transactions'] })
       }

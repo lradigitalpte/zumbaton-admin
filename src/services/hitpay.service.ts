@@ -21,7 +21,7 @@ import crypto from 'crypto'
 const HITPAY_ENV = process.env.HITPAY_ENV || 'sandbox'
 
 const HITPAY_API_URL =
-  HITPAY_ENV === 'production'
+  HITPAY_ENV === 'production' || HITPAY_ENV === 'live'
     ? 'https://api.hit-pay.com/v1'
     : 'https://api.sandbox.hit-pay.com/v1'
 
