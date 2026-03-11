@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import Input from "@/components/form/input/InputField";
 import { useTokenTransactions, TokenTransaction, TransactionType } from "@/hooks/useTokenTransactions";
+import { usePendingPayments, useSyncPayment } from "@/hooks/usePendingPayments";
 
 // Map API transaction types to display types
 type DisplayTransactionType = "purchase" | "hold" | "consume" | "release" | "adjustment" | "expire";
@@ -101,6 +102,10 @@ export default function TokenTransactionsPage() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [dateRange, setDateRange] = useState<"today" | "week" | "month" | "all">("all");
   const [selectedTransaction, setSelectedTransaction] = useState<DisplayTransaction | null>(null);
+
+  // Pending payments
+  const { data: pendingPayments = [], isLoading: pendingLoading, refetch: refetchPending } = usePendingPayments();
+  const { syncPayment, syncingIds, syncResults } = useSyncPayment();
 
   // Calculate date range params for API
   const dateParams = useMemo(() => {
@@ -244,7 +249,158 @@ export default function TokenTransactionsPage() {
           </svg>
           Export Report
         </button>
+        {pendingPayments.length > 0 && (
+          <div className="inline-flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 dark:bg-amber-900/20 dark:border-amber-700 px-4 py-2.5">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">
+              {pendingPayments.length}
+            </span>
+            <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">Pending Payment{pendingPayments.length !== 1 ? 's' : ''}</span>
+          </div>
+        )}
       </div>
+
+      {/* Pending Payments Section */}
+      {(pendingPayments.length > 0 || pendingLoading) && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/10 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-amber-200 dark:border-amber-700">
+            <div className="flex items-center gap-2">
+              <svg className="h-5 w-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                Pending Payments — paid on HitPay but not yet confirmed in system?
+              </h3>
+            </div>
+            <button
+              onClick={() => refetchPending()}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-800/30 transition-colors"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
+          </div>
+
+          {pendingLoading ? (
+            <div className="flex items-center gap-3 px-4 py-4">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-500 border-t-transparent"></div>
+              <span className="text-sm text-amber-700 dark:text-amber-400">Checking pending payments…</span>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-amber-200 dark:border-amber-700">
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">User</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">Package</th>
+                    <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">Amount</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">HitPay ID</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">Created</th>
+                    <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-amber-100 dark:divide-amber-800/30">
+                  {pendingPayments.map((pp) => {
+                    const isSyncing = syncingIds.has(pp.id);
+                    const result = syncResults[pp.id];
+                    const amount = (pp.amountCents / 100).toFixed(2);
+                    const hasDiscount = pp.discountPercent > 0;
+                    return (
+                      <tr key={pp.id} className="hover:bg-amber-100/50 dark:hover:bg-amber-800/10 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${getAvatarColor(pp.userName)} text-white text-xs font-semibold`}>
+                              {getInitials(pp.userName)}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900 dark:text-white">{pp.userName}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">{pp.userEmail}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div>
+                            <p className="text-sm text-gray-900 dark:text-white">{pp.packageName}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{pp.tokenCount} tokens</p>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div>
+                            <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                              {pp.currency} {amount}
+                            </span>
+                            {hasDiscount && (
+                              <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                                -{pp.discountPercent}% {pp.promoType === 'early_bird' ? '(early bird)' : pp.promoType === 'referral' ? '(referral)' : ''}
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="font-mono text-xs text-gray-500 dark:text-gray-400">
+                            {pp.hitpayPaymentRequestId ? pp.hitpayPaymentRequestId.slice(0, 12) + '…' : '—'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {formatDate(pp.createdAt)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            <button
+                              onClick={() => syncPayment(pp.id)}
+                              disabled={isSyncing}
+                              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                                isSyncing
+                                  ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-700'
+                                  : result?.success
+                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                    : result && !result.success
+                                      ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 hover:bg-red-100'
+                                      : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm hover:shadow-md'
+                              }`}
+                            >
+                              {isSyncing ? (
+                                <>
+                                  <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                  </svg>
+                                  Checking…
+                                </>
+                              ) : result?.success ? (
+                                <>
+                                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                  Confirmed
+                                </>
+                              ) : (
+                                <>
+                                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                  </svg>
+                                  Sync
+                                </>
+                              )}
+                            </button>
+                            {result && (
+                              <span className={`text-xs max-w-28 text-center ${result.success ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                                {result.message}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
