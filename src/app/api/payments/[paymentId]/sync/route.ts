@@ -48,12 +48,21 @@ async function handleSyncPayment(
     }
 
     // 3. Check HitPay
+    if (!process.env.HITPAY_API_KEY) {
+      console.error('[AdminSync] HITPAY_API_KEY is not set in environment variables')
+      return NextResponse.json(
+        { error: 'HitPay API key not configured on this server. Add HITPAY_API_KEY to environment variables.' },
+        { status: 503 }
+      )
+    }
+
     let hitpayData
     try {
       hitpayData = await getPaymentRequestStatus(payment.hitpay_payment_request_id)
     } catch (err) {
-      console.error('[AdminSync] HitPay API error:', err)
-      return NextResponse.json({ error: 'Failed to reach HitPay API' }, { status: 502 })
+      const errMsg = err instanceof Error ? err.message : String(err)
+      console.error('[AdminSync] HitPay API error:', errMsg)
+      return NextResponse.json({ error: `Failed to reach HitPay API: ${errMsg}` }, { status: 502 })
     }
 
     const hitpayStatus = hitpayData.status?.toLowerCase()

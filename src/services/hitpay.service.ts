@@ -152,10 +152,11 @@ async function hitpayRequest<T>(
 
   const url = `${HITPAY_API_URL}${endpoint}`
 
+  const method = options.method?.toUpperCase() ?? 'GET'
   const response = await fetch(url, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(method !== 'GET' && method !== 'DELETE' ? { 'Content-Type': 'application/json' } : {}),
       'X-BUSINESS-API-KEY': HITPAY_API_KEY,
       ...options.headers,
     },
