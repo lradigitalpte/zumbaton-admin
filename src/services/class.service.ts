@@ -357,6 +357,7 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
     level,
     instructorId,
     status,
+    sort = 'scheduled_at_asc',
   } = query
 
   // Use admin client to bypass RLS for admin operations
@@ -365,7 +366,7 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
   let dbQuery = adminClient
     .from(TABLES.CLASSES)
     .select('*', { count: 'exact' })
-    .order('scheduled_at', { ascending: true })
+    .order('scheduled_at', { ascending: sort !== 'scheduled_at_desc' })
 
   if (startDate) {
     dbQuery = dbQuery.gte('scheduled_at', startDate)
@@ -405,7 +406,7 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
   let allClassesQuery = adminClient
     .from(TABLES.CLASSES)
     .select('id, status, scheduled_at, duration_minutes, capacity')
-    .order('scheduled_at', { ascending: true })
+    .order('scheduled_at', { ascending: sort !== 'scheduled_at_desc' })
   if (startDate) allClassesQuery = allClassesQuery.gte('scheduled_at', startDate)
   if (endDate) allClassesQuery = allClassesQuery.lte('scheduled_at', endDate)
   const { data: allClassesData } = await allClassesQuery
@@ -857,6 +858,7 @@ export async function getClassAttendees(classId: string): Promise<ClassAttendees
 // Get upcoming classes (public)
 export async function getUpcomingClasses(limit: number = 10): Promise<ClassListResponse> {
   return listClasses({
+    sort: 'scheduled_at_asc',
     page: 1,
     pageSize: limit,
     startDate: new Date().toISOString(),

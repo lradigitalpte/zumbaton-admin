@@ -136,6 +136,7 @@ export const ClassListQuerySchema = z.object({
   level: ClassLevelSchema.optional(),
   instructorId: UuidSchema.optional(),
   status: ClassStatusSchema.optional(),
+  sort: z.enum(['scheduled_at_asc', 'scheduled_at_desc']).default('scheduled_at_asc'),
 })
 export type ClassListQuery = z.infer<typeof ClassListQuerySchema>
 

@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
       instructorId: searchParams.get('instructorId') || undefined,
       startDate: searchParams.get('startDate') || undefined,
       endDate: searchParams.get('endDate') || undefined,
+      sort: searchParams.get('sort') || undefined,
       page: searchParams.get('page') ? parseInt(searchParams.get('page')!) : 1,
       pageSize: searchParams.get('pageSize') ? parseInt(searchParams.get('pageSize')!) : 20,
     }

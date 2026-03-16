@@ -32,6 +32,8 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') // 'upcoming', 'past', 'today', 'all'
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
+    const startDate = searchParams.get('startDate') || undefined
+    const endDate = searchParams.get('endDate') || undefined
 
     // First, get instructor's name to check for multiple instructor classes
     const { data: instructorProfile } = await supabase
@@ -43,6 +45,7 @@ export async function GET(request: NextRequest) {
     const instructorName = instructorProfile?.name || ''
 
     const now = new Date()
+    const ascending = status === 'upcoming' || status === 'today'
     let query = supabase
       .from('classes')
       .select(`
@@ -70,7 +73,15 @@ export async function GET(request: NextRequest) {
       `, { count: 'exact' })
       // Include classes where instructor is primary OR in multiple instructors list
       .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
-      .order('scheduled_at', { ascending: status !== 'past' })
+      .order('scheduled_at', { ascending })
+
+    if (startDate) {
+      query = query.gte('scheduled_at', startDate)
+    }
+
+    if (endDate) {
+      query = query.lte('scheduled_at', endDate)
+    }
 
     // Apply status filter
     if (status === 'upcoming') {
@@ -153,7 +164,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Group recurring and course classes
-    const groupedClasses = groupRecurringAndCourseClasses(classesWithBookings, bookingData)
+    const groupedClasses = groupRecurringAndCourseClasses(classesWithBookings, bookingData, ascending)
 
     return NextResponse.json({
       success: true,
@@ -181,7 +192,8 @@ export async function GET(request: NextRequest) {
  */
 function groupRecurringAndCourseClasses(
   classes: any[],
-  bookingData: Record<string, { total: number; attended: number }>
+  bookingData: Record<string, { total: number; attended: number }>,
+  ascending: boolean
 ): any[] {
   const singleClasses: any[] = []
   const recurringParents: any[] = []
@@ -310,7 +322,7 @@ function groupRecurringAndCourseClasses(
   return [...singleClasses, ...recurringParents, ...courseParents].sort((a, b) => {
     const dateA = new Date(a.scheduled_at).getTime()
     const dateB = new Date(b.scheduled_at).getTime()
-    return dateA - dateB
+    return ascending ? (dateA - dateB) : (dateB - dateA)
   })
 }
 

@@ -3,7 +3,20 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import QRAttendanceModal from "@/components/attendance/QRAttendanceModal";
+import DateRangePicker from "@/components/common/DateRangePicker";
 import { useTutorClasses } from "@/hooks/useTutor";
+
+const SGT_TZ = "Asia/Singapore";
+
+function toSgtYmd(d: Date): string {
+  // en-CA yields YYYY-MM-DD
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: SGT_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
 
 interface ClassItem {
   id: string;
@@ -29,11 +42,14 @@ export default function TutorClassesPage() {
   const [selectedClass, setSelectedClass] = useState<ClassItem | null>(null);
   const [attendanceClass, setAttendanceClass] = useState<ClassItem | null>(null);
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  const [dateRange, setDateRange] = useState<{ from: string; to: string }>({ from: "", to: "" });
 
   // Fetch classes from API based on filter
   const { data, isLoading, error } = useTutorClasses({ 
     status: filter === "all" ? "all" : filter === "upcoming" ? "upcoming" : "past",
-    limit: 50 
+    limit: 50,
+    startDate: dateRange.from ? new Date(`${dateRange.from}T00:00:00+08:00`).toISOString() : undefined,
+    endDate: dateRange.to ? new Date(`${dateRange.to}T23:59:59.999+08:00`).toISOString() : undefined,
   });
 
   // Transform API data to component format
@@ -56,7 +72,7 @@ export default function TutorClassesPage() {
           time: childTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Singapore" }),
           duration: child.duration_minutes,
           room: child.room_name || child.location || "TBD",
-          date: childTime.toISOString().split("T")[0],
+          date: toSgtYmd(childTime),
           enrolled: child.bookedCount || 0,
           capacity: child.capacity,
           attended: child.attendedCount || 0,
@@ -75,7 +91,7 @@ export default function TutorClassesPage() {
         time: classTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Singapore" }),
         duration: cls.duration_minutes,
         room: cls.room_name || cls.location || "TBD",
-        date: classTime.toISOString().split("T")[0],
+        date: toSgtYmd(classTime),
         enrolled: cls.bookedCount,
         capacity: cls.capacity,
         attended: cls.attendedCount,
@@ -91,7 +107,8 @@ export default function TutorClassesPage() {
   const filteredClasses = classes;
 
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
+    // dateStr is YYYY-MM-DD; interpret as Singapore local date
+    const date = new Date(`${dateStr}T00:00:00+08:00`);
     
     // Check if date is valid
     if (isNaN(date.getTime())) {
@@ -134,8 +151,9 @@ export default function TutorClassesPage() {
   }, {} as Record<string, ClassItem[]>);
 
   const sortedDates = Object.keys(groupedClasses).sort((a, b) => {
-    if (filter === "past") return new Date(b).getTime() - new Date(a).getTime();
-    return new Date(a).getTime() - new Date(b).getTime();
+    // Upcoming: soonest first. All/Past: newest first.
+    if (filter === "upcoming") return new Date(a).getTime() - new Date(b).getTime();
+    return new Date(b).getTime() - new Date(a).getTime();
   });
 
   const stats = useMemo(() => ({
@@ -228,7 +246,7 @@ export default function TutorClassesPage() {
 
       {/* Filters and View Toggle */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
         {[
           { id: "all", label: "All Classes" },
           { id: "upcoming", label: "Upcoming" },
@@ -246,6 +264,13 @@ export default function TutorClassesPage() {
             {tab.label}
           </button>
         ))}
+        <div className="w-full sm:w-auto">
+          <DateRangePicker
+            value={dateRange}
+            onChange={(from, to) => setDateRange({ from, to })}
+            placeholder="Select date range"
+          />
+        </div>
         </div>
         <div className="flex items-center gap-2 border border-gray-200 dark:border-gray-700 rounded-xl p-1 bg-white dark:bg-gray-800">
           <button

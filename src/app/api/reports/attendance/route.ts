@@ -6,6 +6,51 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdminClient, TABLES } from '@/lib/supabase'
 
+const SGT_TIMEZONE = 'Asia/Singapore'
+const SGT_OFFSET_MS = 8 * 60 * 60 * 1000
+
+function getSgtWeekday(date: Date): string {
+  return new Intl.DateTimeFormat('en-US', { timeZone: SGT_TIMEZONE, weekday: 'long' }).format(date)
+}
+
+function getSgtHour(date: Date): number {
+  const hourStr = new Intl.DateTimeFormat('en-US', {
+    timeZone: SGT_TIMEZONE,
+    hour: 'numeric',
+    hour12: false,
+  }).format(date)
+  const hour = parseInt(hourStr, 10)
+  if (!Number.isFinite(hour)) return 0
+  if (hour === 24) return 0
+  return Math.max(0, Math.min(23, hour))
+}
+
+function getSgtYmd(date: Date): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: SGT_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+
+  const year = parseInt(parts.find(p => p.type === 'year')?.value || '', 10)
+  const month = parseInt(parts.find(p => p.type === 'month')?.value || '', 10)
+  const day = parseInt(parts.find(p => p.type === 'day')?.value || '', 10)
+
+  // Fallbacks should never really happen, but avoid NaNs.
+  return {
+    year: Number.isFinite(year) ? year : date.getUTCFullYear(),
+    month: Number.isFinite(month) ? month : date.getUTCMonth() + 1,
+    day: Number.isFinite(day) ? day : date.getUTCDate(),
+  }
+}
+
+function sgtStartOfDayUtc(date: Date): Date {
+  const { year, month, day } = getSgtYmd(date)
+  // 00:00 SGT == 16:00 UTC previous day (UTC+8)
+  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0) - SGT_OFFSET_MS)
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdminClient()
@@ -16,24 +61,28 @@ export async function GET(request: NextRequest) {
     
     // Calculate date ranges
     const now = new Date()
+    const { year: sgtYear, month: sgtMonth } = getSgtYmd(now)
     
     let rangeStart: Date
     let monthsToShow = 7
     switch (range) {
       case 'week':
-        rangeStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+        // Last 7 days based on Singapore calendar days
+        rangeStart = new Date(sgtStartOfDayUtc(now).getTime() - 6 * 24 * 60 * 60 * 1000)
         monthsToShow = 1
         break
       case 'quarter':
-        rangeStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)
+        rangeStart = new Date(
+          Date.UTC(sgtYear, Math.floor((sgtMonth - 1) / 3) * 3, 1, 0, 0, 0, 0) - SGT_OFFSET_MS
+        )
         monthsToShow = 3
         break
       case 'year':
-        rangeStart = new Date(now.getFullYear(), 0, 1)
+        rangeStart = new Date(Date.UTC(sgtYear, 0, 1, 0, 0, 0, 0) - SGT_OFFSET_MS)
         monthsToShow = 12
         break
       default: // month
-        rangeStart = new Date(now.getFullYear(), now.getMonth() - 6, 1)
+        rangeStart = new Date(Date.UTC(sgtYear, (sgtMonth - 1) - 6, 1, 0, 0, 0, 0) - SGT_OFFSET_MS)
         monthsToShow = 7
     }
 
@@ -146,7 +195,7 @@ async function getWeeklyBreakdown(
   for (const booking of bookings) {
     const scheduledAt = classScheduleMap[booking.class_id]
     if (scheduledAt) {
-      const dayOfWeek = days[new Date(scheduledAt).getDay()]
+      const dayOfWeek = getSgtWeekday(new Date(scheduledAt))
       dayStats[dayOfWeek].classes.add(booking.class_id)
       dayStats[dayOfWeek].booked++
       
@@ -234,7 +283,7 @@ async function getTimeSlotData(
   
   for (const cls of classes || []) {
     const scheduledDate = new Date(cls.scheduled_at)
-    const hour = scheduledDate.getHours()
+    const hour = getSgtHour(scheduledDate)
     const isPastClass = scheduledDate <= now
     
     // Group by hour only (not by exact minute)
@@ -495,17 +544,19 @@ async function getMonthlyTrends(
   now: Date
 ) {
   const trends = []
+  const { year: sgtYear, month: sgtMonth } = getSgtYmd(now)
   
   // Determine which months to show based on range
   let monthsToShow: Array<{ month: number; year: number }> = []
   
   if (range === 'week') {
     // For week, show daily breakdown for the last 7 days
+    const sgtMidnightToday = sgtStartOfDayUtc(now)
     for (let i = 6; i >= 0; i--) {
-      const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000)
-      if (date >= rangeStart) {
-        const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-        const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
+      const dayStart = new Date(sgtMidnightToday.getTime() - i * 24 * 60 * 60 * 1000)
+      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1)
+
+      if (dayEnd >= rangeStart) {
         
         // Get classes scheduled on this day
         const { data: classes } = await supabase
@@ -535,10 +586,15 @@ async function getMonthlyTrends(
         const total = attended + noShows + cancelled
         const rate = total > 0 ? Math.round((attended / total) * 100) : 0
         
-        const dayName = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        const dayName = new Intl.DateTimeFormat('en-US', {
+          timeZone: SGT_TIMEZONE,
+          month: 'short',
+          day: 'numeric',
+        }).format(dayStart)
+        const { year } = getSgtYmd(dayStart)
         trends.push({
           month: dayName,
-          year: date.getFullYear(),
+          year,
           attendance: attended,
           noShows,
           cancellations: cancelled,
@@ -549,23 +605,22 @@ async function getMonthlyTrends(
     return trends
   } else if (range === 'quarter') {
     // For quarter, show the 3 months in the quarter
-    const quarterStart = Math.floor(now.getMonth() / 3) * 3
+    const quarterStart = Math.floor((sgtMonth - 1) / 3) * 3
     for (let i = 0; i < 3; i++) {
       const monthIndex = quarterStart + i
-      const year = now.getFullYear()
-      monthsToShow.push({ month: monthIndex, year })
+      monthsToShow.push({ month: monthIndex, year: sgtYear })
     }
   } else if (range === 'year') {
     // For year, show all 12 months from January to December
     for (let i = 0; i < 12; i++) {
-      monthsToShow.push({ month: i, year: now.getFullYear() })
+      monthsToShow.push({ month: i, year: sgtYear })
     }
   } else {
     // For month, show last 7 months for context (including current month)
     // Calculate months going back from current month, handling year wrapping
     for (let i = 6; i >= 0; i--) {
-      const targetMonth = now.getMonth() - i
-      let year = now.getFullYear()
+      const targetMonth = (sgtMonth - 1) - i
+      let year = sgtYear
       let month = targetMonth
       
       // Handle year wrapping for negative months
@@ -579,26 +634,26 @@ async function getMonthlyTrends(
   }
   
   for (const { month, year } of monthsToShow) {
-    const date = new Date(year, month, 1)
-    const nextMonth = new Date(year, month + 1, 1)
-    const monthEnd = nextMonth > now ? now : nextMonth
+    const monthStart = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0) - SGT_OFFSET_MS)
+    const nextMonthStart = new Date(Date.UTC(year, month + 1, 1, 0, 0, 0, 0) - SGT_OFFSET_MS)
+    const monthEnd = nextMonthStart > now ? now : nextMonthStart
     
     // Skip future months
-    if (date > now) {
+    if (monthStart > now) {
       continue
     }
     
     // Only include data if it's within the selected range
-    if (date < rangeStart && nextMonth <= rangeStart) {
+    if (monthStart < rangeStart && nextMonthStart <= rangeStart) {
       // Skip months completely before the range
       continue
     }
     
-    const monthName = date.toLocaleDateString('en-US', { month: 'short' })
-    const actualYear = date.getFullYear() // Get the actual year from the date object
+    const monthName = new Intl.DateTimeFormat('en-US', { timeZone: SGT_TIMEZONE, month: 'short' }).format(monthStart)
+    const actualYear = year
     
     // Calculate the actual date range for this month within the selected range
-    const monthStartDate = date >= rangeStart ? date : rangeStart
+    const monthStartDate = monthStart >= rangeStart ? monthStart : rangeStart
     const monthEndDate = monthEnd
     
     // First, get classes scheduled in this month

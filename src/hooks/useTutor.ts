@@ -291,11 +291,15 @@ async function fetchTutorClasses(params?: {
   status?: 'upcoming' | 'past' | 'today' | 'all'
   limit?: number
   offset?: number
+  startDate?: string
+  endDate?: string
 }): Promise<{ classes: TutorClass[]; meta: { total: number; hasMore: boolean } }> {
   const searchParams = new URLSearchParams()
   if (params?.status) searchParams.set('status', params.status)
   if (params?.limit) searchParams.set('limit', params.limit.toString())
   if (params?.offset) searchParams.set('offset', params.offset.toString())
+  if (params?.startDate) searchParams.set('startDate', params.startDate)
+  if (params?.endDate) searchParams.set('endDate', params.endDate)
   
   const url = `/api/tutor/classes${searchParams.toString() ? `?${searchParams}` : ''}`
   const response = await api.get<{ success: boolean; data: { classes: TutorClass[]; meta: { total: number; hasMore: boolean } }; error?: { message: string } }>(url)
@@ -612,6 +616,8 @@ export function useTutorClasses(params?: {
   status?: 'upcoming' | 'past' | 'today' | 'all'
   limit?: number
   offset?: number
+  startDate?: string
+  endDate?: string
 }) {
   return useQuery({
     queryKey: ['tutor', 'classes', params],

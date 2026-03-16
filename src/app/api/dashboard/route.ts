@@ -6,9 +6,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdminClient, TABLES } from '@/lib/supabase'
 
+// Dashboard is live operational data; avoid caching.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdminClient()
+    const { searchParams } = new URL(request.url)
+    const debugMode = searchParams.get('debug') === '1'
+
+    type TodaysBookingRow = {
+      id: string
+      class_id: string
+      user_id: string | null
+      status: string
+    }
+
+    type AttendanceRow = {
+      id: string
+      booking_id: string | null
+    }
     
     // Calculate date ranges
     const now = new Date()
@@ -18,7 +36,7 @@ export async function GET(request: NextRequest) {
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0)
 
-    // Fetch all dashboard data in parallel
+    // Fetch all dashboard data in parallel (except bookings/attendance which depend on today's class IDs)
     const [
       // Total members (customers with role='user')
       totalMembersResult,
@@ -30,8 +48,6 @@ export async function GET(request: NextRequest) {
       
       // Today's classes and attendance
       todaysClasses,
-      todaysBookings,
-      todaysAttendance,
       
       // Revenue this month
       revenueThisMonth,
@@ -100,20 +116,6 @@ export async function GET(request: NextRequest) {
         .lte('scheduled_at', endOfToday.toISOString())
         .neq('status', 'cancelled')
         .order('scheduled_at', { ascending: true }),
-      
-      // Today's bookings for all classes
-      supabase
-        .from(TABLES.BOOKINGS)
-        .select('id, class_id, user_id, status')
-        .gte('booked_at', startOfToday.toISOString())
-        .lte('booked_at', endOfToday.toISOString()),
-      
-      // Today's attendance (check-ins)
-      supabase
-        .from(TABLES.ATTENDANCES)
-        .select('id, booking_id')
-        .gte('checked_in_at', startOfToday.toISOString())
-        .lte('checked_in_at', endOfToday.toISOString()),
       
       // Revenue this month
       supabase
@@ -209,6 +211,43 @@ export async function GET(request: NextRequest) {
         .limit(5),
     ])
 
+    // Fetch bookings/attendance for today's classes
+    // Important: do NOT filter bookings by booked_at; bookings may be created days before class.
+    // Align with the attendance endpoints: expected attendees = bookings with status confirmed/attended/no-show.
+    const todaysClassIds = (todaysClasses.data || []).map((c: { id: string }) => c.id)
+
+    const todaysBookingsResult = todaysClassIds.length > 0
+      ? await supabase
+          .from(TABLES.BOOKINGS)
+          .select('id, class_id, user_id, status')
+          .in('class_id', todaysClassIds)
+      : { data: [], error: null }
+
+    if ((todaysBookingsResult as any).error) {
+      console.error('[Dashboard API] Error fetching today bookings:', (todaysBookingsResult as any).error)
+    }
+
+    const allTodayBookings = (((todaysBookingsResult as any).data || []) as TodaysBookingRow[])
+    const expectedTodayBookings = allTodayBookings.filter(b =>
+      ['confirmed', 'attended', 'no-show'].includes(b.status)
+    )
+
+    const bookingIds = expectedTodayBookings.map(b => b.id)
+
+    const todaysAttendanceResult = bookingIds.length > 0
+      ? await supabase
+          .from(TABLES.ATTENDANCES)
+          .select('id, booking_id')
+          .in('booking_id', bookingIds)
+      : { data: [], error: null }
+
+    if ((todaysAttendanceResult as any).error) {
+      console.error('[Dashboard API] Error fetching today attendance:', (todaysAttendanceResult as any).error)
+    }
+
+    const todaysBookings = { data: expectedTodayBookings }
+    const todaysAttendance = { data: (((todaysAttendanceResult as any).data || []) as AttendanceRow[]) }
+
     // Calculate metrics
     const totalMembers = totalMembersResult.count || 0
     const membersLastMonth = totalMembersLastMonth.count || 0
@@ -233,7 +272,7 @@ export async function GET(request: NextRequest) {
     // Today's attendance
     const classesToday = (todaysClasses.data || []).length
     const attendanceToday = (todaysAttendance.data || []).length
-    const totalBookingsToday = (todaysBookings.data || []).filter(b => b.status !== 'cancelled').length
+    const totalBookingsToday = (todaysBookings.data || []).length
     const attendanceRate = totalBookingsToday > 0 
       ? Math.round((attendanceToday / totalBookingsToday) * 100)
       : 0
@@ -247,10 +286,11 @@ export async function GET(request: NextRequest) {
 
     // Format today's classes
     const classes = (todaysClasses.data || []).map(cls => {
-      const classBookings = (todaysBookings.data || []).filter(b => b.class_id === cls.id && b.status !== 'cancelled')
-      const classAttendance = (todaysAttendance.data || []).filter(a => {
-        const booking = classBookings.find(b => b.id === (a as { booking_id?: string }).booking_id)
-        return !!booking
+      const classBookings = (todaysBookings.data || []).filter((b: TodaysBookingRow) => b.class_id === cls.id)
+      const classBookingIds = new Set(classBookings.map(b => b.id))
+      const classAttendance = (todaysAttendance.data || []).filter((a: AttendanceRow) => {
+        const bookingId = a.booking_id
+        return !!bookingId && classBookingIds.has(bookingId)
       })
       
       // Determine status based on time
@@ -420,24 +460,68 @@ export async function GET(request: NextRequest) {
     activities.sort((a, b) => b.timestamp - a.timestamp)
     const recentActivity = activities.slice(0, 10).map(({ timestamp, ...rest }) => rest)
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        metrics: {
-          activeMembers: totalMembers,
-          usersChange: Number(usersChange.toFixed(1)),
-          tokensSold: tokensThisMonth,
-          tokensChange: Number(tokensChange.toFixed(1)),
-          classesToday,
-          attendanceToday,
-          attendanceRate,
-          revenue: Math.round(revenueThisMonthTotal),
-          revenueChange: Number(revenueChange.toFixed(1)),
+    // Optional debug payload to help diagnose mismatches between class list and booking/attendance counts
+    let debug: any = undefined
+    if (debugMode) {
+      const bookingStatusesByClass: Record<string, Record<string, number>> = {}
+
+      if (todaysClassIds.length > 0) {
+        const allBookingsForClassesResult = await supabase
+          .from(TABLES.BOOKINGS)
+          .select('class_id, status')
+          .in('class_id', todaysClassIds)
+
+        const allBookingsForClasses = ((allBookingsForClassesResult as any).data || []) as Array<{ class_id: string; status: string }>
+        for (const b of allBookingsForClasses) {
+          if (!bookingStatusesByClass[b.class_id]) bookingStatusesByClass[b.class_id] = {}
+          bookingStatusesByClass[b.class_id][b.status] = (bookingStatusesByClass[b.class_id][b.status] || 0) + 1
+        }
+
+        if ((allBookingsForClassesResult as any).error) {
+          console.error('[Dashboard API] Error fetching debug booking statuses:', (allBookingsForClassesResult as any).error)
+        }
+      }
+
+      debug = {
+        todaysClassIds,
+        todaysBookingsQueryError: (todaysBookingsResult as any).error || null,
+        todaysAttendanceQueryError: (todaysAttendanceResult as any).error || null,
+        todaysBookingsCount: (todaysBookings.data || []).length,
+        todaysAttendanceCount: (todaysAttendance.data || []).length,
+        bookingStatusesByClass,
+      }
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          meta: {
+            apiVersion: '2026-03-16-dashboard-attendance-v3',
+            serverTime: new Date().toISOString(),
+          },
+          metrics: {
+            activeMembers: totalMembers,
+            usersChange: Number(usersChange.toFixed(1)),
+            tokensSold: tokensThisMonth,
+            tokensChange: Number(tokensChange.toFixed(1)),
+            classesToday,
+            attendanceToday,
+            attendanceRate,
+            revenue: Math.round(revenueThisMonthTotal),
+            revenueChange: Number(revenueChange.toFixed(1)),
+          },
+          todaysClasses: classes,
+          recentActivity,
+          ...(debugMode ? { debug } : {}),
         },
-        todaysClasses: classes,
-        recentActivity,
       },
-    })
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        },
+      }
+    )
   } catch (error) {
     console.error('[Dashboard API] Error:', error)
     return NextResponse.json(

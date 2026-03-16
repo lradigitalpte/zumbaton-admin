@@ -298,6 +298,16 @@ export default function ClassesPage() {
         page: fetchPage.toString(),
         pageSize: fetchPageSize.toString(),
       });
+
+      // Sorting: prioritize what's actionable per view
+      // - Active/Full: soonest upcoming first
+      // - Completed/Cancelled: most recent first
+      // - All: keep most recent first (we'll do a past-vs-future grouping client-side)
+      if (filter === "active" || filter === "full") {
+        params.set("sort", "scheduled_at_asc");
+      } else {
+        params.set("sort", "scheduled_at_desc");
+      }
       
       // Add status filter (except for "all" and "full" which require client-side filtering)
       if (filter === "active") {
@@ -305,7 +315,8 @@ export default function ClassesPage() {
       } else if (filter === "cancelled") {
         params.set("status", "cancelled");
       } else if (filter === "completed") {
-        params.set("status", "completed");
+        // Do NOT filter by DB status. We treat "completed" as: class already ended.
+        // This ensures classes that ended today (but still stored as "scheduled") still appear.
       }
       // For "all" and "full", fetch all classes and filter on client side
       
@@ -314,6 +325,13 @@ export default function ClassesPage() {
       }
       if (dateTo) {
         params.set("endDate", new Date(dateTo + "T23:59:59.999Z").toISOString());
+      } else if (filter === "completed") {
+        // If no date range selected, cap completed view to "up to today"
+        // so we don't page through future classes and end up with an empty completed list.
+        const today = new Date();
+        const endOfToday = new Date(today);
+        endOfToday.setHours(23, 59, 59, 999);
+        params.set("endDate", endOfToday.toISOString());
       }
       
       const response = await api.get<{ data: ClassListResponse }>(`/api/classes?${params.toString()}`);
@@ -660,9 +678,30 @@ export default function ClassesPage() {
       );
     }
     // For other filters, show parent cards for recurring classes
-    return [...groupedClasses.single, ...groupedClasses.recurring].sort((a, b) => 
-      new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
-    );
+    const combined = [...groupedClasses.single, ...groupedClasses.recurring];
+    const now = new Date();
+
+    if (filter === "active" || filter === "full") {
+      // Upcoming-first (soonest first)
+      return combined.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+    }
+
+    if (filter === "cancelled") {
+      // Most recent first
+      return combined.sort((a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime());
+    }
+
+    // "All": show recent past first, then upcoming soonest.
+    const pastOrNow: DisplayClass[] = [];
+    const future: DisplayClass[] = [];
+    combined.forEach((c) => {
+      const t = new Date(c.scheduledAt).getTime();
+      if (t <= now.getTime()) pastOrNow.push(c);
+      else future.push(c);
+    });
+    pastOrNow.sort((a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime());
+    future.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+    return [...pastOrNow, ...future];
   }, [groupedClasses, classes, filter]);
 
   const openAttendanceModal = (cls: DisplayClass) => {
