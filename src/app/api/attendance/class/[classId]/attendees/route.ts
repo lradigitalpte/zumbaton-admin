@@ -163,6 +163,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         return a.name.localeCompare(b.name)
       })
 
+    const checkedInCount = attendees.filter(a => !!a.checkedInAt).length
+    const expectedCount = attendees.length
+
     // Format class data (Singapore time)
     const scheduledAt = new Date(classData.scheduled_at)
     const timeStr = scheduledAt.toLocaleTimeString('en-US', {
@@ -179,13 +182,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           name: classData.title,
           instructor: classData.instructor_name || 'Unknown Instructor',
           time: timeStr,
-            scheduledAt: classData.scheduled_at,
-            enrolled: allBookings?.length || 0, // Total bookings (enrolled)
-            capacity: classData.capacity,
-          },
-          attendees,
-          checkedIn: attendees.length,
-          expected: allBookings?.length || 0, // Total bookings (expected)
+          scheduledAt: classData.scheduled_at,
+          enrolled: expectedCount,
+          capacity: classData.capacity,
+        },
+        attendees,
+        checkedIn: checkedInCount,
+        expected: expectedCount,
       },
     })
   } catch (error) {

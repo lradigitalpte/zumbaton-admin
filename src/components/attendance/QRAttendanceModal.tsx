@@ -49,7 +49,7 @@ export default function QRAttendanceModal({
   isOpen, 
   onClose, 
   classInfo, 
-  realAttendees = [],
+  realAttendees,
   realEnrolled,
   autoFullscreen = false,
   onRefresh
@@ -60,6 +60,8 @@ export default function QRAttendanceModal({
   const [students, setStudents] = useState<Student[]>([]);
   const [activeTab, setActiveTab] = useState<"qr" | "list">("qr");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [internalAttendees, setInternalAttendees] = useState<Array<{ id: string; name: string; checkedInAt: string; avatar?: string }>>([]);
+  const [internalEnrolled, setInternalEnrolled] = useState<number | undefined>(undefined);
   const classIdRef = useRef(classInfo.id);
   const prevClassInfoEnrolledRef = useRef(classInfo.enrolled);
   const initialClassInfoRef = useRef(classInfo); // Store initial class info to prevent QR regeneration on data updates
@@ -68,11 +70,68 @@ export default function QRAttendanceModal({
   // Use refs to track previous values and avoid infinite loops
   const prevAttendeesRef = useRef<string>("");
   const prevEnrolledRef = useRef<number>(-1);
+
+  const fetchInternalAttendees = useCallback(async () => {
+    const response = await fetch(`/api/attendance/class/${classInfo.id}/attendees`, {
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch attendees (${response.status})`);
+    }
+
+    const result = await response.json();
+    if (!result?.success) {
+      throw new Error(result?.error?.message || 'Failed to fetch attendees');
+    }
+
+    const attendees = Array.isArray(result?.data?.attendees) ? result.data.attendees : [];
+    const enrolledFromApi = result?.data?.class?.enrolled;
+
+    setInternalAttendees(attendees);
+    setInternalEnrolled(typeof enrolledFromApi === 'number' ? enrolledFromApi : undefined);
+  }, [classInfo.id]);
+
+  // If parent doesn't supply realAttendees, fetch them here (used by /tutor/classes and any other call site)
+  useEffect(() => {
+    if (!isOpen) return;
+    if (realAttendees !== undefined && realAttendees !== null) return;
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        await fetchInternalAttendees();
+        if (!cancelled) {
+          setIsRefreshing(true);
+          setTimeout(() => setIsRefreshing(false), 500);
+        }
+      } catch {
+        // Swallow errors and leave the list empty; callers may not have access to the class
+      }
+    };
+
+    run();
+    const interval = setInterval(run, 10_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [isOpen, realAttendees, fetchInternalAttendees]);
+
+  const effectiveAttendees = useMemo(() => {
+    return (realAttendees !== undefined && realAttendees !== null) ? realAttendees : internalAttendees;
+  }, [realAttendees, internalAttendees]);
+
+  const effectiveEnrolled = useMemo(() => {
+    return realEnrolled ?? internalEnrolled ?? classInfo.enrolled;
+  }, [realEnrolled, internalEnrolled, classInfo.enrolled]);
   
   useEffect(() => {
     // Create a stable key from attendees to detect actual changes
-    const attendeesKey = realAttendees?.map(a => `${a.id}-${a.checkedInAt}`).join(",") || "";
-    const enrolled = realEnrolled ?? classInfo.enrolled;
+    const attendeesKey = effectiveAttendees?.map(a => `${a.id}-${a.checkedInAt}`).join(",") || "";
+    const enrolled = effectiveEnrolled;
     
     // Only update if data actually changed
     if (
@@ -93,36 +152,17 @@ export default function QRAttendanceModal({
       setTimeout(() => setIsRefreshing(false), 500);
     }
     
-    // Always use real attendees if provided (even if empty array)
-    // Only use demo data if realAttendees is explicitly undefined/null (not provided)
-    if (realAttendees !== undefined && realAttendees !== null) {
-      // Convert real attendees to student format
-      // If checkedInAt exists, they're checked in; otherwise pending
-      const realStudents: Student[] = realAttendees.map(attendee => ({
-        id: attendee.id,
-        name: attendee.name,
-        avatar: attendee.avatar,
-        checkedInAt: attendee.checkedInAt,
-        status: attendee.checkedInAt ? "checked-in" as const : "pending" as const,
-      }));
-      setStudents(realStudents);
-    } else {
-      // Generate demo students - only if realAttendees was not provided at all
-      const demoStudents: Student[] = [
-        { id: "1", name: "Maria Santos", status: "pending" },
-        { id: "2", name: "Juan Rodriguez", status: "pending" },
-        { id: "3", name: "Ana Garcia", status: "pending" },
-        { id: "4", name: "Carlos Mendoza", status: "pending" },
-        { id: "5", name: "Sofia Martinez", status: "pending" },
-        { id: "6", name: "Diego Lopez", status: "pending" },
-        { id: "7", name: "Isabella Cruz", status: "pending" },
-        { id: "8", name: "Miguel Torres", status: "pending" },
-        { id: "9", name: "Valentina Reyes", status: "pending" },
-        { id: "10", name: "Andres Vargas", status: "pending" },
-      ];
-      setStudents(demoStudents.slice(0, Math.min(enrolled, 10)));
-    }
-  }, [classInfo.enrolled, realAttendees, realEnrolled]);
+    // Convert attendees to student format
+    // If checkedInAt exists, they're checked in; otherwise pending
+    const mappedStudents: Student[] = (effectiveAttendees || []).map(attendee => ({
+      id: attendee.id,
+      name: attendee.name,
+      avatar: attendee.avatar,
+      checkedInAt: attendee.checkedInAt,
+      status: attendee.checkedInAt ? "checked-in" as const : "pending" as const,
+    }));
+    setStudents(mappedStudents);
+  }, [classInfo.enrolled, effectiveAttendees, effectiveEnrolled]);
 
   // Track when token was generated to calculate stable expiresAt
   const tokenGeneratedAtRef = useRef<number>(Date.now());
@@ -155,41 +195,6 @@ export default function QRAttendanceModal({
       });
     }, 1000);
 
-    return () => clearInterval(interval);
-  }, [isOpen]);
-
-  // Simulate students checking in (demo only - skip if real attendees provided)
-  useEffect(() => {
-    // Only simulate if realAttendees was not provided at all (not just empty)
-    if (!isOpen || (realAttendees !== undefined && realAttendees !== null)) return;
-
-    const simulateCheckIn = () => {
-      setStudents((prev) => {
-        const pendingStudents = prev.filter((s) => s.status === "pending");
-        if (pendingStudents.length === 0) return prev;
-
-        // Randomly check in a student
-        if (Math.random() > 0.7) {
-          const randomIndex = Math.floor(Math.random() * pendingStudents.length);
-          const studentToCheckIn = pendingStudents[randomIndex];
-          return prev.map((s) =>
-            s.id === studentToCheckIn.id
-              ? {
-                  ...s,
-                  status: "checked-in" as const,
-                  checkedInAt: new Date().toLocaleTimeString("en-US", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  }),
-                }
-              : s
-          );
-        }
-        return prev;
-      });
-    };
-
-    const interval = setInterval(simulateCheckIn, 3000);
     return () => clearInterval(interval);
   }, [isOpen]);
 
@@ -289,7 +294,7 @@ export default function QRAttendanceModal({
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <p className="text-2xl font-bold text-emerald-400">{checkedInCount}/{realEnrolled || classInfo.enrolled || students.length}</p>
+              <p className="text-2xl font-bold text-emerald-400">{checkedInCount}/{effectiveEnrolled || students.length}</p>
               <p className="text-xs text-gray-400">checked in</p>
             </div>
             {onRefresh && (
@@ -569,8 +574,8 @@ export default function QRAttendanceModal({
         {/* Footer */}
         <div className="flex items-center justify-between p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Attendance: {checkedInCount}/{realEnrolled || classInfo.enrolled || students.length} ({(() => {
-              const total = realEnrolled || classInfo.enrolled || students.length;
+            Attendance: {checkedInCount}/{effectiveEnrolled || students.length} ({(() => {
+              const total = effectiveEnrolled || students.length;
               return total > 0 ? Math.round((checkedInCount / total) * 100) : 0;
             })()}%)
           </p>
