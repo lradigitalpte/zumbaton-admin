@@ -507,10 +507,25 @@ export async function createUser(
     .single()
 
   const earlyBirdEnabled = promoSettings?.value?.early_bird_enabled ?? true
+  const normalizedEmail = data.email.trim().toLowerCase()
+
+  const buildProfileInsertData = (userId: string) => ({
+    id: userId,
+    email: normalizedEmail,
+    name: data.name,
+    phone: data.phone || null,
+    role: data.role,
+    date_of_birth: data.dateOfBirth || null,
+    blood_group: data.bloodGroup || null,
+    physical_form_url: data.physicalFormUrl || null,
+    username: data.username ? data.username.trim().toLowerCase() : null,
+    guardian_email: data.guardianEmail ? data.guardianEmail.trim().toLowerCase() : null,
+    early_bird_eligible: false,
+  })
 
   // Create auth user with role in metadata (this allows immediate auth without DB query)
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-    email: data.email,
+    email: normalizedEmail,
     password: data.password,
     email_confirm: true,
     user_metadata: {
@@ -521,6 +536,85 @@ export async function createUser(
 
   if (authError) {
     if (authError.message.includes('already')) {
+      // Recover from orphan state: auth user exists but profile row is missing.
+      const { data: authUsersData, error: listUsersError } = await supabase.auth.admin.listUsers({
+        page: 1,
+        perPage: 1000,
+      })
+
+      if (!listUsersError) {
+        const existingAuthUser = authUsersData?.users?.find(
+          user => user.email?.toLowerCase() === normalizedEmail
+        )
+
+        if (existingAuthUser) {
+          // Keep credentials/metadata in sync with admin-created account expectations.
+          await supabase.auth.admin.updateUserById(existingAuthUser.id, {
+            password: data.password,
+            email_confirm: true,
+            user_metadata: {
+              name: data.name,
+              role: data.role,
+            },
+          })
+
+          const { data: existingProfile, error: existingProfileError } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('id', existingAuthUser.id)
+            .single()
+
+          if (!existingProfileError && existingProfile) {
+            throw new ApiError('CONFLICT_ERROR', 'User with this email already exists', 409)
+          }
+
+          if (existingProfileError?.code === 'PGRST116') {
+            const { data: recoveredProfile, error: recoverInsertError } = await supabase
+              .from('user_profiles')
+              .insert(buildProfileInsertData(existingAuthUser.id))
+              .select()
+              .single()
+
+            let finalRecoveredProfile = recoveredProfile
+
+            if (recoverInsertError) {
+              if (recoverInsertError.code === '23505') {
+                const { data: racedProfile, error: racedProfileError } = await supabase
+                  .from('user_profiles')
+                  .select('*')
+                  .eq('id', existingAuthUser.id)
+                  .single()
+
+                if (racedProfileError || !racedProfile) {
+                  throw new ApiError('SERVER_ERROR', 'Failed to recover existing user profile', 500, {
+                    recoverInsertError,
+                    racedProfileError,
+                  })
+                }
+
+                finalRecoveredProfile = racedProfile
+              } else {
+                throw new ApiError('SERVER_ERROR', 'Failed to recover existing user profile', 500, recoverInsertError)
+              }
+            }
+
+            if (!finalRecoveredProfile) {
+              throw new ApiError('SERVER_ERROR', 'Failed to recover existing user profile', 500)
+            }
+
+            await createAuditLog({
+              userId: requesterId,
+              action: 'user.create',
+              resourceType: 'user_profiles',
+              resourceId: existingAuthUser.id,
+              newValues: { email: normalizedEmail, name: data.name, role: data.role },
+            })
+
+            return toUserProfile(finalRecoveredProfile)
+          }
+        }
+      }
+
       throw new ApiError('CONFLICT_ERROR', 'User with this email already exists', 409)
     }
     throw new ApiError('SERVER_ERROR', 'Failed to create user', 500, authError)
@@ -540,28 +634,40 @@ export async function createUser(
     // If profile wasn't created by trigger, create it manually
     const { data: newProfile, error: insertError } = await supabase
       .from('user_profiles')
-      .insert({
-        id: authData.user.id,
-        email: data.email,
-        name: data.name,
-        phone: data.phone || null,
-        role: data.role,
-        date_of_birth: data.dateOfBirth || null,
-        blood_group: data.bloodGroup || null,
-        physical_form_url: data.physicalFormUrl || null,
-        username: data.username ? data.username.trim().toLowerCase() : null,
-        guardian_email: data.guardianEmail ? data.guardianEmail.trim().toLowerCase() : null,
-        early_bird_eligible: false, // Explicitly set to false, trigger will override if enabled
-      })
+      .insert(buildProfileInsertData(authData.user.id))
       .select()
       .single()
 
+    let createdProfile = newProfile
+
     if (insertError) {
-      throw new ApiError('SERVER_ERROR', 'Failed to create user profile', 500, insertError)
+      // Trigger-based profile creation can race with the fallback insert.
+      if (insertError.code === '23505') {
+        const { data: existingProfile, error: existingProfileError } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', authData.user.id)
+          .single()
+
+        if (existingProfileError || !existingProfile) {
+          throw new ApiError('SERVER_ERROR', 'Failed to create user profile', 500, {
+            insertError,
+            existingProfileError,
+          })
+        }
+
+        createdProfile = existingProfile
+      } else {
+        throw new ApiError('SERVER_ERROR', 'Failed to create user profile', 500, insertError)
+      }
+    }
+
+    if (!createdProfile) {
+      throw new ApiError('SERVER_ERROR', 'Failed to create user profile', 500)
     }
 
     // If early bird is disabled, ensure it's not set
-    if (!earlyBirdEnabled && newProfile.early_bird_eligible) {
+    if (!earlyBirdEnabled && createdProfile.early_bird_eligible) {
       await supabase
         .from('user_profiles')
         .update({
@@ -571,9 +677,9 @@ export async function createUser(
         })
         .eq('id', authData.user.id)
       
-      newProfile.early_bird_eligible = false
-      newProfile.early_bird_granted_at = null
-      newProfile.early_bird_expires_at = null
+      createdProfile.early_bird_eligible = false
+      createdProfile.early_bird_granted_at = null
+      createdProfile.early_bird_expires_at = null
     }
 
     // Audit log
@@ -585,7 +691,7 @@ export async function createUser(
       newValues: { email: data.email, name: data.name, role: data.role },
     })
 
-    return toUserProfile(newProfile)
+    return toUserProfile(createdProfile)
   }
 
   // If early bird is disabled, remove it from the triggered profile

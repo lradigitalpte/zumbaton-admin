@@ -104,7 +104,6 @@ const AppHeader: React.FC = () => {
               className="h-10 w-auto dark:invert"
               src="/images/logo/zumbaton logo (transparent).png"
               alt="Zumbaton Logo"
-              priority
             />
           </Link>
 

@@ -11,6 +11,7 @@ import { listUsers, createUser } from '@/services/user.service'
 import { createAuditLog } from '@/services/rbac.service'
 import { CreateUserProfileRequestSchema, UserListQuerySchema } from '@/api/schemas/user'
 import { cachedResponse, CACHE_PRESETS } from '@/lib/api-cache'
+import { isApiError } from '@/lib/api-error'
 
 /**
  * GET /api/users - List all users (admin only)
@@ -123,6 +124,14 @@ async function handleCreateUser(
     return NextResponse.json({ data: profile }, { status: 201 })
   } catch (error) {
     console.error('Error creating user:', error)
+
+    if (isApiError(error)) {
+      return NextResponse.json(
+        { error: error.code, message: error.message, details: error.details },
+        { status: error.statusCode }
+      )
+    }
+
     return NextResponse.json(
       { error: 'Internal Server Error', message: 'Failed to create user' },
       { status: 500 }
