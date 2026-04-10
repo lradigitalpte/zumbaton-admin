@@ -54,6 +54,11 @@ export async function runAllScheduledJobs(): Promise<JobResult[]> {
     return await autoGenerateFutureClasses()
   }))
 
+  // Job 8: Sync pending HitPay payments
+  results.push(await runJob('syncPendingHitPayPayments', async () => {
+    return await syncPendingHitPayPayments()
+  }))
+
   return results
 }
 
@@ -112,6 +117,10 @@ export async function runWaitlistExpiryJob(): Promise<JobResult> {
 
 export async function runAutoGenerateClassesJob(): Promise<JobResult> {
   return runJob('autoGenerateFutureClasses', autoGenerateFutureClasses)
+}
+
+export async function runSyncPendingPaymentsJob(): Promise<JobResult> {
+  return runJob('syncPendingHitPayPayments', syncPendingHitPayPayments)
 }
 
 // Mark past classes as completed (daily job)
@@ -539,6 +548,176 @@ export async function sendTokenBalanceLowWarnings(): Promise<JobResult> {
 }
 
 // Summary of all jobs
+// Sync all pending HitPay payments (runs every 15 minutes)
+// Catches any payments that were completed on HitPay but whose webhook was missed
+export async function syncPendingHitPayPayments(): Promise<Record<string, unknown>> {
+  const { getSupabaseAdminClient } = await import('@/lib/supabase')
+  const { getPaymentRequestStatus } = await import('./hitpay.service')
+  const supabase = getSupabaseAdminClient()
+
+  if (!process.env.HITPAY_API_KEY) {
+    console.warn('[Cron: SyncPendingPayments] HITPAY_API_KEY not set — skipping')
+    return { skipped: true, reason: 'HITPAY_API_KEY not configured' }
+  }
+
+  // Fetch payments that are still pending but were created more than 5 minutes ago
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+  const { data: pendingPayments, error } = await supabase
+    .from('payments')
+    .select('id, user_id, package_id, hitpay_payment_request_id, promo_type, discount_percent, discount_amount_cents, referral_voucher_id, packages(*)')
+    .eq('status', 'pending')
+    .not('hitpay_payment_request_id', 'is', null)
+    .lt('created_at', fiveMinutesAgo)
+
+  if (error) {
+    throw new Error(`Failed to fetch pending payments: ${error.message}`)
+  }
+
+  if (!pendingPayments || pendingPayments.length === 0) {
+    return { synced: 0, failed: 0, skipped: 0, message: 'No pending payments to sync' }
+  }
+
+  let synced = 0
+  let failed = 0
+  let skipped = 0
+
+  for (const payment of pendingPayments) {
+    try {
+      let hitpayData
+      try {
+        hitpayData = await getPaymentRequestStatus(payment.hitpay_payment_request_id)
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        // Payment request not found on HitPay — mark as failed
+        if (errMsg.toLowerCase().includes('no query results')) {
+          await supabase
+            .from('payments')
+            .update({ status: 'failed', updated_at: new Date().toISOString() })
+            .eq('id', payment.id)
+          failed++
+        } else {
+          console.error(`[Cron: SyncPendingPayments] HitPay API error for payment ${payment.id}:`, errMsg)
+          skipped++
+        }
+        continue
+      }
+
+      const hitpayStatus = hitpayData.status?.toLowerCase()
+      const hitpayPaymentId = hitpayData.payments?.[0]?.id ?? null
+
+      if (hitpayStatus !== 'completed' && hitpayStatus !== 'succeeded') {
+        skipped++
+        continue
+      }
+
+      // Idempotency — check for existing user_package
+      const { data: existingPackage } = await supabase
+        .from('user_packages')
+        .select('id')
+        .eq('payment_id', payment.id)
+        .maybeSingle()
+
+      if (existingPackage) {
+        await supabase
+          .from('payments')
+          .update({ status: 'succeeded', hitpay_payment_id: hitpayPaymentId, updated_at: new Date().toISOString() })
+          .eq('id', payment.id)
+        synced++
+        continue
+      }
+
+      // Resolve package details
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let pkg = payment.packages as any
+      if (!pkg && payment.package_id) {
+        const { data: packageData } = await supabase
+          .from('packages')
+          .select('*')
+          .eq('id', payment.package_id)
+          .single()
+        pkg = packageData
+      }
+
+      if (!pkg) {
+        console.error(`[Cron: SyncPendingPayments] Package not found for payment ${payment.id}`)
+        skipped++
+        continue
+      }
+
+      // Update payment status
+      await supabase
+        .from('payments')
+        .update({ status: 'succeeded', hitpay_payment_id: hitpayPaymentId, updated_at: new Date().toISOString() })
+        .eq('id', payment.id)
+
+      // Create user_package (issue tokens)
+      const expiresAt = new Date()
+      expiresAt.setDate(expiresAt.getDate() + (pkg.validity_days as number))
+
+      const { data: userPackage, error: upError } = await supabase
+        .from('user_packages')
+        .insert({
+          user_id: payment.user_id,
+          package_id: payment.package_id,
+          payment_id: String(payment.id),
+          tokens_remaining: pkg.token_count as number,
+          tokens_held: 0,
+          expires_at: expiresAt.toISOString(),
+          status: 'active',
+        })
+        .select()
+        .single()
+
+      if (upError || !userPackage) {
+        console.error(`[Cron: SyncPendingPayments] Failed to create user_package for payment ${payment.id}:`, upError)
+        skipped++
+        continue
+      }
+
+      // Token transaction log
+      await supabase.from('token_transactions').insert({
+        user_id: payment.user_id,
+        user_package_id: userPackage.id,
+        transaction_type: 'purchase',
+        tokens_change: pkg.token_count as number,
+        tokens_before: 0,
+        tokens_after: pkg.token_count as number,
+        description: `Purchased ${pkg.name} (cron sync)`,
+        created_at: new Date().toISOString(),
+      })
+
+      // Record promo usage if applicable
+      if (payment.promo_type && payment.discount_percent && (payment.discount_percent as number) > 0) {
+        await supabase.from('promo_usage').insert({
+          user_id: payment.user_id,
+          promo_type: payment.promo_type,
+          discount_percent: payment.discount_percent,
+          discount_amount_cents: payment.discount_amount_cents || 0,
+          package_id: payment.package_id,
+          payment_id: payment.id,
+        })
+      }
+
+      // Mark voucher as used if applicable
+      const voucherId = (payment as { referral_voucher_id?: string | null }).referral_voucher_id
+      if (voucherId) {
+        await supabase
+          .from('referral_vouchers')
+          .update({ used_at: new Date().toISOString(), payment_id: payment.id })
+          .eq('id', voucherId)
+      }
+
+      console.log(`[Cron: SyncPendingPayments] Synced payment ${payment.id} — issued ${pkg.token_count} tokens to user ${payment.user_id}`)
+      synced++
+    } catch (err) {
+      console.error(`[Cron: SyncPendingPayments] Unexpected error for payment ${payment.id}:`, err)
+      skipped++
+    }
+  }
+
+  return { synced, failed, skipped, total: pendingPayments.length }
+}
+
 export function getJobSchedule() {
   return {
     jobs: [
@@ -589,6 +768,12 @@ export function getJobSchedule() {
         description: 'Warns users when their token balance drops below threshold (default: 3)',
         frequency: 'Daily at 10am',
         cron: '0 10 * * *',
+      },
+      {
+        name: 'syncPendingHitPayPayments',
+        description: 'Polls HitPay for pending payments and auto-issues tokens when confirmed',
+        frequency: 'Every 15 minutes',
+        cron: '*/15 * * * *',
       },
     ],
   }

@@ -12,6 +12,7 @@ import {
   sendClassReminders,
   markCompletedClasses,
   runAutoGenerateClassesJob,
+  runSyncPendingPaymentsJob,
   getJobSchedule,
 } from '@/services/scheduled-jobs.service'
 import { ApiError } from '@/lib/api-error'
@@ -70,6 +71,9 @@ export async function POST(request: NextRequest) {
         break
       case 'generate-future-classes':
         results = [await runAutoGenerateClassesJob()]
+        break
+      case 'sync-pending-payments':
+        results = [await runSyncPendingPaymentsJob()]
         break
       case 'all':
       default:
