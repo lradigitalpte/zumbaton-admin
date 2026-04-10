@@ -564,7 +564,7 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
   const { data: pendingPayments, error } = await supabase
     .from('payments')
-    .select('id, user_id, package_id, hitpay_payment_request_id, promo_type, discount_percent, discount_amount_cents, referral_voucher_id, packages(*)')
+    .select('id, user_id, package_id, hitpay_payment_request_id, promo_type, discount_percent, discount_amount_cents, packages(*)')
     .eq('status', 'pending')
     .not('hitpay_payment_request_id', 'is', null)
     .lt('created_at', fiveMinutesAgo)
@@ -696,15 +696,6 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
           package_id: payment.package_id,
           payment_id: payment.id,
         })
-      }
-
-      // Mark voucher as used if applicable
-      const voucherId = (payment as { referral_voucher_id?: string | null }).referral_voucher_id
-      if (voucherId) {
-        await supabase
-          .from('referral_vouchers')
-          .update({ used_at: new Date().toISOString(), payment_id: payment.id })
-          .eq('id', voucherId)
       }
 
       console.log(`[Cron: SyncPendingPayments] Synced payment ${payment.id} — issued ${pkg.token_count} tokens to user ${payment.user_id}`)
