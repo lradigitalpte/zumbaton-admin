@@ -12,6 +12,7 @@ import { withAdmin, AuthenticatedUser } from '@/middleware/rbac'
 import { getPaymentRequestStatus } from '@/services/hitpay.service'
 import { createClient } from '@supabase/supabase-js'
 import { createAuditLog } from '@/services/rbac.service'
+import { sendAdminEmail } from '@/lib/admin-email'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -70,6 +71,31 @@ async function handleSyncPayment(
           .from('payments')
           .update({ status: 'failed', updated_at: new Date().toISOString() })
           .eq('id', paymentId)
+
+        void Promise.resolve().then(async () => {
+          const { data: userProfile } = await supabaseAdmin
+            .from('user_profiles')
+            .select('email, name')
+            .eq('id', payment.user_id)
+            .maybeSingle()
+
+          await sendAdminEmail('payment-alert', {
+            paymentId: payment.id,
+            event: 'failed',
+            paymentType: 'package-purchase',
+            source: 'admin-sync',
+            amount: payment.amount_cents / 100,
+            currency: payment.currency,
+            packageName: payment.packages?.name,
+            tokenCount: payment.packages?.token_count,
+            userName: userProfile?.name || 'User',
+            userEmail: userProfile?.email || undefined,
+            failureReason: 'Not found on HitPay (likely abandoned or expired)',
+          })
+        }).catch((alertError: unknown) => {
+          console.error('[AdminSync] Non-critical: failed to send failed payment alert email:', alertError)
+        })
+
         return NextResponse.json(
           {
             error: 'not_found_on_hitpay',
@@ -248,6 +274,28 @@ async function handleSyncPayment(
     })
 
     console.log('[AdminSync] Payment synced successfully:', payment.id, '— tokens issued:', pkg.token_count)
+
+    void Promise.resolve().then(async () => {
+      const { data: userProfile } = await supabaseAdmin
+        .from('user_profiles')
+        .select('email, name')
+        .eq('id', payment.user_id)
+        .maybeSingle()
+
+      await sendAdminEmail('payment-alert', {
+        paymentId: payment.id,
+        paymentType: 'package-purchase',
+        source: 'admin-sync',
+        amount: payment.amount_cents / 100,
+        currency: payment.currency,
+        packageName: pkg.name,
+        tokenCount: pkg.token_count,
+        userName: userProfile?.name || 'User',
+        userEmail: userProfile?.email || undefined,
+      })
+    }).catch((alertError: unknown) => {
+      console.error('[AdminSync] Non-critical: failed to send payment alert email:', alertError)
+    })
 
     return NextResponse.json({
       message: 'Payment confirmed and tokens issued successfully',

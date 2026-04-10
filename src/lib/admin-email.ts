@@ -11,7 +11,7 @@
  * @returns Promise with result
  */
 export async function sendAdminEmail(
-  type: 'welcome' | 'token-purchase' | 'token-expiry' | 'class-reminder' | 'booking-confirmation' | 'token-adjustment' | 'admin-created-user',
+  type: 'welcome' | 'token-purchase' | 'payment-alert' | 'token-expiry' | 'class-reminder' | 'booking-confirmation' | 'token-adjustment' | 'admin-created-user',
   data: Record<string, unknown>
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {

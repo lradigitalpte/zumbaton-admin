@@ -5,6 +5,7 @@ import { processNoShows } from './attendance.service'
 import { processExpiredPackages, processFrozenPackages } from './user-package.service'
 import { processExpiredWaitlistNotifications } from './waitlist.service'
 import { autoGenerateFutureClasses } from '@/cron/generate-future-classes'
+import { sendAdminEmail } from '@/lib/admin-email'
 
 // Job results interface
 interface JobResult {
@@ -564,7 +565,7 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
   const { data: pendingPayments, error } = await supabase
     .from('payments')
-    .select('id, user_id, package_id, hitpay_payment_request_id, promo_type, discount_percent, discount_amount_cents, packages(*)')
+    .select('id, user_id, package_id, amount_cents, currency, hitpay_payment_request_id, promo_type, discount_percent, discount_amount_cents, packages(*)')
     .eq('status', 'pending')
     .not('hitpay_payment_request_id', 'is', null)
     .lt('created_at', fiveMinutesAgo)
@@ -594,6 +595,34 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
             .from('payments')
             .update({ status: 'failed', updated_at: new Date().toISOString() })
             .eq('id', payment.id)
+
+          void Promise.resolve().then(async () => {
+            const failedPaymentPackage = Array.isArray(payment.packages)
+              ? payment.packages[0]
+              : payment.packages
+            const { data: userProfile } = await supabase
+              .from('user_profiles')
+              .select('email, name')
+              .eq('id', payment.user_id)
+              .maybeSingle()
+
+            await sendAdminEmail('payment-alert', {
+              paymentId: payment.id,
+              event: 'failed',
+              paymentType: 'package-purchase',
+              source: 'cron-sync',
+              amount: payment.amount_cents / 100,
+              currency: payment.currency,
+              packageName: failedPaymentPackage?.name,
+              tokenCount: failedPaymentPackage?.token_count,
+              userName: userProfile?.name || 'User',
+              userEmail: userProfile?.email || undefined,
+              failureReason: 'Not found on HitPay (likely abandoned or expired)',
+            })
+          }).catch((alertError: unknown) => {
+            console.error(`[Cron: SyncPendingPayments] Non-critical: failed to send failed payment alert for ${payment.id}:`, alertError)
+          })
+
           failed++
         } else {
           console.error(`[Cron: SyncPendingPayments] HitPay API error for payment ${payment.id}:`, errMsg)
@@ -699,6 +728,29 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
       }
 
       console.log(`[Cron: SyncPendingPayments] Synced payment ${payment.id} — issued ${pkg.token_count} tokens to user ${payment.user_id}`)
+
+      void Promise.resolve().then(async () => {
+        const { data: userProfile } = await supabase
+          .from('user_profiles')
+          .select('email, name')
+          .eq('id', payment.user_id)
+          .maybeSingle()
+
+        await sendAdminEmail('payment-alert', {
+          paymentId: payment.id,
+          paymentType: 'package-purchase',
+          source: 'cron-sync',
+          amount: payment.amount_cents / 100,
+          currency: payment.currency,
+          packageName: pkg.name,
+          tokenCount: pkg.token_count,
+          userName: userProfile?.name || 'User',
+          userEmail: userProfile?.email || undefined,
+        })
+      }).catch((alertError: unknown) => {
+        console.error(`[Cron: SyncPendingPayments] Non-critical: failed to send payment alert for ${payment.id}:`, alertError)
+      })
+
       synced++
     } catch (err) {
       console.error(`[Cron: SyncPendingPayments] Unexpected error for payment ${payment.id}:`, err)
