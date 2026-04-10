@@ -289,15 +289,18 @@ async function getTopCustomers(
   // Get payments grouped by user
   const { data: payments } = await supabase
     .from(TABLES.PAYMENTS)
-    .select('user_id, amount_cents, package_id')
+    .select('user_id, amount_cents, package_id, is_trial_booking, metadata')
     .gte('created_at', rangeStart.toISOString())
     .eq('status', 'succeeded')
   
-  // Group by user
-  const userStats: Record<string, { spent: number; purchases: number; tokens: number }> = {}
+  // Group by user (use guest email as key for trial bookings with no user_id)
+  const userStats: Record<string, { spent: number; purchases: number; tokens: number; guestName?: string; guestEmail?: string }> = {}
   
   for (const payment of payments || []) {
     const userId = payment.user_id
+    const isTrial = (payment as { is_trial_booking?: boolean }).is_trial_booking
+    const meta = (payment as { metadata?: Record<string, string> }).metadata
+    
     if (userId) {
       if (!userStats[userId]) {
         userStats[userId] = { spent: 0, purchases: 0, tokens: 0 }
@@ -305,41 +308,65 @@ async function getTopCustomers(
       userStats[userId].spent += (payment.amount_cents || 0) / 100
       userStats[userId].purchases++
       userStats[userId].tokens += 10 // Estimate
+    } else if (isTrial && meta?.guest_email) {
+      // Use guest email as key for trial guests (no user account)
+      const guestKey = `guest:${meta.guest_email}`
+      if (!userStats[guestKey]) {
+        userStats[guestKey] = { spent: 0, purchases: 0, tokens: 0, guestName: meta.guest_name, guestEmail: meta.guest_email }
+      }
+      userStats[guestKey].spent += (payment.amount_cents || 0) / 100
+      userStats[guestKey].purchases++
     }
   }
   
-  // Get top user IDs
-  const topUserIds = Object.entries(userStats)
+  // Get top keys sorted by spend
+  const topKeys = Object.entries(userStats)
     .sort((a, b) => b[1].spent - a[1].spent)
     .slice(0, 5)
     .map(([id]) => id)
   
-  if (topUserIds.length === 0) {
+  if (topKeys.length === 0) {
     return []
   }
   
-  // Fetch user profiles (only customers, filter out staff)
-  const { data: profiles } = await supabase
-    .from(TABLES.USER_PROFILES)
-    .select('id, name, email')
-    .in('id', topUserIds)
-    .eq('role', 'user')
+  // Separate real user IDs from guest keys
+  const realUserIds = topKeys.filter(k => !k.startsWith('guest:'))
+  
+  // Fetch user profiles for real users only
+  const { data: profiles } = realUserIds.length > 0
+    ? await supabase
+        .from(TABLES.USER_PROFILES)
+        .select('id, name, email')
+        .in('id', realUserIds)
+        .eq('role', 'user')
+    : { data: [] }
   
   const profileMap: Record<string, { name: string; email: string }> = {}
   for (const p of profiles || []) {
     profileMap[p.id] = { name: p.name, email: p.email }
   }
   
-  // Only return users that are customers
-  return topUserIds
-    .filter(userId => profileMap[userId])
-    .map(userId => ({
-    name: profileMap[userId]?.name || 'Unknown',
-    email: profileMap[userId]?.email || 'unknown@email.com',
-    spent: Math.round(userStats[userId].spent),
-    purchases: userStats[userId].purchases,
-    tokens: userStats[userId].tokens,
-  }))
+  return topKeys
+    .filter(key => profileMap[key] || key.startsWith('guest:'))
+    .map(key => {
+      const stats = userStats[key]
+      if (key.startsWith('guest:')) {
+        return {
+          name: stats.guestName || 'Guest',
+          email: stats.guestEmail || key.replace('guest:', ''),
+          spent: Math.round(stats.spent),
+          purchases: stats.purchases,
+          tokens: 0,
+        }
+      }
+      return {
+        name: profileMap[key]?.name || 'Unknown',
+        email: profileMap[key]?.email || 'unknown@email.com',
+        spent: Math.round(stats.spent),
+        purchases: stats.purchases,
+        tokens: stats.tokens,
+      }
+    })
 }
 
 async function getRecentTransactions(supabase: ReturnType<typeof getSupabaseAdminClient>) {
@@ -351,6 +378,8 @@ async function getRecentTransactions(supabase: ReturnType<typeof getSupabaseAdmi
       amount_cents,
       payment_method,
       created_at,
+      is_trial_booking,
+      metadata,
       packages (
         name
       )
@@ -377,10 +406,17 @@ async function getRecentTransactions(supabase: ReturnType<typeof getSupabaseAdmi
   return payments.map((payment, index) => {
     const packagesData = payment.packages as { name: string }[] | { name: string } | null
     const pkg = Array.isArray(packagesData) ? packagesData[0] : packagesData
+    // For trial bookings, user_id is null — read guest name from metadata
+    let userName = profileMap[payment.user_id] || 'Unknown'
+    if (!payment.user_id || userName === 'Unknown') {
+      const meta = payment.metadata as Record<string, string> | null
+      if (meta?.guest_name) userName = meta.guest_name
+    }
+    const isTrial = (payment as { is_trial_booking?: boolean }).is_trial_booking
     return {
       id: `TXN-${900 - index}`,
-      user: profileMap[payment.user_id] || 'Unknown',
-      package: pkg?.name || 'Package',
+      user: userName,
+      package: isTrial ? 'Trial Class' : (pkg?.name || 'Package'),
       amount: Math.round((payment.amount_cents || 0) / 100),
       date: payment.created_at,
       method: formatPaymentMethod(payment.payment_method),

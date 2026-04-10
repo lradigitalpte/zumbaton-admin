@@ -256,7 +256,7 @@ export async function GET(request: NextRequest) {
       for (const t of statsData) {
         const amount = Math.abs(t.tokens_change)
         
-        if (t.transaction_type === 'purchase') {
+        if (t.transaction_type === 'purchase' || t.transaction_type === 'trial-booking-purchase') {
           stats.totalPurchased += amount
         } else if (t.transaction_type.includes('consume')) {
           stats.totalConsumed += amount

@@ -7,7 +7,7 @@ import { useTokenTransactions, TokenTransaction, TransactionType } from "@/hooks
 import { usePendingPayments, useSyncPayment } from "@/hooks/usePendingPayments";
 
 // Map API transaction types to display types
-type DisplayTransactionType = "purchase" | "hold" | "consume" | "release" | "adjustment" | "expire";
+type DisplayTransactionType = "purchase" | "hold" | "consume" | "release" | "adjustment" | "expire" | "trial";
 
 const mapTransactionType = (apiType: TransactionType): DisplayTransactionType => {
   const typeMap: Record<TransactionType, DisplayTransactionType> = {
@@ -20,6 +20,7 @@ const mapTransactionType = (apiType: TransactionType): DisplayTransactionType =>
     'admin-adjust': 'adjustment',
     'refund': 'release',
     'expire': 'expire',
+    'trial-booking-purchase': 'trial',
   };
   return typeMap[apiType] || 'adjustment';
 };
@@ -31,6 +32,7 @@ const getApiTypeFilter = (displayType: string): string | undefined => {
   // For display types that map to multiple API types, we filter client-side
   const typeMap: Record<string, string> = {
     'purchase': 'purchase',
+    'trial': 'trial-booking-purchase',
     'hold': 'booking-hold',
     'release': 'booking-release',
     'consume': 'attendance-consume', // API will return all, we filter client-side
@@ -77,11 +79,18 @@ const typeConfig: Record<DisplayTransactionType, { label: string; color: string;
     bg: "bg-red-50 dark:bg-red-900/30",
     icon: "✕"
   },
+  trial: {
+    label: "Trial",
+    color: "text-orange-600 dark:text-orange-400",
+    bg: "bg-orange-50 dark:bg-orange-900/30",
+    icon: "★"
+  },
 };
 
 const typeFilters: { value: string; label: string }[] = [
   { value: "all", label: "All Types" },
   { value: "purchase", label: "Purchase" },
+  { value: "trial", label: "Trial" },
   { value: "hold", label: "Hold" },
   { value: "consume", label: "Consume" },
   { value: "release", label: "Release" },

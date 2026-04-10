@@ -14,6 +14,7 @@ export type TransactionType =
   | 'admin-adjust'
   | 'refund'
   | 'expire'
+  | 'trial-booking-purchase'
 
 export interface TokenTransaction {
   id: string
