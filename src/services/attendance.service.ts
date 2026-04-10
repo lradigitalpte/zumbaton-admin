@@ -403,6 +403,7 @@ export async function processNoShows(): Promise<{
       )
     `)
     .eq('status', 'confirmed')
+    .eq('is_trial_booking', false)
 
   if (error) {
     console.error('[AttendanceService] Failed to fetch bookings for no-show processing:', error)
