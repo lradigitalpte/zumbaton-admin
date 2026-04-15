@@ -592,8 +592,10 @@ async function getRecentActivity(supabase: ReturnType<typeof getSupabaseAdminCli
     .select(`
       id,
       user_id,
+      metadata,
       amount_cents,
       created_at,
+      is_trial_booking,
       packages (
         name
       )
@@ -616,10 +618,27 @@ async function getRecentActivity(supabase: ReturnType<typeof getSupabaseAdminCli
   for (const payment of payments || []) {
     const packagesData = payment.packages as { name: string }[] | { name: string } | null
     const pkg = Array.isArray(packagesData) ? packagesData[0] : packagesData
+    const metadata = (payment.metadata as {
+      parent_name?: string
+      guest_name?: string
+      child_name?: string
+      package_label?: string
+      flow_type?: string
+    } | null) || {}
+    const fallbackName =
+      metadata.parent_name ||
+      metadata.guest_name ||
+      metadata.child_name ||
+      null
+    const purchaseLabel =
+      pkg?.name ||
+      metadata.package_label ||
+      (metadata.flow_type === 'zumfamilia' ? 'ZumFamilia package' : 'package')
+
     activities.push({
       type: 'purchase',
-      user: profileMap[payment.user_id] || 'User',
-      detail: `Purchased ${pkg?.name || 'package'}`,
+      user: (payment.user_id ? profileMap[payment.user_id] : null) || fallbackName || 'User',
+      detail: `Purchased ${purchaseLabel}`,
       time: getRelativeTime(new Date(payment.created_at)),
       amount: Math.round((payment.amount_cents || 0) / 100),
     })

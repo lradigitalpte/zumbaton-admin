@@ -155,9 +155,14 @@ export async function GET(request: NextRequest) {
         
         if (payments) {
           for (const p of payments) {
-            const metadata = p.metadata as { guest_name?: string } | null
-            if (p.id && metadata?.guest_name && !paymentToGuestMap[p.id]) {
-              paymentToGuestMap[p.id] = metadata.guest_name
+            const metadata = p.metadata as {
+              guest_name?: string
+              child_name?: string
+              parent_name?: string
+            } | null
+            const metadataName = metadata?.guest_name || metadata?.child_name || metadata?.parent_name
+            if (p.id && metadataName && !paymentToGuestMap[p.id]) {
+              paymentToGuestMap[p.id] = metadataName
             }
           }
         }
@@ -203,6 +208,14 @@ export async function GET(request: NextRequest) {
       // If no booking found, check user package -> payment -> guest chain
       else if (t.user_package_id && userPackageToGuestMap[t.user_package_id]) {
         userName = userPackageToGuestMap[t.user_package_id]
+      }
+      // Last fallback: parse trailing "(Name)" from description like:
+      // "Trial class: Custom Schedule ... (test)"
+      else if (t.description) {
+        const nameMatch = t.description.match(/\(([^()]+)\)\s*$/)
+        if (nameMatch?.[1]) {
+          userName = nameMatch[1].trim()
+        }
       }
       
       type ProfileInfo = { name?: string | null; email?: string | null; avatar_url?: string | null }

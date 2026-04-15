@@ -565,7 +565,7 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
   const { data: pendingPayments, error } = await supabase
     .from('payments')
-    .select('id, user_id, package_id, amount_cents, currency, hitpay_payment_request_id, promo_type, discount_percent, discount_amount_cents, packages(*)')
+    .select('id, user_id, class_id, package_id, is_trial_booking, metadata, amount_cents, currency, hitpay_payment_request_id, promo_type, discount_percent, discount_amount_cents, packages(*)')
     .eq('status', 'pending')
     .not('hitpay_payment_request_id', 'is', null)
     .lt('created_at', fiveMinutesAgo)
@@ -636,6 +636,82 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
 
       if (hitpayStatus !== 'completed' && hitpayStatus !== 'succeeded') {
         skipped++
+        continue
+      }
+
+      // Trial / ZumFamilia flow: confirm booking and ensure trial transaction exists.
+      if (payment.is_trial_booking) {
+        await supabase
+          .from('payments')
+          .update({ status: 'succeeded', hitpay_payment_id: hitpayPaymentId, updated_at: new Date().toISOString() })
+          .eq('id', payment.id)
+
+        const metadata = (payment.metadata as Record<string, unknown> | null) || {}
+        const draftBookingId = typeof metadata.draft_booking_id === 'string' ? metadata.draft_booking_id : null
+
+        let bookingId: string | null = null
+        if (draftBookingId) {
+          const { data: bookingByDraft } = await supabase
+            .from('bookings')
+            .update({
+              status: 'confirmed',
+              payment_id: payment.id,
+              booked_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', draftBookingId)
+            .select('id')
+            .maybeSingle()
+          bookingId = bookingByDraft?.id || null
+        } else {
+          const { data: bookingByPayment } = await supabase
+            .from('bookings')
+            .update({
+              status: 'confirmed',
+              booked_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('payment_id', payment.id)
+            .eq('status', 'draft')
+            .select('id')
+            .maybeSingle()
+          bookingId = bookingByPayment?.id || null
+        }
+
+        if (bookingId) {
+          const { data: existingTx } = await supabase
+            .from('token_transactions')
+            .select('id')
+            .eq('booking_id', bookingId)
+            .eq('transaction_type', 'trial-booking-purchase')
+            .maybeSingle()
+
+          if (!existingTx) {
+            const classTitle = typeof metadata.class_title === 'string'
+              ? metadata.class_title
+              : typeof metadata.package_label === 'string'
+                ? metadata.package_label
+                : 'Trial class'
+            const guestName = typeof metadata.child_name === 'string'
+              ? metadata.child_name
+              : typeof metadata.guest_name === 'string'
+                ? metadata.guest_name
+                : 'Guest'
+
+            await supabase.from('token_transactions').insert({
+              user_id: null,
+              booking_id: bookingId,
+              transaction_type: 'trial-booking-purchase',
+              tokens_change: 1,
+              tokens_before: 0,
+              tokens_after: 1,
+              description: `Trial class: ${classTitle} (${guestName})`,
+              created_at: new Date().toISOString(),
+            })
+          }
+        }
+
+        synced++
         continue
       }
 

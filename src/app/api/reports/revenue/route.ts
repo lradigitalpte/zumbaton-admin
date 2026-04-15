@@ -407,16 +407,33 @@ async function getRecentTransactions(supabase: ReturnType<typeof getSupabaseAdmi
     const packagesData = payment.packages as { name: string }[] | { name: string } | null
     const pkg = Array.isArray(packagesData) ? packagesData[0] : packagesData
     // For trial bookings, user_id is null — read guest name from metadata
+    const meta = payment.metadata as Record<string, string> | null
     let userName = profileMap[payment.user_id] || 'Unknown'
     if (!payment.user_id || userName === 'Unknown') {
-      const meta = payment.metadata as Record<string, string> | null
-      if (meta?.guest_name) userName = meta.guest_name
+      userName =
+        meta?.parent_name ||
+        meta?.guest_name ||
+        meta?.child_name ||
+        userName
     }
     const isTrial = (payment as { is_trial_booking?: boolean }).is_trial_booking
+    const isZumFamilia = meta?.flow_type === 'zumfamilia'
+
+    let paymentLabel = pkg?.name || 'Package'
+    if (isTrial) {
+      if (isZumFamilia) {
+        const scheduleLabel = meta?.custom_schedule || meta?.class_title || 'Custom Schedule'
+        const packageLabel = meta?.package_label || 'ZumFamilia'
+        paymentLabel = `${packageLabel} (${scheduleLabel})`
+      } else {
+        paymentLabel = meta?.class_title || 'Trial Class'
+      }
+    }
+
     return {
       id: `TXN-${900 - index}`,
       user: userName,
-      package: isTrial ? 'Trial Class' : (pkg?.name || 'Package'),
+      package: paymentLabel,
       amount: Math.round((payment.amount_cents || 0) / 100),
       date: payment.created_at,
       method: formatPaymentMethod(payment.payment_method),

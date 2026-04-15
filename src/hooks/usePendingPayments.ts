@@ -125,3 +125,53 @@ export function useSyncPayment() {
 
   return { syncPayment, syncingIds, syncResults }
 }
+
+export function useDeletePendingPayment() {
+  const queryClient = useQueryClient()
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
+  const [deleteResults, setDeleteResults] = useState<Record<string, { success: boolean; message: string }>>({})
+
+  const deletePendingPayment = async (paymentId: string) => {
+    setDeletingIds(prev => new Set(prev).add(paymentId))
+    setDeleteResults(prev => {
+      const next = { ...prev }
+      delete next[paymentId]
+      return next
+    })
+
+    try {
+      const response = await api.delete<{ success?: boolean; message?: string }>(`/api/payments/${paymentId}`)
+
+      if (response.error) {
+        setDeleteResults(prev => ({
+          ...prev,
+          [paymentId]: { success: false, message: response.error?.message || 'Delete failed' },
+        }))
+        return false
+      }
+
+      setDeleteResults(prev => ({
+        ...prev,
+        [paymentId]: { success: true, message: response.data?.message || 'Deleted' },
+      }))
+
+      await queryClient.invalidateQueries({ queryKey: ['pending-payments'] })
+      return true
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      setDeleteResults(prev => ({
+        ...prev,
+        [paymentId]: { success: false, message: msg },
+      }))
+      return false
+    } finally {
+      setDeletingIds(prev => {
+        const next = new Set(prev)
+        next.delete(paymentId)
+        return next
+      })
+    }
+  }
+
+  return { deletePendingPayment, deletingIds, deleteResults }
+}

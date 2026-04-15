@@ -50,7 +50,9 @@ export async function GET(request: NextRequest) {
           amount_cents,
           currency,
           status,
-          created_at
+          created_at,
+          hitpay_payment_request_id,
+          metadata
         )
       `, { count: 'exact' })
       .eq('is_trial_booking', true)
@@ -144,6 +146,8 @@ export async function GET(request: NextRequest) {
           currency: paymentData.currency,
           status: paymentData.status,
           createdAt: paymentData.created_at,
+          hitpayPaymentRequestId: paymentData.hitpay_payment_request_id,
+          metadata: paymentData.metadata || null,
         } : null,
       }
     })

@@ -5,7 +5,7 @@ import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/components/ui/Toast";
-import { RefreshCw, Mail, Phone, Calendar, DollarSign, User, Search, Filter, Trash2, CheckCircle, XCircle, MoreVertical } from "lucide-react";
+import { RefreshCw, Mail, Phone, Calendar, DollarSign, User, Search, Trash2, CheckCircle, XCircle, Eye, Loader2 } from "lucide-react";
 import Pagination from "@/components/tables/Pagination";
 import { Modal } from "@/components/ui/modal";
 import Button from "@/components/ui/button/Button";
@@ -37,6 +37,8 @@ interface TrialBooking {
     currency: string;
     status: string;
     createdAt: string;
+    hitpayPaymentRequestId?: string | null;
+    metadata?: Record<string, any> | null;
   } | null;
 }
 
@@ -63,6 +65,9 @@ export default function TrialBookingsPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteBookingId, setDeleteBookingId] = useState<string | null>(null);
   const [deleteBookingName, setDeleteBookingName] = useState<string>("");
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [selectedBooking, setSelectedBooking] = useState<TrialBooking | null>(null);
+  const [syncingPaymentId, setSyncingPaymentId] = useState<string | null>(null);
 
   const fetchBookings = async () => {
     try {
@@ -190,6 +195,40 @@ export default function TrialBookingsPage() {
     // Fallback to age calculation (under 13 is a kid)
     const age = calculateAge(booking.guestDateOfBirth);
     return age !== null && age < 13;
+  };
+
+  const isZumFamiliaBooking = (booking: TrialBooking): boolean =>
+    booking.payment?.metadata?.flow_type === "zumfamilia";
+
+  const getDisplayScheduleTime = (booking: TrialBooking): string =>
+    (isZumFamiliaBooking(booking) ? booking.payment?.metadata?.custom_schedule : null) ||
+    (booking.class?.scheduledAt ? formatDateTime(booking.class.scheduledAt) : "N/A");
+
+  const getPrimaryContactName = (booking: TrialBooking): string =>
+    (isZumFamiliaBooking(booking) ? booking.payment?.metadata?.parent_name : null) || booking.guestName;
+
+  const getPrimaryContactEmail = (booking: TrialBooking): string =>
+    (isZumFamiliaBooking(booking) ? booking.payment?.metadata?.parent_email : null) || booking.guestEmail;
+
+  const getPrimaryContactPhone = (booking: TrialBooking): string | null =>
+    (isZumFamiliaBooking(booking) ? booking.payment?.metadata?.parent_phone : null) || booking.guestPhone || null;
+
+  const handleSyncPayment = async (booking: TrialBooking) => {
+    try {
+      setSyncingPaymentId(booking.id);
+      const response = await api.post<{ success?: boolean; synced?: boolean; message?: string }>(`/api/trial-bookings/${booking.id}/sync`, {});
+      if (response.error) {
+        showToast(response.error.message || "Failed to sync payment", "error");
+        return;
+      }
+      const payload = response.data;
+      showToast(payload?.message || "Payment sync completed", payload?.synced ? "success" : "info");
+      await fetchBookings();
+    } catch (error: any) {
+      showToast(error.message || "Failed to sync payment", "error");
+    } finally {
+      setSyncingPaymentId(null);
+    }
   };
 
   const handleStatusUpdate = async (bookingId: string, newStatus: string, reason?: string) => {
@@ -399,7 +438,7 @@ export default function TrialBookingsPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+              <table className="min-w-[1120px] w-full divide-y divide-gray-200 dark:divide-gray-800">
                 <thead className="bg-gray-50 dark:bg-gray-800">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -417,7 +456,7 @@ export default function TrialBookingsPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="hidden xl:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Booked At
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -435,6 +474,10 @@ export default function TrialBookingsPage() {
                     .map((booking) => {
                     const isDraft = booking.status === "draft";
                     const isKid = isKidBooking(booking);
+                    const isZumFamilia = isZumFamiliaBooking(booking);
+                    const primaryName = getPrimaryContactName(booking);
+                    const primaryEmail = getPrimaryContactEmail(booking);
+                    const primaryPhone = getPrimaryContactPhone(booking);
                     return (
                     <tr 
                       key={booking.id} 
@@ -448,11 +491,16 @@ export default function TrialBookingsPage() {
                         <div>
                           <div className="flex items-center gap-2">
                             <div className="text-sm font-medium text-gray-900 dark:text-white">
-                              {booking.guestName}
+                              {primaryName}
                             </div>
+                            {isZumFamilia && (
+                              <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700">
+                                ZumFamilia
+                              </span>
+                            )}
                             {isKidBooking(booking) && (
                               <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border border-purple-300 dark:border-purple-700">
-                                Kid
+                                {isZumFamilia ? "Child" : "Kid"}
                               </span>
                             )}
                             {!isKidBooking(booking) && booking.guestDateOfBirth && (
@@ -463,12 +511,17 @@ export default function TrialBookingsPage() {
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
                             <Mail className="w-3 h-3" />
-                            {booking.guestEmail}
+                            {primaryEmail}
                           </div>
-                          {booking.guestPhone && (
+                          {primaryPhone && (
                             <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
                               <Phone className="w-3 h-3" />
-                              {booking.guestPhone}
+                              {primaryPhone}
+                            </div>
+                          )}
+                          {isZumFamilia && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              Child: {booking.guestName}
                             </div>
                           )}
                           {booking.guestDateOfBirth && (
@@ -503,7 +556,13 @@ export default function TrialBookingsPage() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         {booking.class ? (
                           <div className="text-sm text-gray-900 dark:text-white">
-                            {formatDateTime(booking.class.scheduledAt)}
+                            {isZumFamilia ? (
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-300 dark:border-amber-700 font-semibold">
+                                {getDisplayScheduleTime(booking)}
+                              </span>
+                            ) : (
+                              formatDateTime(booking.class.scheduledAt)
+                            )}
                           </div>
                         ) : (
                           <span className="text-sm text-gray-400">N/A</span>
@@ -527,30 +586,30 @@ export default function TrialBookingsPage() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         {getStatusBadge(booking.status)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                      <td className="hidden xl:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {formatDateTime(booking.bookedAt)}
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-2 min-w-[210px]">
                           {/* Contact Actions */}
                           {isDraft && (
                             <div className="flex items-center gap-1 flex-wrap">
                               <a
-                                href={`mailto:${booking.guestEmail}?subject=Complete Your Trial Class Booking&body=Hi ${booking.guestName},%0D%0A%0D%0AWe noticed you started booking a trial class but didn't complete the payment. We'd love to help you finish your booking!%0D%0A%0D%0APlease reply to this email or call us to complete your booking.%0D%0A%0D%0AThank you!`}
+                                href={`mailto:${primaryEmail}?subject=Complete Your Trial Class Booking&body=Hi ${primaryName},%0D%0A%0D%0AWe noticed you started booking a trial class but didn't complete the payment. We'd love to help you finish your booking!%0D%0A%0D%0APlease reply to this email or call us to complete your booking.%0D%0A%0D%0AThank you!`}
                                 className="text-xs px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded transition-colors flex items-center gap-1"
                                 title="Send Email"
                               >
                                 <Mail className="w-3 h-3" />
-                                Email
+                                <span className="hidden 2xl:inline">Email</span>
                               </a>
-                              {booking.guestPhone && (
+                              {primaryPhone && (
                                 <a
-                                  href={`tel:${booking.guestPhone}`}
+                                  href={`tel:${primaryPhone}`}
                                   className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors flex items-center gap-1"
                                   title="Call"
                                 >
                                   <Phone className="w-3 h-3" />
-                                  Call
+                                  <span className="hidden 2xl:inline">Call</span>
                                 </a>
                               )}
                             </div>
@@ -558,6 +617,28 @@ export default function TrialBookingsPage() {
 
                           {/* Status Update Actions */}
                           <div className="flex items-center gap-1 flex-wrap">
+                            <button
+                              onClick={() => {
+                                setSelectedBooking(booking);
+                                setDetailsModalOpen(true);
+                              }}
+                              className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-800 text-white rounded transition-colors flex items-center gap-1"
+                              title="View Details"
+                            >
+                              <Eye className="w-3 h-3" />
+                              <span className="hidden 2xl:inline">View</span>
+                            </button>
+                            {isDraft && booking.payment?.hitpayPaymentRequestId && (
+                              <button
+                                onClick={() => handleSyncPayment(booking)}
+                                disabled={syncingPaymentId === booking.id}
+                                className="text-xs px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors flex items-center gap-1 disabled:opacity-50"
+                                title="Sync payment from HitPay"
+                              >
+                                {syncingPaymentId === booking.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                <span className="hidden 2xl:inline">Sync</span>
+                              </button>
+                            )}
                             {isDraft && (
                               <>
                                 <button
@@ -567,7 +648,7 @@ export default function TrialBookingsPage() {
                                   title="Mark as Confirmed"
                                 >
                                   <CheckCircle className="w-3 h-3" />
-                                  Confirm
+                                  <span className="hidden 2xl:inline">Confirm</span>
                                 </button>
                                 <button
                                   onClick={() => {
@@ -580,7 +661,7 @@ export default function TrialBookingsPage() {
                                   title="Mark as Cancelled/Followed Up"
                                 >
                                   <XCircle className="w-3 h-3" />
-                                  Cancel
+                                  <span className="hidden 2xl:inline">Cancel</span>
                                 </button>
                                 <button
                                   onClick={() => handleDeleteClick(booking.id, booking.guestName)}
@@ -589,7 +670,7 @@ export default function TrialBookingsPage() {
                                   title="Delete Draft"
                                 >
                                   <Trash2 className="w-3 h-3" />
-                                  Delete
+                                  <span className="hidden 2xl:inline">Delete</span>
                                 </button>
                               </>
                             )}
@@ -602,7 +683,7 @@ export default function TrialBookingsPage() {
                                   title="Mark as Attended"
                                 >
                                   <CheckCircle className="w-3 h-3" />
-                                  Attended
+                                  <span className="hidden 2xl:inline">Attended</span>
                                 </button>
                                 <button
                                   onClick={() => handleStatusUpdate(booking.id, "no-show")}
@@ -611,7 +692,7 @@ export default function TrialBookingsPage() {
                                   title="Mark as No Show"
                                 >
                                   <XCircle className="w-3 h-3" />
-                                  No Show
+                                  <span className="hidden 2xl:inline">No Show</span>
                                 </button>
                                 <button
                                   onClick={() => handleDeleteClick(booking.id, booking.guestName)}
@@ -620,7 +701,7 @@ export default function TrialBookingsPage() {
                                   title="Delete Booking"
                                 >
                                   <Trash2 className="w-3 h-3" />
-                                  Delete
+                                  <span className="hidden 2xl:inline">Delete</span>
                                 </button>
                               </>
                             )}
@@ -632,7 +713,7 @@ export default function TrialBookingsPage() {
                                 title="Delete Booking"
                               >
                                 <Trash2 className="w-3 h-3" />
-                                Delete
+                                <span className="hidden 2xl:inline">Delete</span>
                               </button>
                             )}
                           </div>
@@ -671,6 +752,66 @@ export default function TrialBookingsPage() {
           </>
         )}
       </div>
+
+      {/* Booking Details Modal */}
+      <Modal
+        isOpen={detailsModalOpen}
+        onClose={() => {
+          setDetailsModalOpen(false);
+          setSelectedBooking(null);
+        }}
+        className="max-w-[640px] w-full"
+      >
+        <div className="p-6">
+          <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Booking Details
+          </h4>
+          {selectedBooking && (
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div><span className="font-medium">Flow:</span> {isZumFamiliaBooking(selectedBooking) ? "ZumFamilia" : "Trial Booking"}</div>
+                <div><span className="font-medium">Status:</span> {selectedBooking.status}</div>
+                <div><span className="font-medium">Primary Contact:</span> {getPrimaryContactName(selectedBooking)}</div>
+                <div><span className="font-medium">Primary Email:</span> {getPrimaryContactEmail(selectedBooking)}</div>
+                <div><span className="font-medium">Primary Phone:</span> {getPrimaryContactPhone(selectedBooking) || "N/A"}</div>
+                <div><span className="font-medium">Child Name:</span> {selectedBooking.guestName}</div>
+                <div><span className="font-medium">Date of Birth:</span> {selectedBooking.guestDateOfBirth || "N/A"}</div>
+                <div><span className="font-medium">Class:</span> {selectedBooking.class?.title || "N/A"}</div>
+                <div>
+                  <span className="font-medium">Class Time:</span>{" "}
+                  <span className={isZumFamiliaBooking(selectedBooking)
+                    ? "inline-flex items-center px-2.5 py-1 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-300 dark:border-amber-700 font-semibold"
+                    : ""}>
+                    {getDisplayScheduleTime(selectedBooking)}
+                  </span>
+                </div>
+                <div><span className="font-medium">Payment:</span> {selectedBooking.payment ? `${(selectedBooking.payment.amountCents / 100).toFixed(2)} ${selectedBooking.payment.currency}` : "No payment"}</div>
+                <div><span className="font-medium">Payment Status:</span> {selectedBooking.payment?.status || "N/A"}</div>
+              </div>
+              {isZumFamiliaBooking(selectedBooking) && (
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-800/50">
+                  <div className="font-medium mb-2">ZumFamilia Extras</div>
+                  <div><span className="font-medium">Package:</span> {selectedBooking.payment?.metadata?.package_label || selectedBooking.payment?.metadata?.package_option || "N/A"}</div>
+                  <div><span className="font-medium">Custom Schedule:</span> {selectedBooking.payment?.metadata?.custom_schedule || "N/A"}</div>
+                  <div><span className="font-medium">Notes:</span> {selectedBooking.payment?.metadata?.notes || "N/A"}</div>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="flex justify-end mt-6">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setDetailsModalOpen(false);
+                setSelectedBooking(null);
+              }}
+            >
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Cancel Reason Modal */}
       <Modal

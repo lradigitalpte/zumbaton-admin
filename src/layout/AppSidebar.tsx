@@ -60,6 +60,7 @@ const getNavItems = (user: { role: string } | null): NavItem[] => [
     subItems: [
       { name: "Check-In", path: "/attendance", pro: false },
       { name: "No-Shows", path: "/attendance/no-shows", pro: false },
+      { name: "Outdoor Tracking", path: "/outdoor-tracking", pro: false },
     ],
   },
   {
