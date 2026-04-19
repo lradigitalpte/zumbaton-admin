@@ -5,7 +5,7 @@ You don't need to refactor every page manually! Here's a simple 3-step pattern t
 
 ## Step-by-Step Guide
 
-### Step 1: Replace `useState` + `useEffect` with React Query Hook
+### Step 1: Replace `useState` + `useEffect` React Query Hook
 
 **Before:**
 ```tsx
