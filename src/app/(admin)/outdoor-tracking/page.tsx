@@ -237,14 +237,14 @@ export default function OutdoorTrackingPage() {
             placeholder="Search customer / email / phone"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
+            className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
           />
-          <select value={programType} onChange={(e) => { setProgramType(e.target.value); setPage(1); }} className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <select value={programType} onChange={(e) => { setProgramType(e.target.value); setPage(1); }} className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
             <option value="all">All Programs</option>
             <option value="zt_fiesta">ZT Fiesta</option>
             <option value="individual_lesson">Individual Lesson</option>
           </select>
-          <select value={paymentStatus} onChange={(e) => { setPaymentStatus(e.target.value); setPage(1); }} className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <select value={paymentStatus} onChange={(e) => { setPaymentStatus(e.target.value); setPage(1); }} className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
             <option value="all">All Payments</option>
             <option value="pending">Pending</option>
             <option value="paid">Paid</option>
@@ -262,13 +262,13 @@ export default function OutdoorTrackingPage() {
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
             <thead className="bg-gray-50 dark:bg-gray-800">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold">Customer</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold">Program</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold">Sessions</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold">Payment</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold">Attendance</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold">Validity</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Customer</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Program</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Sessions</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Payment</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Attendance</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Validity</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
