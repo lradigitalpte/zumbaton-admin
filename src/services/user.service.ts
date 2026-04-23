@@ -776,7 +776,7 @@ export async function createUser(
       channel: 'in_app',
       data: {
         user_name: data.name,
-        message: `Welcome to Zumbaton, ${data.name}! We're excited to have you. Start exploring classes and book your first session!`,
+        message: `Welcome to One Step Fitness, ${data.name}! We're excited to have you. Start exploring classes and book your first session!`,
       },
     })
   } catch (notificationError) {

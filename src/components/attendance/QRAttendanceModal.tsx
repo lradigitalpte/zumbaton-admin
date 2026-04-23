@@ -265,7 +265,7 @@ export default function QRAttendanceModal({
 
     // Create URL for phone camera scanning (opens web app directly)
     // Get web app URL from environment or use default
-    const webAppUrl = process.env.NEXT_PUBLIC_WEB_URL || 'https://zumbaton.sg';
+    const webAppUrl = process.env.NEXT_PUBLIC_WEB_URL || 'https://onestepfitness.sg';
     // Use URL-safe base64 encoding (replace + with -, / with _, remove = padding)
     const base64Data = btoa(JSON.stringify(qrDataObject));
     const encodedData = base64Data.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');

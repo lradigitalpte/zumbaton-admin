@@ -6,6 +6,7 @@ import { processExpiredPackages, processFrozenPackages } from './user-package.se
 import { processExpiredWaitlistNotifications } from './waitlist.service'
 import { autoGenerateFutureClasses } from '@/cron/generate-future-classes'
 import { sendAdminEmail } from '@/lib/admin-email'
+const UNLIMITED_TOKEN_BALANCE = 2147483647
 
 // Job results interface
 interface JobResult {
@@ -755,6 +756,7 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
         .update({ status: 'succeeded', hitpay_payment_id: hitpayPaymentId, updated_at: new Date().toISOString() })
         .eq('id', payment.id)
 
+      const issuedTokenCount = pkg.is_unlimited ? UNLIMITED_TOKEN_BALANCE : (pkg.token_count as number)
       // Create user_package (issue tokens)
       const expiresAt = new Date()
       expiresAt.setDate(expiresAt.getDate() + (pkg.validity_days as number))
@@ -765,7 +767,7 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
           user_id: payment.user_id,
           package_id: payment.package_id,
           payment_id: String(payment.id),
-          tokens_remaining: pkg.token_count as number,
+          tokens_remaining: issuedTokenCount,
           tokens_held: 0,
           expires_at: expiresAt.toISOString(),
           status: 'active',
@@ -784,9 +786,9 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
         user_id: payment.user_id,
         user_package_id: userPackage.id,
         transaction_type: 'purchase',
-        tokens_change: pkg.token_count as number,
+        tokens_change: issuedTokenCount,
         tokens_before: 0,
-        tokens_after: pkg.token_count as number,
+        tokens_after: issuedTokenCount,
         description: `Purchased ${pkg.name} (cron sync)`,
         created_at: new Date().toISOString(),
       })
@@ -803,7 +805,7 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
         })
       }
 
-      console.log(`[Cron: SyncPendingPayments] Synced payment ${payment.id} — issued ${pkg.token_count} tokens to user ${payment.user_id}`)
+      console.log(`[Cron: SyncPendingPayments] Synced payment ${payment.id} — issued ${issuedTokenCount} tokens to user ${payment.user_id}`)
 
       void Promise.resolve().then(async () => {
         const { data: userProfile } = await supabase
@@ -819,7 +821,7 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
           amount: payment.amount_cents / 100,
           currency: payment.currency,
           packageName: pkg.name,
-          tokenCount: pkg.token_count,
+          tokenCount: issuedTokenCount,
           userName: userProfile?.name || 'User',
           userEmail: userProfile?.email || undefined,
         })

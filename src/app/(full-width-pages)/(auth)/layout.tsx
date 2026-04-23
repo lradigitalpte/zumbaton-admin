@@ -24,7 +24,7 @@ export default function AuthLayout({
                 <Link href="/" className="flex items-center gap-3 mb-4">
                   <Image
                     src="/images/logo/zumbaton logo (transparent).png"
-                    alt="Zumbaton Logo"
+                    alt="One Step Fitness Logo"
                     width={320}
                     height={107}
                     className="h-36 w-auto"

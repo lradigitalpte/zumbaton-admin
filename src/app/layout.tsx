@@ -13,8 +13,8 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "Zumbaton Admin Dashboard",
-  description: "Zumbaton fitness class management dashboard",
+  title: "One Step Fitness Admin Dashboard",
+  description: "One Step Fitness class management dashboard",
   icons: {
     icon: [
       { url: "/images/logo/logo fav.png", type: "image/png" },

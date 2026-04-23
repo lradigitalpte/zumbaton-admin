@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
 
     // Call web app's generate-pdf API with form data
     const isDevelopment = process.env.NODE_ENV === 'development'
-    const webAppUrl = isDevelopment ? 'http://localhost:3000' : (process.env.NEXT_PUBLIC_WEB_URL || 'https://zumbaton.sg')
+    const webAppUrl = isDevelopment ? 'http://localhost:3000' : (process.env.NEXT_PUBLIC_WEB_URL || 'https://onestepfitness.sg')
 
     const response = await fetch(`${webAppUrl}/api/registration-form/generate-pdf`, {
       method: 'POST',
@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
 
     // Convert base64 to buffer
     const pdfBuffer = Buffer.from(result.pdf, 'base64')
-    const fileName = result.filename || `zumbaton-registration-${form.full_name_nric.replace(/\s+/g, '-')}.pdf`
+    const fileName = result.filename || `one-step-fitness-registration-${form.full_name_nric.replace(/\s+/g, '-')}.pdf`
 
     // Return PDF as download
     return new NextResponse(pdfBuffer, {

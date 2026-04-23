@@ -41,6 +41,7 @@ export async function createPackage(data: CreatePackageRequest): Promise<Package
       class_types: data.classTypes || ['all'],
       package_type: data.packageType || 'adult',
       age_requirement: data.packageType === 'kid' ? (data.ageRequirement || 'all') : 'all',
+      is_unlimited: data.isUnlimited === true,
       is_active: data.isActive !== false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -225,6 +226,7 @@ export async function updatePackage(
     // If changing to kid package and no age requirement provided, default to 'all'
     updateData.age_requirement = 'all'
   }
+  if (data.isUnlimited !== undefined) updateData.is_unlimited = data.isUnlimited
   if (data.isActive !== undefined) updateData.is_active = data.isActive
 
   const { data: pkg, error } = await supabase
@@ -306,6 +308,7 @@ function mapPackageToSchema(row: Record<string, unknown>): Package {
     classTypes: row.class_types as ('zumba' | 'yoga' | 'pilates' | 'hiit' | 'spinning' | 'boxing' | 'dance' | 'strength' | 'cardio' | 'all')[],
     packageType: (row.package_type as 'adult' | 'kid' | 'all') || 'adult',
     ageRequirement: (row.age_requirement as 'all' | '5-12' | '13+' | null) || 'all',
+    isUnlimited: (row.is_unlimited as boolean | null) || false,
     isActive: row.is_active as boolean,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,

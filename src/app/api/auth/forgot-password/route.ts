@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     const baseUrl = isDevelopment
       ? (process.env.NEXT_PUBLIC_APP_URL ||
          (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3001'))
-      : (process.env.NEXT_PUBLIC_APP_URL || 'https://admin.zumbaton.sg')
+      : (process.env.NEXT_PUBLIC_APP_URL || 'https://admin.onestepfitness.sg')
 
     // Send OTP email using the web app's custom email service
     try {

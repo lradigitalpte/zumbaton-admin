@@ -103,7 +103,7 @@ const AppHeader: React.FC = () => {
               height={67}
               className="h-10 w-auto dark:invert"
               src="/images/logo/zumbaton logo (transparent).png"
-              alt="Zumbaton Logo"
+              alt="One Step Fitness Logo"
             />
           </Link>
 

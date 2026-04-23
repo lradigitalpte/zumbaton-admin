@@ -3,8 +3,8 @@ import { Metadata } from "next";
 import { Suspense } from "react";
 
 export const metadata: Metadata = {
-  title: "Set Password | Zumbaton",
-  description: "Set your Zumbaton account password",
+  title: "Set Password | One Step Fitness",
+  description: "Set your One Step Fitness account password",
 };
 
 function SetPasswordFormFallback() {

@@ -20,6 +20,7 @@ export interface Package {
   classTypes: ClassType[]
   packageType: 'adult' | 'kid' | 'all'
   ageRequirement: 'all' | '5-12' | '13+'
+  isUnlimited: boolean
   isActive: boolean
   createdAt: string
   updatedAt: string
@@ -47,6 +48,7 @@ export interface CreatePackageData {
   classTypes?: ClassType[]
   packageType?: 'adult' | 'kid' | 'all'
   ageRequirement?: 'all' | '5-12' | '13+'
+  isUnlimited?: boolean
   isActive?: boolean
 }
 
@@ -60,6 +62,7 @@ export interface UpdatePackageData {
   classTypes?: ClassType[]
   packageType?: 'adult' | 'kid' | 'all'
   ageRequirement?: 'all' | '5-12' | '13+'
+  isUnlimited?: boolean
   isActive?: boolean
 }
 

@@ -3,8 +3,8 @@ import { DashboardMetrics, TodaysClasses, RecentActivity, QuickActions } from "@
 import React from "react";
 
 export const metadata: Metadata = {
-  title: "Zumbaton Admin Dashboard",
-  description: "Zumbaton fitness class management dashboard",
+  title: "One Step Fitness Admin Dashboard",
+  description: "One Step Fitness class management dashboard",
 };
 
 export default function Dashboard() {

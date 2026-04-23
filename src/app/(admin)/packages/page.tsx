@@ -20,6 +20,8 @@ export default function PackagesPage() {
   
   const [showPanel, setShowPanel] = useState(false);
   const [editingPackage, setEditingPackage] = useState<PackageWithStats | null>(null);
+  const [packageTypeTab, setPackageTypeTab] = useState<"all" | "adult" | "kid">("all");
+  const [showArchived, setShowArchived] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -29,6 +31,7 @@ export default function PackagesPage() {
     packageType: "adult" as "adult" | "kid" | "all",
     ageRequirement: "all" as "all" | "5-12" | "13+",
     isFeatured: false,
+    isUnlimited: false,
   });
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
 
@@ -40,21 +43,30 @@ export default function PackagesPage() {
 
   // Get packages from API response
   const packages = packagesData?.packages || [];
+  const filteredPackages = useMemo(() => {
+    return packages.filter((pkg) => {
+      if (!showArchived && !pkg.isActive) return false;
+      if (packageTypeTab === "all") return true;
+      if (packageTypeTab === "adult") return pkg.packageType === "adult" || pkg.packageType === "all";
+      return pkg.packageType === "kid" || pkg.packageType === "all";
+    });
+  }, [packages, packageTypeTab, showArchived]);
 
   // Stats
   const stats = useMemo(() => {
     const activePackages = packages.filter((p) => p.isActive).length;
     const totalSales = packages.reduce((sum, pkg) => sum + (pkg.salesCount || 0), 0);
     const totalRevenue = packages.reduce((sum, pkg) => sum + (pkg.revenue || 0), 0);
-    const avgTokenPrice = packages.length > 0 
-      ? packages.reduce((sum, pkg) => sum + ((pkg.priceCents / 100) / pkg.tokenCount), 0) / packages.length 
+    const limitedPackages = packages.filter((pkg) => !pkg.isUnlimited);
+    const avgTokenPrice = limitedPackages.length > 0
+      ? limitedPackages.reduce((sum, pkg) => sum + ((pkg.priceCents / 100) / pkg.tokenCount), 0) / limitedPackages.length
       : 0;
     return { activePackages, totalSales, totalRevenue, avgTokenPrice };
   }, [packages]);
 
   const openNewPackagePanel = () => {
     setEditingPackage(null);
-    setFormData({ name: "", description: "", tokens: "", price: "", validityDays: "", packageType: "adult", ageRequirement: "all", isFeatured: false });
+    setFormData({ name: "", description: "", tokens: "", price: "", validityDays: "", packageType: "adult", ageRequirement: "all", isFeatured: false, isUnlimited: false });
     setShowPanel(true);
   };
 
@@ -63,12 +75,13 @@ export default function PackagesPage() {
     setFormData({
       name: pkg.name,
       description: pkg.description || "",
-      tokens: pkg.tokenCount.toString(),
+      tokens: pkg.isUnlimited ? "1" : pkg.tokenCount.toString(),
       price: (pkg.priceCents / 100).toString(),
       validityDays: pkg.validityDays.toString(),
       packageType: (pkg.packageType as "adult" | "kid" | "all") || "adult",
       ageRequirement: (pkg.ageRequirement as "all" | "5-12" | "13+") || "all",
       isFeatured: false, // Note: isFeatured is not in the schema, keeping for UI
+      isUnlimited: pkg.isUnlimited || false,
     });
     setShowPanel(true);
   };
@@ -78,12 +91,13 @@ export default function PackagesPage() {
       const packageData = {
         name: formData.name,
         description: formData.description || undefined,
-        tokenCount: parseInt(formData.tokens),
+        tokenCount: formData.isUnlimited ? 1 : parseInt(formData.tokens),
         priceCents: Math.round(parseFloat(formData.price) * 100),
         validityDays: parseInt(formData.validityDays),
         packageType: formData.packageType,
         ageRequirement: formData.packageType === "kid" ? formData.ageRequirement : "all",
         currency: "SGD",
+        isUnlimited: formData.isUnlimited,
       };
 
       if (editingPackage) {
@@ -104,6 +118,10 @@ export default function PackagesPage() {
 
   const togglePackageStatus = async (pkgId: string, currentStatus: boolean) => {
     try {
+      if (currentStatus) {
+        const confirmed = window.confirm("Soft delete this package? It will be hidden from the default view.");
+        if (!confirmed) return;
+      }
       await toggleStatusMutation.mutateAsync({
         id: pkgId,
         isActive: !currentStatus,
@@ -211,6 +229,50 @@ export default function PackagesPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
+            <button
+              onClick={() => setPackageTypeTab("all")}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                packageTypeTab === "all"
+                  ? "bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white"
+                  : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setPackageTypeTab("adult")}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                packageTypeTab === "adult"
+                  ? "bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white"
+                  : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+              }`}
+            >
+              Adults
+            </button>
+            <button
+              onClick={() => setPackageTypeTab("kid")}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                packageTypeTab === "kid"
+                  ? "bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white"
+                  : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+              }`}
+            >
+              Kids
+            </button>
+          </div>
+
+          <button
+            onClick={() => setShowArchived((prev) => !prev)}
+            className={`rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
+              showArchived
+                ? "bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
+                : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            }`}
+          >
+            {showArchived ? "Hide Archived" : "Show Archived"}
+          </button>
+
           {/* View Toggle */}
           <div className="flex items-center rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
             <button
@@ -266,7 +328,7 @@ export default function PackagesPage() {
             </div>
             <div>
               <div className="text-sm text-gray-500 dark:text-gray-400">Total Packages</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">{packages.length}</div>
+              <div className="text-2xl font-bold text-gray-900 dark:text-white">{filteredPackages.length}</div>
             </div>
           </div>
         </div>
@@ -315,7 +377,7 @@ export default function PackagesPage() {
       </div>
 
       {/* Empty State */}
-      {packages.length === 0 && (
+      {filteredPackages.length === 0 && (
         <div className="flex min-h-[300px] flex-col items-center justify-center rounded-2xl bg-white p-8 shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-800">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
             <svg className="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -339,9 +401,9 @@ export default function PackagesPage() {
       )}
 
       {/* Package Cards View */}
-      {viewMode === "cards" && packages.length > 0 && (
+      {viewMode === "cards" && filteredPackages.length > 0 && (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {packages.map((pkg, index) => {
+          {filteredPackages.map((pkg, index) => {
             const color = getPackageColor(index);
             const price = pkg.priceCents / 100;
             return (
@@ -375,13 +437,13 @@ export default function PackagesPage() {
                 {/* Token Info */}
                 <div className="mb-6 flex items-center justify-between rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
                   <div className="text-center">
-                    <div className="text-3xl font-bold text-gray-900 dark:text-white">{pkg.tokenCount}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Tokens</div>
+                    <div className="text-3xl font-bold text-gray-900 dark:text-white">{pkg.isUnlimited ? "∞" : pkg.tokenCount}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{pkg.isUnlimited ? "Unlimited" : "Tokens"}</div>
                   </div>
                   <div className="h-10 w-px bg-gray-200 dark:bg-gray-700"></div>
                   <div className="text-center">
-                    <div className="text-xl font-bold text-gray-900 dark:text-white">${(price / pkg.tokenCount).toFixed(2)}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Per Token</div>
+                    <div className="text-xl font-bold text-gray-900 dark:text-white">{pkg.isUnlimited ? "—" : `$${(price / pkg.tokenCount).toFixed(2)}`}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{pkg.isUnlimited ? "N/A" : "Per Token"}</div>
                   </div>
                   <div className="h-10 w-px bg-gray-200 dark:bg-gray-700"></div>
                   <div className="text-center">
@@ -430,7 +492,7 @@ export default function PackagesPage() {
                           : "bg-emerald-500 text-white hover:bg-emerald-600"
                       }`}
                     >
-                      {pkg.isActive ? "Deactivate" : "Activate"}
+                      {pkg.isActive ? "Soft Delete" : "Restore"}
                     </button>
                   </div>
                 )}
@@ -441,7 +503,7 @@ export default function PackagesPage() {
       )}
 
       {/* Table View */}
-      {viewMode === "table" && packages.length > 0 && (
+      {viewMode === "table" && filteredPackages.length > 0 && (
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-800">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -479,7 +541,7 @@ export default function PackagesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-                {packages.map((pkg, index) => {
+                {filteredPackages.map((pkg, index) => {
                   const color = getPackageColor(index);
                   const price = pkg.priceCents / 100;
                   return (
@@ -503,13 +565,13 @@ export default function PackagesPage() {
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4">
-                      <span className="text-lg font-bold text-gray-900 dark:text-white">{pkg.tokenCount}</span>
+                      <span className="text-lg font-bold text-gray-900 dark:text-white">{pkg.isUnlimited ? "Unlimited" : pkg.tokenCount}</span>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4">
                       <span className="font-medium text-gray-900 dark:text-white">${price.toFixed(2)}</span>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4">
-                      <span className="text-gray-500 dark:text-gray-400">${(price / pkg.tokenCount).toFixed(2)}</span>
+                      <span className="text-gray-500 dark:text-gray-400">{pkg.isUnlimited ? "—" : `$${(price / pkg.tokenCount).toFixed(2)}`}</span>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4">
                       <span className="text-gray-900 dark:text-white">{pkg.validityDays} days</span>
@@ -546,7 +608,7 @@ export default function PackagesPage() {
                                 : "text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
                             }`}
                           >
-                            {pkg.isActive ? "Deactivate" : "Activate"}
+                            {pkg.isActive ? "Soft Delete" : "Restore"}
                           </button>
                         </div>
                       ) : (
@@ -629,6 +691,7 @@ export default function PackagesPage() {
                       value={formData.tokens}
                       onChange={(e) => setFormData({ ...formData, tokens: e.target.value })}
                       placeholder="10"
+                      disabled={formData.isUnlimited}
                       className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
                     />
                   </div>
@@ -700,6 +763,19 @@ export default function PackagesPage() {
                 <div className="flex items-center gap-3">
                   <input
                     type="checkbox"
+                    id="isUnlimited"
+                    checked={formData.isUnlimited}
+                    onChange={(e) => setFormData({ ...formData, isUnlimited: e.target.checked, tokens: e.target.checked ? "1" : formData.tokens })}
+                    className="h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500"
+                  />
+                  <label htmlFor="isUnlimited" className="text-sm text-gray-700 dark:text-gray-300">
+                    Unlimited package (no token limit)
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
                     id="featured"
                     checked={formData.isFeatured}
                     onChange={(e) => setFormData({ ...formData, isFeatured: e.target.checked })}
@@ -711,7 +787,7 @@ export default function PackagesPage() {
                 </div>
 
                 {/* Price Preview */}
-                {formData.tokens && formData.price && (
+                {!formData.isUnlimited && formData.tokens && formData.price && (
                   <div className="rounded-xl border-2 border-dashed border-gray-300 p-4 dark:border-gray-600">
                     <div className="text-center">
                       <div className="text-sm text-gray-500 dark:text-gray-400">Price per Token</div>
@@ -734,7 +810,7 @@ export default function PackagesPage() {
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={!formData.name || !formData.tokens || !formData.price || !formData.validityDays}
+                  disabled={!formData.name || (!formData.isUnlimited && !formData.tokens) || !formData.price || !formData.validityDays}
                   className="flex-1 rounded-xl bg-brand-500 px-4 py-3 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
                 >
                   {editingPackage ? "Save Changes" : "Create Package"}

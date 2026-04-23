@@ -80,7 +80,7 @@ export default function ForgotPasswordForm() {
           <div className="flex items-center justify-center gap-2 mb-6">
             <Image
               src="/images/logo/zumbaton logo (transparent).png"
-              alt="Zumbaton Logo"
+              alt="One Step Fitness Logo"
               width={400}
               height={133}
               className="h-32 w-auto dark:invert"

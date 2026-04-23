@@ -390,7 +390,7 @@ const TutorSidebar: React.FC = () => {
           {isExpanded || isHovered || isMobileOpen ? (
             <Image
               src="/images/logo/zumbaton logo (transparent).png"
-              alt="Zumbaton Logo"
+              alt="One Step Fitness Logo"
               width={240}
               height={80}
               className="h-16 w-auto"
@@ -399,7 +399,7 @@ const TutorSidebar: React.FC = () => {
           ) : (
             <Image
               src="/images/logo/logo fav.png"
-              alt="Zumbaton"
+              alt="One Step Fitness"
               width={64}
               height={64}
               className="h-16 w-16 rounded-xl"

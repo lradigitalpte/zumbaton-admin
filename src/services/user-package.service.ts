@@ -15,6 +15,7 @@ import type {
   UserPackagesQuery,
   TokenBalance,
 } from '@/api/schemas'
+const UNLIMITED_TOKEN_BALANCE = 2147483647
 
 // Purchase a package
 export async function purchasePackage(params: {
@@ -39,6 +40,7 @@ export async function purchasePackage(params: {
     throw new ApiError('NOT_FOUND_ERROR', 'Package not found or not available', 404)
   }
 
+  const issuedTokenCount = pkg.is_unlimited ? UNLIMITED_TOKEN_BALANCE : pkg.token_count
   // 2. Calculate expiry date
   const expiresAt = new Date()
   expiresAt.setDate(expiresAt.getDate() + pkg.validity_days)
@@ -49,7 +51,7 @@ export async function purchasePackage(params: {
     .insert({
       user_id: userId,
       package_id: packageId,
-      tokens_remaining: pkg.token_count,
+      tokens_remaining: issuedTokenCount,
       tokens_held: 0,
       purchased_at: new Date().toISOString(),
       expires_at: expiresAt.toISOString(),
@@ -73,9 +75,9 @@ export async function purchasePackage(params: {
       user_id: userId,
       user_package_id: userPackage.id,
       transaction_type: 'purchase',
-      tokens_change: pkg.token_count,
+      tokens_change: issuedTokenCount,
       tokens_before: 0,
-      tokens_after: pkg.token_count,
+      tokens_after: issuedTokenCount,
       description: `Purchased ${pkg.name}`,
       created_at: new Date().toISOString(),
     })
@@ -124,7 +126,7 @@ export async function purchasePackage(params: {
             userEmail: userProfile.email,
             userName: userProfile.name,
             packageName: pkg.name,
-            tokenCount: pkg.token_count,
+            tokenCount: issuedTokenCount,
             amount: pkg.price_cents / 100,
             currency: pkg.currency || 'SGD',
             expiresAt: expiresAt.toISOString(),
@@ -140,10 +142,10 @@ export async function purchasePackage(params: {
 
   return {
     userPackage: mapUserPackageToSchema(userPackage),
-    tokensAdded: pkg.token_count,
+    tokensAdded: issuedTokenCount,
     newBalance: balance.availableTokens,
     expiresAt: expiresAt.toISOString(),
-    message: `Successfully purchased ${pkg.name}. ${pkg.token_count} tokens added.`,
+    message: `Successfully purchased ${pkg.name}. ${pkg.is_unlimited ? 'unlimited' : issuedTokenCount} tokens added.`,
   }
 }
 
@@ -401,6 +403,7 @@ function mapPackageToSchema(row: Record<string, unknown>) {
     classTypes: row.class_types as ('zumba' | 'yoga' | 'pilates' | 'hiit' | 'spinning' | 'boxing' | 'dance' | 'strength' | 'cardio' | 'all')[],
     packageType: (row.package_type as 'adult' | 'kid' | 'all') || 'adult',
     ageRequirement: (row.age_requirement as 'all' | '5-12' | '13+' | null) || 'all',
+    isUnlimited: (row.is_unlimited as boolean | null) || false,
     isActive: row.is_active as boolean,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,

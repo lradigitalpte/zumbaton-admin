@@ -399,7 +399,7 @@ export default function UsersPage() {
     const local = parentEmail.slice(0, at);
     const domain = parentEmail.slice(at);
     const slug = username.trim().toLowerCase().replace(/\s+/g, ".").replace(/[^a-z0-9._-]/g, "") || "child";
-    return `${local}+zumbaton.${slug}${domain}`;
+    return `${local}+onestepfitness.${slug}${domain}`;
   };
 
   const handleCreateUser = async () => {
@@ -1636,7 +1636,7 @@ export default function UsersPage() {
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
               <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Sign-in URL:</div>
               <div className="text-sm text-gray-900 dark:text-white font-mono bg-white dark:bg-gray-900 px-3 py-2 rounded border">
-                https://zumbaton.sg/signin
+                https://onestepfitness.sg/signin
               </div>
             </div>
 

@@ -55,7 +55,7 @@ export default function ViewRegistrationForm() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-      setWebAppUrl(isDevelopment ? 'http://localhost:3000' : (process.env.NEXT_PUBLIC_WEB_URL || 'https://zumbaton.sg'))
+      setWebAppUrl(isDevelopment ? 'http://localhost:3000' : (process.env.NEXT_PUBLIC_WEB_URL || 'https://onestepfitness.sg'))
     }
   }, [])
 
@@ -213,7 +213,7 @@ export default function ViewRegistrationForm() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `zumbaton-registration-${formData.full_name_nric.replace(/\s+/g, '-')}.pdf`
+      a.download = `one-step-fitness-registration-${formData.full_name_nric.replace(/\s+/g, '-')}.pdf`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -283,7 +283,7 @@ export default function ViewRegistrationForm() {
           <div className="bg-gradient-to-r from-green-600 to-emerald-600 p-8 text-white">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-3xl font-bold mb-2">ZUMBATON</h1>
+                <h1 className="text-3xl font-bold mb-2">ONE STEP FITNESS</h1>
                 <p className="text-green-100 text-lg">Membership Registration Form</p>
               </div>
               <div className="text-right">
@@ -446,33 +446,33 @@ export default function ViewRegistrationForm() {
                 <div className="bg-amber-50 rounded-lg p-6 max-h-[600px] overflow-y-auto border border-amber-200">
                   <div className="prose prose-sm max-w-none text-gray-700 space-y-4">
                     <h3 className="font-bold text-gray-900 text-lg">MEMBER ASSUMPTION OF RISK AND RELEASE</h3>
-                    <p>I hereby understand and acknowledge the risk of injury arising from and/or in connection with ZUMBATON's activities. I willingly assume all the risks associated with the exercise choreographed. I understand that ZUMBATON is independently owned and operated. I HEREBY RELEASE, INDEMNIFY, AND HOLD HARMLESS to ZUMBATON's employees, owners, and partners WITH RESPECT TO ANY AND ALL INJURY, DISABILITY, DEATH, LOSS OR DAMAGE to person and/or property that may arise out of or in connection with my use of the studio, or otherwise related to my subscription. I expressly agree that this release is intended to be as broad and inclusive as permitted by applicable law and if a portion of this release is held invalid, the balance shall remain in full force and effect.</p>
+                    <p>I hereby understand and acknowledge the risk of injury arising from and/or in connection with One Step Fitness activities. I willingly assume all the risks associated with the exercise choreographed. I understand that One Step Fitness is independently owned and operated. I HEREBY RELEASE, INDEMNIFY, AND HOLD HARMLESS to One Step Fitness employees, owners, and partners WITH RESPECT TO ANY AND ALL INJURY, DISABILITY, DEATH, LOSS OR DAMAGE to person and/or property that may arise out of or in connection with my use of the studio, or otherwise related to my subscription. I expressly agree that this release is intended to be as broad and inclusive as permitted by applicable law and if a portion of this release is held invalid, the balance shall remain in full force and effect.</p>
 
                     <div className="bg-yellow-100 border-l-4 border-yellow-500 p-4 my-4">
                       <p className="font-bold">IF YOU ARE AGED BETWEEN 5 – 15 THE CONSENT OF A PARENT/GUARDIAN IS REQUIRED UPON JOINING AND A PARENT/GUARDIAN MUST BE PRESENT DURING CLASSES</p>
-                      <p className="mt-2">I am the parent/guardian of the above. I acknowledge that: The above has my express permission to participate in the ZUMBATON activities. The above and I have read and understood the Terms and Conditions & Safety Notices. By signing, I am agreeing to be bound along with the above by the Terms and Conditions, including Safety Notices.</p>
+                      <p className="mt-2">I am the parent/guardian of the above. I acknowledge that: The above has my express permission to participate in the One Step Fitness activities. The above and I have read and understood the Terms and Conditions & Safety Notices. By signing, I am agreeing to be bound along with the above by the Terms and Conditions, including Safety Notices.</p>
                     </div>
 
                     <h3 className="font-bold text-gray-900 text-lg mt-6">1. TERMS AND CONDITIONS</h3>
-                    <p>1.1. The following terms and conditions govern the rights and obligations of ZUMBATON members thereof. It is important that you have read and understood all the terms and conditions stated herein before signing this Agreement. Each member who signs below will be individually and severally bound by this Agreement.</p>
+                    <p>1.1. The following terms and conditions govern the rights and obligations of One Step Fitness members thereof. It is important that you have read and understood all the terms and conditions stated herein before signing this Agreement. Each member who signs below will be individually and severally bound by this Agreement.</p>
 
                     <h3 className="font-bold text-gray-900 text-lg mt-6">2. MEMBERSHIP</h3>
-                    <p>2.1. Members who are under the age of 16 years, you confirm that you have the express permission of your parent/guardian to join ZUMBATON and use the facilities and services available. All references to "you" or "your" in this Agreement will denote you and/or your parent/guardian on behalf of you.</p>
-                    <p>2.2. Membership is personal to the member and is non-transferable and non-refundable. You may not loan or sell your membership or otherwise permit it to be used by any third party. You may be charged with a fine depending on the sessions being misused. ZUMBATON's management may assign the benefit of this Agreement to any person at any time with notice to the individual.</p>
+                    <p>2.1. Members who are under the age of 16 years, you confirm that you have the express permission of your parent/guardian to join One Step Fitness and use the facilities and services available. All references to "you" or "your" in this Agreement will denote you and/or your parent/guardian on behalf of you.</p>
+                    <p>2.2. Membership is personal to the member and is non-transferable and non-refundable. You may not loan or sell your membership or otherwise permit it to be used by any third party. You may be charged with a fine depending on the sessions being misused. One Step Fitness management may assign the benefit of this Agreement to any person at any time with notice to the individual.</p>
 
                     <h3 className="font-bold text-gray-900 text-lg mt-6">3. FREEZING, SUSPENSION, CANCELLATION AND/OR TERMINATION OF THE MEMBERSHIP</h3>
-                    <p>3.1. Medical Cancellation: Subject to Clause, you may cancel and/or terminate this Agreement for medical reasons. If you wish to cancel and/or terminate the membership due to medical reasons, your doctor must provide the relevant certification(s) indicating that your participation in ZUMBATON step aerobics activities would impair your health.</p>
+                    <p>3.1. Medical Cancellation: Subject to Clause, you may cancel and/or terminate this Agreement for medical reasons. If you wish to cancel and/or terminate the membership due to medical reasons, your doctor must provide the relevant certification(s) indicating that your participation in One Step Fitness step aerobics activities would impair your health.</p>
                     <p>3.2. In the event of death or disability, the liability for membership will terminate as at the date of death or disability.</p>
                     <p>3.3. If the Club's facilities become temporarily unavailable due to an event such as a fire, flood, loss of lease, or the like, we may freeze your membership for the period the facilities were unavailable.</p>
                     <p>3.4. Cancellation of class after booking should be made at least 24 hours before the class date. Booked class with a "NO SHOW" will be forfeited.</p>
-                    <p>3.5. Zumbaton Management Team retains the sole and absolute right to cancel, freeze and/or suspend the membership of any person for any reason. If such cancellation and/or suspension is made due to a breach of any of the terms of this Agreement, including the Membership Policies and Safety Notices, or due to damage caused by you, the balance of your financial obligations under this Agreement shall become immediately due and payable.</p>
+                    <p>3.5. One Step Fitness Management Team retains the sole and absolute right to cancel, freeze and/or suspend the membership of any person for any reason. If such cancellation and/or suspension is made due to a breach of any of the terms of this Agreement, including the Membership Policies and Safety Notices, or due to damage caused by you, the balance of your financial obligations under this Agreement shall become immediately due and payable.</p>
 
                     <h3 className="font-bold text-gray-900 text-lg mt-6">4. PHYSICAL CONDITION OF MEMBER</h3>
                     <p>4.1. You hereby warrant and represent that you are in good physical and/or mental condition and that you know of no medical or any other reason why you are not capable of engaging in active or passive exercise and that such exercise would not be detrimental to your health and/or safety and/or comfort and/or physical condition.</p>
                     <p>4.2. Further, you also acknowledge that you hereby agree to carry out exercises responsibly and with due care and attention to your own medical, health and mental condition at all times. You understand and acknowledge all risks of injury arising from the exercises.</p>
 
                     <h3 className="font-bold text-gray-900 text-lg mt-6">5. ATTIRE & SAFETY</h3>
-                    <p>5.1. You are required to wear covered shoes excluding boots for all ZUMBATON sessions regardless indoors or outdoors.</p>
+                    <p>5.1. You are required to wear covered shoes excluding boots for all One Step Fitness sessions regardless indoors or outdoors.</p>
                     <p>5.2. It will be highly recommended to wear active sportswear & bring bottled water for water breaks & hydration purposes.</p>
 
                     <h3 className="font-bold text-gray-900 text-lg mt-6">6. MEDIA CONSENT</h3>

@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
       channel: 'in_app',
       data: {
         user_name: userProfile.name || 'User',
-        message: `Welcome to Zumbaton, ${userProfile.name || 'User'}! We're excited to have you. Start exploring classes and book your first session!`,
+        message: `Welcome to One Step Fitness, ${userProfile.name || 'User'}! We're excited to have you. Start exploring classes and book your first session!`,
       },
     })
 

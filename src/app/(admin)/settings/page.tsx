@@ -475,7 +475,7 @@ export default function GeneralSettingsPage() {
                     <div className="flex items-start justify-between mb-6">
                       <div>
                         <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-1">Referral Program</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">Reward users for referring friends to Zumbaton</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">Reward users for referring friends to One Step Fitness</p>
                       </div>
                       <button
                         onClick={() => setPromotionSettings({ ...promotionSettings, referral_enabled: !promotionSettings.referral_enabled })}

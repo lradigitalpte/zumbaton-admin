@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
 
     // Determine web app URL based on environment
     const isDevelopment = process.env.NODE_ENV === 'development'
-    const webAppUrl = isDevelopment ? 'http://localhost:3000' : (process.env.NEXT_PUBLIC_WEB_URL || 'https://zumbaton.sg')
+    const webAppUrl = isDevelopment ? 'http://localhost:3000' : (process.env.NEXT_PUBLIC_WEB_URL || 'https://onestepfitness.sg')
 
     const response = await fetch(`${webAppUrl}/api/registration-form/send-pdf`, {
       method: 'POST',

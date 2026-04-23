@@ -18,6 +18,7 @@ const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+const UNLIMITED_TOKEN_BALANCE = 2147483647
 
 type RouteParams = { paymentId: string }
 
@@ -170,6 +171,7 @@ async function handleSyncPayment(
       return NextResponse.json({ error: 'Failed to update payment status' }, { status: 500 })
     }
 
+    const issuedTokenCount = pkg.is_unlimited ? UNLIMITED_TOKEN_BALANCE : pkg.token_count
     // 7. Create user_package with tokens
     const expiresAt = new Date()
     expiresAt.setDate(expiresAt.getDate() + pkg.validity_days)
@@ -180,7 +182,7 @@ async function handleSyncPayment(
         user_id: payment.user_id,
         package_id: payment.package_id,
         payment_id: payment.id.toString(),
-        tokens_remaining: pkg.token_count,
+        tokens_remaining: issuedTokenCount,
         tokens_held: 0,
         expires_at: expiresAt.toISOString(),
         status: 'active',
@@ -221,15 +223,15 @@ async function handleSyncPayment(
       user_id: payment.user_id,
       user_package_id: userPackage.id,
       transaction_type: 'purchase',
-      tokens_change: pkg.token_count,
+      tokens_change: issuedTokenCount,
       tokens_before: 0,
-      tokens_after: pkg.token_count,
+      tokens_after: issuedTokenCount,
       description: `Purchased ${pkg.name} (admin sync)`,
     })
 
     // 11. Update user stats (non-blocking)
     try {
-      await supabaseAdmin.rpc('increment_user_stat', { p_user_id: payment.user_id, p_field: 'total_tokens_purchased', p_amount: pkg.token_count })
+      await supabaseAdmin.rpc('increment_user_stat', { p_user_id: payment.user_id, p_field: 'total_tokens_purchased', p_amount: issuedTokenCount })
       await supabaseAdmin.rpc('increment_user_stat', { p_user_id: payment.user_id, p_field: 'total_spent_cents', p_amount: payment.amount_cents })
     } catch (_) { /* non-critical */ }
 
@@ -253,10 +255,10 @@ async function handleSyncPayment(
       type: 'payment_successful',
       channel: 'in_app',
       subject: 'Payment Confirmed!',
-      body: `Your purchase of ${pkg.name} has been confirmed. ${pkg.token_count} tokens have been added to your account.`,
+      body: `Your purchase of ${pkg.name} has been confirmed. ${pkg.is_unlimited ? 'unlimited' : issuedTokenCount} tokens have been added to your account.`,
       status: 'sent',
       sent_at: new Date().toISOString(),
-      data: { payment_id: payment.id, package_name: pkg.name, token_count: pkg.token_count, amount: payment.amount_cents / 100 },
+      data: { payment_id: payment.id, package_name: pkg.name, token_count: issuedTokenCount, is_unlimited: pkg.is_unlimited === true, amount: payment.amount_cents / 100 },
     })
 
     // 14. Audit log
@@ -268,12 +270,12 @@ async function handleSyncPayment(
       newValues: {
         note: 'Manually synced from HitPay by admin',
         hitpayStatus,
-        tokensIssued: pkg.token_count,
+        tokensIssued: issuedTokenCount,
         userPackageId: userPackage.id,
       },
     })
 
-    console.log('[AdminSync] Payment synced successfully:', payment.id, '— tokens issued:', pkg.token_count)
+    console.log('[AdminSync] Payment synced successfully:', payment.id, '— tokens issued:', issuedTokenCount)
 
     void Promise.resolve().then(async () => {
       const { data: userProfile } = await supabaseAdmin
@@ -289,7 +291,7 @@ async function handleSyncPayment(
         amount: payment.amount_cents / 100,
         currency: payment.currency,
         packageName: pkg.name,
-        tokenCount: pkg.token_count,
+        tokenCount: issuedTokenCount,
         userName: userProfile?.name || 'User',
         userEmail: userProfile?.email || undefined,
       })
@@ -300,7 +302,7 @@ async function handleSyncPayment(
     return NextResponse.json({
       message: 'Payment confirmed and tokens issued successfully',
       status: 'succeeded',
-      tokensIssued: pkg.token_count,
+      tokensIssued: issuedTokenCount,
       packageName: pkg.name,
       userPackageId: userPackage.id,
     })

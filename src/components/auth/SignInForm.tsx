@@ -71,11 +71,11 @@ export default function SignInForm() {
   return (
     <div className="flex flex-col flex-1 lg:w-1/2 w-full">
       <div className="w-full max-w-md sm:pt-10 mx-auto mb-5">
-        {/* Zumbaton Logo */}
+        {/* One Step Fitness Logo */}
         <div className="flex items-center justify-center gap-2">
           <Image
             src="/images/logo/zumbaton logo (transparent).png"
-            alt="Zumbaton Logo"
+            alt="One Step Fitness Logo"
             width={400}
             height={133}
             className="h-32 w-auto dark:invert"
@@ -106,7 +106,7 @@ export default function SignInForm() {
                     Email or Username <span className="text-error-500">*</span>{" "}
                   </Label>
                   <Input
-                    placeholder="demo@zumbaton.com or demouser"
+                    placeholder="demo@onestepfitness.sg or demouser"
                     type="text"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
