@@ -16,13 +16,9 @@ export const metadata: Metadata = {
   title: "One Step Fitness Admin Dashboard",
   description: "One Step Fitness class management dashboard",
   icons: {
-    icon: [
-      { url: "/images/logo/logo fav.png", type: "image/png" },
-      { url: "/images/logo/logo fav.png", sizes: "32x32", type: "image/png" },
-      { url: "/images/logo/logo fav.png", sizes: "16x16", type: "image/png" },
-    ],
-    shortcut: "/images/logo/logo fav.png",
-    apple: "/images/logo/logo fav.png",
+    icon: "/favicon.png?v=20260501-admin",
+    shortcut: "/favicon.png?v=20260501-admin",
+    apple: "/apple-touch-icon.png?v=20260501-admin",
   },
 };
 
@@ -33,6 +29,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=20260501-admin" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png?v=20260501-admin" />
+        <link rel="shortcut icon" href="/favicon.png?v=20260501-admin" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260501-admin" />
+      </head>
       <body className={`${outfit.className} dark:bg-gray-900`}>
         <ThemeProvider>
           <ToastProvider>

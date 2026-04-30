@@ -2,8 +2,8 @@ import GridShape from "@/components/common/GridShape";
 import ThemeTogglerTwo from "@/components/common/ThemeTogglerTwo";
 
 import { ThemeProvider } from "@/context/ThemeContext";
+import BrandLogo from "@/components/common/BrandLogo";
 import Link from "next/link";
-import Image from "next/image";
 import React from "react";
 
 export default function AuthLayout({
@@ -22,8 +22,7 @@ export default function AuthLayout({
               <GridShape />
               <div className="flex flex-col items-center max-w-sm">
                 <Link href="/" className="flex items-center gap-3 mb-4">
-                  <Image
-                    src="/images/logo/zumbaton logo (transparent).png"
+                  <BrandLogo
                     alt="One Step Fitness Logo"
                     width={320}
                     height={107}

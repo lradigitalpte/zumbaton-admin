@@ -4,7 +4,7 @@ import Label from "@/components/form/Label";
 import Button from "@/components/ui/button/Button";
 import { ChevronLeftIcon } from "@/icons";
 import Link from "next/link";
-import Image from "next/image";
+import BrandLogo from "@/components/common/BrandLogo";
 import { useRouter } from "next/navigation";
 import React, { useState } from "react";
 
@@ -78,12 +78,11 @@ export default function ForgotPasswordForm() {
         <div>
           {/* Logo */}
           <div className="flex items-center justify-center gap-2 mb-6">
-            <Image
-              src="/images/logo/zumbaton logo (transparent).png"
+            <BrandLogo
               alt="One Step Fitness Logo"
               width={400}
               height={133}
-              className="h-32 w-auto dark:invert"
+              className="h-32 w-auto"
               priority
             />
           </div>

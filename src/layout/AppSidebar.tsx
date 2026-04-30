@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useRef, useState,useCallback } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import BrandLogo from "@/components/common/BrandLogo";
 import { usePathname } from "next/navigation";
 import { useSidebar } from "../context/SidebarContext";
 import {
@@ -400,26 +400,28 @@ const AppSidebar: React.FC = () => {
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="py-8 flex justify-start lg:justify-start hidden lg:block">
-        <Link href="/dashboard" className="flex items-center gap-2">
+      <div className="py-8 flex justify-center hidden lg:block">
+        <Link href="/dashboard" className="flex items-center justify-center gap-2 w-full">
           {(isExpanded || isHovered || isMobileOpen) ? (
-            <Image
-              src="/images/logo/zumbaton logo (transparent).png"
-              alt="One Step Fitness Logo"
-              width={240}
-              height={80}
-              className="h-16 w-auto block"
-              priority
-            />
+            <div className="h-16 w-[220px] rounded-md">
+              <BrandLogo
+                alt="One Step Fitness Logo"
+                width={220}
+                height={64}
+                className="h-full w-full object-contain object-center block"
+                priority
+              />
+            </div>
           ) : (
-            <Image
-              src="/images/logo/logo fav.png"
-              alt="One Step Fitness"
-              width={64}
-              height={64}
-              className="h-16 w-16 rounded-xl block"
-              priority
-            />
+            <div className="h-14 w-14 overflow-hidden rounded-xl">
+              <BrandLogo
+                alt="One Step Fitness"
+                width={56}
+                height={56}
+                className="h-full w-full object-cover object-center block"
+                priority
+              />
+            </div>
           )}
         </Link>
       </div>

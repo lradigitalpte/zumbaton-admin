@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
+import BrandLogo from "@/components/common/BrandLogo";
 import Button from "@/components/ui/button/Button";
 import Input from "@/components/form/input/InputField";
 import Label from "@/components/form/Label";
@@ -201,12 +201,11 @@ function VerifyOTPContent() {
         <div>
           {/* Logo */}
           <div className="flex items-center justify-center gap-2 mb-6">
-            <Image
-              src="/images/logo/zumbaton logo (transparent).png"
+            <BrandLogo
               alt="One Step Fitness Logo"
               width={400}
               height={133}
-              className="h-32 w-auto dark:invert"
+              className="h-32 w-auto"
               priority
             />
           </div>

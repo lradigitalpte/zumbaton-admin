@@ -6,7 +6,7 @@ import UserDropdown from "@/components/header/UserDropdown";
 import { useSidebar } from "@/context/SidebarContext";
 import { useAuth } from "@/context/AuthContext";
 import { usePathname } from "next/navigation";
-import Image from "next/image";
+import BrandLogo from "@/components/common/BrandLogo";
 import Link from "next/link";
 import React, { useState, useEffect, useMemo } from "react";
 
@@ -98,11 +98,10 @@ const AppHeader: React.FC = () => {
           </button>
 
           <Link href="/dashboard" className="lg:hidden">
-            <Image
+            <BrandLogo
               width={200}
               height={67}
-              className="h-10 w-auto dark:invert"
-              src="/images/logo/zumbaton logo (transparent).png"
+              className="h-10 w-auto"
               alt="One Step Fitness Logo"
             />
           </Link>
