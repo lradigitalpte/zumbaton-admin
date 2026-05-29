@@ -200,6 +200,9 @@ export default function TrialBookingsPage() {
   const isZumFamiliaBooking = (booking: TrialBooking): boolean =>
     booking.payment?.metadata?.flow_type === "zumfamilia";
 
+  const isDuoTrialBooking = (booking: TrialBooking): boolean =>
+    booking.payment?.metadata?.flow_type === "duo_trial";
+
   const getDisplayScheduleTime = (booking: TrialBooking): string =>
     (isZumFamiliaBooking(booking) ? booking.payment?.metadata?.custom_schedule : null) ||
     (booking.class?.scheduledAt ? formatDateTime(booking.class.scheduledAt) : "N/A");
@@ -769,7 +772,13 @@ export default function TrialBookingsPage() {
           {selectedBooking && (
             <div className="space-y-4 text-sm">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div><span className="font-medium">Flow:</span> {isZumFamiliaBooking(selectedBooking) ? "ZumFamilia" : "Trial Booking"}</div>
+                <div><span className="font-medium">Flow:</span>{" "}
+                  {isDuoTrialBooking(selectedBooking)
+                    ? "Duo Trial (1-for-1)"
+                    : isZumFamiliaBooking(selectedBooking)
+                      ? "ZumFamilia"
+                      : "Trial Booking"}
+                </div>
                 <div><span className="font-medium">Status:</span> {selectedBooking.status}</div>
                 <div><span className="font-medium">Primary Contact:</span> {getPrimaryContactName(selectedBooking)}</div>
                 <div><span className="font-medium">Primary Email:</span> {getPrimaryContactEmail(selectedBooking)}</div>
@@ -788,6 +797,43 @@ export default function TrialBookingsPage() {
                 <div><span className="font-medium">Payment:</span> {selectedBooking.payment ? `${(selectedBooking.payment.amountCents / 100).toFixed(2)} ${selectedBooking.payment.currency}` : "No payment"}</div>
                 <div><span className="font-medium">Payment Status:</span> {selectedBooking.payment?.status || "N/A"}</div>
               </div>
+              {selectedBooking.cancellationReason && (
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-800/50">
+                  <div className="font-medium mb-2">Waiver (stored on this booking)</div>
+                  <p className="text-gray-700 dark:text-gray-300 break-words">{selectedBooking.cancellationReason}</p>
+                </div>
+              )}
+              {isDuoTrialBooking(selectedBooking) && selectedBooking.payment?.metadata && (
+                <div className="rounded-lg border border-lime-300 dark:border-lime-700 p-3 bg-lime-50 dark:bg-lime-950/30">
+                  <div className="font-medium mb-2">Duo Trial — both participants (payment metadata)</div>
+                  <div className="space-y-2">
+                    <div>
+                      <span className="font-medium">Participant 1 (payer):</span>{" "}
+                      {selectedBooking.payment.metadata.participant1?.name || "N/A"}
+                      {selectedBooking.payment.metadata.participant1?.email
+                        ? ` · ${selectedBooking.payment.metadata.participant1.email}`
+                        : ""}
+                      {selectedBooking.payment.metadata.participant1?.phone
+                        ? ` · ${selectedBooking.payment.metadata.participant1.phone}`
+                        : ""}
+                      {selectedBooking.payment.metadata.participant1?.nricLast4
+                        ? ` · NRIC …${selectedBooking.payment.metadata.participant1.nricLast4}`
+                        : ""}
+                    </div>
+                    <div>
+                      <span className="font-medium">Participant 2:</span>{" "}
+                      {selectedBooking.payment.metadata.participant2?.name || "N/A"}
+                      {selectedBooking.payment.metadata.participant2?.phone
+                        ? ` · ${selectedBooking.payment.metadata.participant2.phone}`
+                        : ""}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Full waiver fields (NRIC, signature) are on each guest row under “Waiver” above, and in Supabase{" "}
+                      <code className="text-xs">payments.metadata</code> for the shared payment.
+                    </div>
+                  </div>
+                </div>
+              )}
               {isZumFamiliaBooking(selectedBooking) && (
                 <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-800/50">
                   <div className="font-medium mb-2">ZumFamilia Extras</div>

@@ -105,11 +105,14 @@ export async function DELETE(
     const supabase = getSupabaseAdminClient()
     const { id } = await params
 
-    // Check if category is being used by any classes
+    // Only block deletion when the category is still attached to upcoming classes.
+    // Past classes can safely lose the category reference because the FK uses ON DELETE SET NULL.
+    const now = new Date().toISOString()
     const { data: classesUsingCategory, error: checkError } = await supabase
       .from('classes')
       .select('id')
       .eq('category_id', id)
+      .gt('scheduled_at', now)
       .limit(1)
 
     if (checkError) {
@@ -128,7 +131,7 @@ export async function DELETE(
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Cannot delete category: it is being used by existing classes',
+          message: 'Cannot delete category: it is being used by upcoming classes',
         },
       }, { status: 400 })
     }
