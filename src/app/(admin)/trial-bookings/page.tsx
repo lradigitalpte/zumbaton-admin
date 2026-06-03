@@ -5,7 +5,7 @@ import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/components/ui/Toast";
-import { RefreshCw, Mail, Phone, Calendar, DollarSign, User, Search, Trash2, CheckCircle, XCircle, Eye, Loader2 } from "lucide-react";
+import { RefreshCw, Mail, Phone, User, Search, Trash2, CheckCircle, XCircle, Eye, Loader2 } from "lucide-react";
 import Pagination from "@/components/tables/Pagination";
 import { Modal } from "@/components/ui/modal";
 import Button from "@/components/ui/button/Button";
@@ -54,6 +54,7 @@ export default function TrialBookingsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [ageGroupFilter, setAgeGroupFilter] = useState<string>("all");
+  const [bookingTypeFilter, setBookingTypeFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -68,6 +69,41 @@ export default function TrialBookingsPage() {
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<TrialBooking | null>(null);
   const [syncingPaymentId, setSyncingPaymentId] = useState<string | null>(null);
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+
+  // All-time bookings fetched once for monthly stats (not affected by filters)
+  const [allBookingsForStats, setAllBookingsForStats] = useState<TrialBooking[]>([]);
+
+  const fetchStats = async () => {
+    try {
+      const response = await api.get<{ success: boolean; data: TrialBooking[] }>(
+        `/api/trial-bookings?page=1&pageSize=1000`
+      );
+      const payload = response.data as { data?: TrialBooking[] } | undefined;
+      if (Array.isArray(payload?.data)) setAllBookingsForStats(payload.data);
+    } catch {/* stats are non-critical */}
+  };
+
+  // Monthly breakdown computed from all bookings
+  const monthlyStats = useMemo(() => {
+    const byMonth: Record<string, { key: string; label: string; total: number; paid: number; draft: number; attended: number }> = {};
+    allBookingsForStats.forEach((b) => {
+      const d = new Date(b.bookedAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleDateString("en-SG", { month: "short", year: "numeric" });
+      if (!byMonth[key]) byMonth[key] = { key, label, total: 0, paid: 0, draft: 0, attended: 0 };
+      byMonth[key].total++;
+      if (b.status === "confirmed") byMonth[key].paid++;
+      if (b.status === "attended") { byMonth[key].paid++; byMonth[key].attended++; }
+      if (b.status === "draft") byMonth[key].draft++;
+    });
+    return Object.values(byMonth).sort((a, b) => a.key.localeCompare(b.key));
+  }, [allBookingsForStats]);
+
+  const currentMonthKey = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  }, []);
 
   const fetchBookings = async () => {
     try {
@@ -111,6 +147,11 @@ export default function TrialBookingsPage() {
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    fetchStats();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     fetchBookings();
@@ -170,7 +211,7 @@ export default function TrialBookingsPage() {
           styles[status as keyof typeof styles] || styles.confirmed
         }`}
       >
-        {status === "draft" ? "⚠️ Draft (Incomplete)" : status.charAt(0).toUpperCase() + status.slice(1).replace("-", " ")}
+        {status === "draft" ? "⚠ Draft" : status.charAt(0).toUpperCase() + status.slice(1).replace("-", " ")}
       </span>
     );
   };
@@ -202,6 +243,22 @@ export default function TrialBookingsPage() {
 
   const isDuoTrialBooking = (booking: TrialBooking): boolean =>
     booking.payment?.metadata?.flow_type === "duo_trial";
+
+  type BookingType = 'trial' | 'duo-trial' | 'zumfamilia' | 'zumfiesta';
+  const getBookingType = (booking: TrialBooking): BookingType => {
+    const flow = booking.payment?.metadata?.flow_type;
+    if (flow === 'zumfamilia') return 'zumfamilia';
+    if (flow === 'duo_trial') return 'duo-trial';
+    if (flow === 'zt_fiesta') return 'zumfiesta';
+    return 'trial';
+  };
+
+  const BOOKING_TYPE_CONFIG: Record<BookingType, { label: string; badge: string; rowBorder: string }> = {
+    'trial':      { label: 'Trial',      badge: 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700',       rowBorder: 'border-l-4 border-blue-400' },
+    'duo-trial':  { label: 'Duo Trial',  badge: 'bg-lime-100 text-lime-700 border-lime-300 dark:bg-lime-900/30 dark:text-lime-400 dark:border-lime-700',         rowBorder: 'border-l-4 border-lime-500' },
+    'zumfamilia': { label: 'ZumFamilia', badge: 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700', rowBorder: 'border-l-4 border-emerald-500' },
+    'zumfiesta':  { label: 'ZumFiesta',  badge: 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-700',  rowBorder: 'border-l-4 border-orange-500' },
+  };
 
   const getDisplayScheduleTime = (booking: TrialBooking): string =>
     (isZumFamiliaBooking(booking) ? booking.payment?.metadata?.custom_schedule : null) ||
@@ -297,10 +354,10 @@ export default function TrialBookingsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Trial Bookings
+            Guest Bookings
           </h1>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            View and manage guest trial class bookings
+            Trials · Duo Trials · ZumFamilia · ZumFiesta — all guest bookings in one place
           </p>
         </div>
         <button
@@ -314,444 +371,358 @@ export default function TrialBookingsPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-        {(dateFrom || dateTo) && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Showing bookings for the selected date range (by booked date).</p>
-        )}
-        <div className="flex flex-col sm:flex-row gap-4">
-          {/* Search */}
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 space-y-3">
+        {/* Row 1: Search + Status + Age + Date */}
+        <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search by name, email, or phone..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
               />
             </div>
           </div>
-
-          {/* Status Filter */}
-          <div className="sm:w-48">
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            >
-              <option value="all">All Statuses</option>
-              <option value="draft">Draft (Incomplete)</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="attended">Attended</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="no-show">No Show</option>
-            </select>
-          </div>
-
-          {/* Age Group Filter */}
-          <div className="sm:w-40">
-            <select
-              value={ageGroupFilter}
-              onChange={(e) => {
-                setAgeGroupFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            >
-              <option value="all">All Ages</option>
-              <option value="kid">Kids Only</option>
-              <option value="adult">Adults Only</option>
-            </select>
-          </div>
-
-          {/* Date range filter (by booked date) */}
-          <div className="sm:min-w-[220px]">
+          <select
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+            className="sm:w-44 px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
+          >
+            <option value="all">All Statuses</option>
+            <option value="draft">Draft</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="attended">Attended</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="no-show">No Show</option>
+          </select>
+          <select
+            value={ageGroupFilter}
+            onChange={(e) => { setAgeGroupFilter(e.target.value); setCurrentPage(1); }}
+            className="sm:w-36 px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
+          >
+            <option value="all">All Ages</option>
+            <option value="kid">Kids</option>
+            <option value="adult">Adults</option>
+          </select>
+          <div className="sm:min-w-[200px]">
             <DateRangePicker
               value={{ from: dateFrom, to: dateTo }}
-              onChange={(from, to) => {
-                setDateFrom(from);
-                setDateTo(to);
-                setCurrentPage(1);
-              }}
+              onChange={(from, to) => { setDateFrom(from); setDateTo(to); setCurrentPage(1); }}
               placeholder="Date range (booked)"
               presets={["today", "week", "month", "clear"]}
               className="w-full"
             />
           </div>
         </div>
+
+        {/* Row 2: Booking type tabs */}
+        <div className="flex flex-wrap gap-2">
+          {(['all', 'trial', 'duo-trial', 'zumfamilia', 'zumfiesta'] as const).map((type) => {
+            const isActive = bookingTypeFilter === type;
+            const count = type === 'all' ? bookings.length : bookings.filter(b => getBookingType(b) === type).length;
+            return (
+              <button
+                key={type}
+                onClick={() => { setBookingTypeFilter(type); setCurrentPage(1); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                  isActive
+                    ? 'bg-gray-900 text-white border-gray-900 dark:bg-white dark:text-gray-900 dark:border-white'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600'
+                }`}
+              >
+                {type === 'all' ? 'All Types' : BOOKING_TYPE_CONFIG[type as BookingType].label}
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${isActive ? 'bg-white/20 text-white dark:bg-black/20 dark:text-black' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-          <div className="text-sm text-gray-600 dark:text-gray-400">Total Bookings</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">Total</div>
           <div className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{total}</div>
         </div>
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border-2 border-yellow-200 dark:border-yellow-800 p-4">
-          <div className="text-sm text-yellow-700 dark:text-yellow-400 font-medium">Draft (Leads)</div>
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-800 p-4">
+          <div className="text-xs text-yellow-600 dark:text-yellow-400 uppercase tracking-wide font-medium">Draft ⚠️</div>
           <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">
-            {useMemo(() => {
-              if (statusFilter === "draft") return total;
-              return Array.isArray(bookings) ? bookings.filter((b) => b.status === "draft").length : 0;
-            }, [bookings, statusFilter, total])}
+            {bookings.filter((b) => b.status === "draft").length}
           </div>
-          <div className="text-xs text-yellow-600 dark:text-yellow-500 mt-1">Needs follow-up</div>
+          <div className="text-[10px] text-yellow-500 mt-0.5">Needs follow-up</div>
         </div>
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-          <div className="text-sm text-gray-600 dark:text-gray-400">Confirmed</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">Confirmed</div>
           <div className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">
-            {useMemo(() => {
-              if (statusFilter === "confirmed") return total;
-              return Array.isArray(bookings) ? bookings.filter((b) => b.status === "confirmed").length : 0;
-            }, [bookings, statusFilter, total])}
+            {bookings.filter((b) => b.status === "confirmed").length}
           </div>
         </div>
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-          <div className="text-sm text-gray-600 dark:text-gray-400">Attended</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">Attended</div>
           <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
-            {useMemo(() => {
-              if (statusFilter === "attended") return total;
-              return Array.isArray(bookings) ? bookings.filter((b) => b.status === "attended").length : 0;
-            }, [bookings, statusFilter, total])}
+            {bookings.filter((b) => b.status === "attended").length}
           </div>
         </div>
       </div>
+
+      {/* Monthly Booking Stats */}
+      {monthlyStats.length > 0 && (
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Bookings by Month</h3>
+            <span className="text-[10px] text-gray-400 uppercase tracking-wide">all time · {allBookingsForStats.length} total</span>
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {monthlyStats.map((m) => {
+              const isCurrentMonth = m.key === currentMonthKey;
+              const maxTotal = Math.max(...monthlyStats.map((x) => x.total), 1);
+              const paidPct = m.total > 0 ? Math.round((m.paid / m.total) * 100) : 0;
+              return (
+                <div
+                  key={m.key}
+                  className={`shrink-0 w-28 rounded-lg border p-3 ${
+                    isCurrentMonth
+                      ? "border-amber-400 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700"
+                      : "border-gray-200 dark:border-gray-700"
+                  }`}
+                >
+                  <div className={`text-[10px] font-black uppercase tracking-widest mb-1.5 ${isCurrentMonth ? "text-amber-600 dark:text-amber-400" : "text-gray-500 dark:text-gray-400"}`}>
+                    {m.label}{isCurrentMonth && " ·now"}
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white leading-none mb-1.5">{m.total}</div>
+                  {/* Stacked bar */}
+                  <div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden mb-2">
+                    <div className="h-full flex">
+                      <div className="h-full bg-green-500 transition-all" style={{ width: `${paidPct}%` }} />
+                      <div className="h-full bg-yellow-400 transition-all" style={{ width: `${m.total > 0 ? Math.round((m.draft / m.total) * 100) : 0}%` }} />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] text-green-600 dark:text-green-400 font-semibold">✓ {m.paid} paid</span>
+                      {m.attended > 0 && <span className="text-[9px] text-blue-500 font-semibold">{m.attended} att.</span>}
+                    </div>
+                    {m.draft > 0 && <span className="text-[9px] text-yellow-600 dark:text-yellow-400 font-semibold">⚠ {m.draft} draft</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Bookings Table */}
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading trial bookings...</p>
+          <div className="p-10 text-center">
+            <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-amber-500 mx-auto" />
+            <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Loading…</p>
           </div>
         ) : !Array.isArray(bookings) || bookings.length === 0 ? (
-          <div className="p-12 text-center">
-            <User className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600 dark:text-gray-400">No trial bookings found</p>
-            {searchQuery && (
-              <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">
-                Try adjusting your search or filters
-              </p>
-            )}
+          <div className="p-10 text-center">
+            <User className="w-9 h-9 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">No bookings found</p>
+            {searchQuery && <p className="text-xs text-gray-400 mt-1">Try adjusting your search or filters</p>}
           </div>
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="min-w-[1120px] w-full divide-y divide-gray-200 dark:divide-gray-800">
-                <thead className="bg-gray-50 dark:bg-gray-800">
+              <table className="w-full text-xs divide-y divide-gray-100 dark:divide-gray-800">
+                <thead className="bg-gray-50 dark:bg-gray-800 text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Guest
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Class
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Date & Time
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Payment
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="hidden xl:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Booked At
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Actions
-                    </th>
+                    <th className="px-4 py-2.5 text-left font-semibold w-[38%]">Guest</th>
+                    <th className="px-4 py-2.5 text-left font-semibold w-[32%]">Class &amp; Time</th>
+                    <th className="px-4 py-2.5 text-left font-semibold w-[16%]">Payment</th>
+                    <th className="px-4 py-2.5 text-left font-semibold w-[14%]">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                   {bookings
                     .filter((booking) => {
-                      if (ageGroupFilter === "all") return true;
-                      const isKid = isKidBooking(booking);
-                      return ageGroupFilter === "kid" ? isKid : !isKid;
+                      if (ageGroupFilter !== "all") {
+                        const isKid = isKidBooking(booking);
+                        if (ageGroupFilter === "kid" && !isKid) return false;
+                        if (ageGroupFilter === "adult" && isKid) return false;
+                      }
+                      if (bookingTypeFilter !== "all" && getBookingType(booking) !== bookingTypeFilter) return false;
+                      return true;
                     })
                     .map((booking) => {
-                    const isDraft = booking.status === "draft";
-                    const isKid = isKidBooking(booking);
-                    const isZumFamilia = isZumFamiliaBooking(booking);
-                    const primaryName = getPrimaryContactName(booking);
-                    const primaryEmail = getPrimaryContactEmail(booking);
-                    const primaryPhone = getPrimaryContactPhone(booking);
-                    return (
-                    <tr 
-                      key={booking.id} 
-                      className={`hover:bg-gray-50 dark:hover:bg-gray-800 ${
-                        isDraft ? "bg-yellow-50/50 dark:bg-yellow-900/10 border-l-4 border-yellow-400" : ""
-                      } ${
-                        isKid ? "bg-purple-50/30 dark:bg-purple-900/10" : ""
-                      }`}
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <div className="text-sm font-medium text-gray-900 dark:text-white">
-                              {primaryName}
+                      const type = getBookingType(booking);
+                      const config = BOOKING_TYPE_CONFIG[type];
+                      const isDraft = booking.status === "draft";
+                      const isKid = isKidBooking(booking);
+                      const isZumFamilia = type === "zumfamilia";
+                      const isDuo = type === "duo-trial";
+                      const primaryName = getPrimaryContactName(booking);
+                      const primaryEmail = getPrimaryContactEmail(booking);
+                      const primaryPhone = getPrimaryContactPhone(booking);
+                      const p2 = isDuo ? booking.payment?.metadata?.participant2 : null;
+                      const isBusy = updatingStatus === booking.id || deletingId === booking.id || syncingPaymentId === booking.id;
+
+                      return (
+                        <tr
+                          key={booking.id}
+                          className={`hover:bg-gray-50 dark:hover:bg-gray-800/60 align-top ${config.rowBorder} ${isDraft ? "bg-yellow-50/40 dark:bg-yellow-900/10" : ""}`}
+                        >
+                          {/* Guest — name, badges, contact, secondary info */}
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border leading-none ${config.badge}`}>{config.label}</span>
+                              {getStatusBadge(booking.status)}
+                              {isKid && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 border border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700 leading-none">{isZumFamilia ? "Child" : "Kid"}</span>}
                             </div>
-                            {isZumFamilia && (
-                              <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700">
-                                ZumFamilia
-                              </span>
-                            )}
-                            {isKidBooking(booking) && (
-                              <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border border-purple-300 dark:border-purple-700">
-                                {isZumFamilia ? "Child" : "Kid"}
-                              </span>
-                            )}
-                            {!isKidBooking(booking) && booking.guestDateOfBirth && (
-                              <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-300 dark:border-blue-700">
-                                Adult
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
-                            <Mail className="w-3 h-3" />
-                            {primaryEmail}
-                          </div>
-                          {primaryPhone && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
-                              <Phone className="w-3 h-3" />
-                              {primaryPhone}
-                            </div>
-                          )}
-                          {isZumFamilia && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                              Child: {booking.guestName}
-                            </div>
-                          )}
-                          {booking.guestDateOfBirth && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
-                              <Calendar className="w-3 h-3" />
-                              Age: {calculateAge(booking.guestDateOfBirth)} years
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        {booking.class ? (
-                          <div>
-                            <div className="text-sm font-medium text-gray-900 dark:text-white">
-                              {booking.class.title}
-                            </div>
-                            {booking.class.instructorName && (
-                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                {booking.class.instructorName}
-                              </div>
-                            )}
-                            {booking.class.location && (
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
-                                {booking.class.location}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">Class not found</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {booking.class ? (
-                          <div className="text-sm text-gray-900 dark:text-white">
-                            {isZumFamilia ? (
-                              <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-300 dark:border-amber-700 font-semibold">
-                                {getDisplayScheduleTime(booking)}
-                              </span>
+                            <p className="font-semibold text-gray-900 dark:text-white leading-tight">{primaryName}</p>
+                            <p className="text-gray-400 dark:text-gray-500 truncate">{primaryEmail}</p>
+                            <p className="text-gray-400 dark:text-gray-500">
+                              {primaryPhone && <span>{primaryPhone}</span>}
+                              {booking.guestDateOfBirth && <span className="ml-1.5">· Age {calculateAge(booking.guestDateOfBirth)}</span>}
+                            </p>
+                            {isZumFamilia && <p className="text-emerald-600 dark:text-emerald-400 font-medium mt-0.5 text-[10px]">Child: {booking.guestName}{booking.guestDateOfBirth ? ` (${calculateAge(booking.guestDateOfBirth)} yrs)` : ""}</p>}
+                            {isDuo && p2 && <p className="text-lime-600 dark:text-lime-400 font-medium mt-0.5 text-[10px]">P2: {p2.name || "—"}{p2.phone ? ` · ${p2.phone}` : ""}</p>}
+                            <p className="text-[10px] text-gray-300 dark:text-gray-600 mt-0.5">Booked {formatDate(booking.bookedAt)}</p>
+                          </td>
+
+                          {/* Class & Time — merged */}
+                          <td className="px-4 py-3">
+                            {booking.class ? (
+                              <>
+                                <p className="font-semibold text-gray-900 dark:text-white uppercase leading-tight">{booking.class.title}</p>
+                                {booking.class.instructorName && <p className="text-gray-400 dark:text-gray-500">{booking.class.instructorName}</p>}
+                                {isZumFamilia && booking.payment?.metadata?.package_label && (
+                                  <p className="text-emerald-600 dark:text-emerald-400 font-medium text-[10px]">{booking.payment.metadata.package_label}</p>
+                                )}
+                                <p className="text-gray-600 dark:text-gray-300 mt-0.5">{getDisplayScheduleTime(booking)}</p>
+                              </>
                             ) : (
-                              formatDateTime(booking.class.scheduledAt)
+                              <span className="text-gray-400 italic">—</span>
                             )}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">N/A</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {booking.payment ? (
-                          <div className="text-sm text-gray-900 dark:text-white">
-                            <div className="flex items-center gap-1">
-                              <DollarSign className="w-4 h-4" />
-                              {(booking.payment.amountCents / 100).toFixed(2)} {booking.payment.currency}
-                            </div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                              {booking.payment.status}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">No payment</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {getStatusBadge(booking.status)}
-                      </td>
-                      <td className="hidden xl:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        {formatDateTime(booking.bookedAt)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col gap-2 min-w-[210px]">
-                          {/* Contact Actions */}
-                          {isDraft && (
-                            <div className="flex items-center gap-1 flex-wrap">
-                              <a
-                                href={`mailto:${primaryEmail}?subject=Complete Your Trial Class Booking&body=Hi ${primaryName},%0D%0A%0D%0AWe noticed you started booking a trial class but didn't complete the payment. We'd love to help you finish your booking!%0D%0A%0D%0APlease reply to this email or call us to complete your booking.%0D%0A%0D%0AThank you!`}
-                                className="text-xs px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded transition-colors flex items-center gap-1"
-                                title="Send Email"
+                          </td>
+
+                          {/* Payment */}
+                          <td className="px-4 py-3">
+                            {booking.payment ? (
+                              <>
+                                <p className="font-semibold text-gray-900 dark:text-white">{booking.payment.currency} {(booking.payment.amountCents / 100).toFixed(2)}</p>
+                                <p className={`text-[10px] ${booking.payment.status === "succeeded" ? "text-green-600 dark:text-green-400" : "text-yellow-600 dark:text-yellow-400"}`}>{booking.payment.status}</p>
+                              </>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </td>
+
+                          {/* Actions — dropdown */}
+                          <td className="px-4 py-3">
+                            <div className="relative">
+                              <button
+                                onClick={() => setOpenDropdownId(openDropdownId === booking.id ? null : booking.id)}
+                                disabled={isBusy}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50"
                               >
-                                <Mail className="w-3 h-3" />
-                                <span className="hidden 2xl:inline">Email</span>
-                              </a>
-                              {primaryPhone && (
-                                <a
-                                  href={`tel:${primaryPhone}`}
-                                  className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors flex items-center gap-1"
-                                  title="Call"
-                                >
-                                  <Phone className="w-3 h-3" />
-                                  <span className="hidden 2xl:inline">Call</span>
-                                </a>
+                                {isBusy
+                                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                                  : <><span>Actions</span><span className="text-gray-400">▾</span></>
+                                }
+                              </button>
+
+                              {openDropdownId === booking.id && (
+                                <>
+                                  {/* backdrop to close */}
+                                  <div className="fixed inset-0 z-10" onClick={() => setOpenDropdownId(null)} />
+                                  <div className="absolute right-0 top-full mt-1 z-20 w-48 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden">
+                                    {/* View */}
+                                    <button onClick={() => { setSelectedBooking(booking); setDetailsModalOpen(true); setOpenDropdownId(null); }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                      <Eye className="w-3.5 h-3.5 text-gray-500" /> View Details
+                                    </button>
+
+                                    {isDraft && (
+                                      <>
+                                        <a href={`mailto:${primaryEmail}?subject=Complete Your Booking&body=Hi ${primaryName},%0D%0A%0D%0AWe noticed your booking wasn't completed. We'd love to help!%0D%0A%0D%0AThank you!`}
+                                          onClick={() => setOpenDropdownId(null)}
+                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                          <Mail className="w-3.5 h-3.5 text-green-600" /> Email Guest
+                                        </a>
+                                        {primaryPhone && (
+                                          <a href={`tel:${primaryPhone}`} onClick={() => setOpenDropdownId(null)}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                            <Phone className="w-3.5 h-3.5 text-blue-600" /> Call Guest
+                                          </a>
+                                        )}
+                                        {booking.payment?.hitpayPaymentRequestId && (
+                                          <button onClick={() => { handleSyncPayment(booking); setOpenDropdownId(null); }}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                            <RefreshCw className="w-3.5 h-3.5 text-indigo-600" /> Sync Payment
+                                          </button>
+                                        )}
+                                        <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+                                        <button onClick={() => { handleStatusUpdate(booking.id, "confirmed"); setOpenDropdownId(null); }}
+                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors font-semibold">
+                                          <CheckCircle className="w-3.5 h-3.5" /> Confirm Booking
+                                        </button>
+                                        <button onClick={() => { setCancelBookingId(booking.id); setCancelReason(""); setCancelModalOpen(true); setOpenDropdownId(null); }}
+                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors">
+                                          <XCircle className="w-3.5 h-3.5" /> Cancel
+                                        </button>
+                                        <button onClick={() => { handleDeleteClick(booking.id, booking.guestName); setOpenDropdownId(null); }}
+                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                          <Trash2 className="w-3.5 h-3.5" /> Delete
+                                        </button>
+                                      </>
+                                    )}
+
+                                    {booking.status === "confirmed" && (
+                                      <>
+                                        <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+                                        <button onClick={() => { handleStatusUpdate(booking.id, "attended"); setOpenDropdownId(null); }}
+                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors font-semibold">
+                                          <CheckCircle className="w-3.5 h-3.5" /> Mark Attended
+                                        </button>
+                                        <button onClick={() => { handleStatusUpdate(booking.id, "no-show"); setOpenDropdownId(null); }}
+                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                          <XCircle className="w-3.5 h-3.5" /> No Show
+                                        </button>
+                                        <button onClick={() => { handleDeleteClick(booking.id, booking.guestName); setOpenDropdownId(null); }}
+                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                          <Trash2 className="w-3.5 h-3.5" /> Delete
+                                        </button>
+                                      </>
+                                    )}
+
+                                    {(booking.status === "cancelled" || booking.status === "cancelled-late" || booking.status === "no-show") && (
+                                      <>
+                                        <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+                                        <button onClick={() => { handleDeleteClick(booking.id, booking.guestName); setOpenDropdownId(null); }}
+                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                          <Trash2 className="w-3.5 h-3.5" /> Delete
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                </>
                               )}
                             </div>
-                          )}
-
-                          {/* Status Update Actions */}
-                          <div className="flex items-center gap-1 flex-wrap">
-                            <button
-                              onClick={() => {
-                                setSelectedBooking(booking);
-                                setDetailsModalOpen(true);
-                              }}
-                              className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-800 text-white rounded transition-colors flex items-center gap-1"
-                              title="View Details"
-                            >
-                              <Eye className="w-3 h-3" />
-                              <span className="hidden 2xl:inline">View</span>
-                            </button>
-                            {isDraft && booking.payment?.hitpayPaymentRequestId && (
-                              <button
-                                onClick={() => handleSyncPayment(booking)}
-                                disabled={syncingPaymentId === booking.id}
-                                className="text-xs px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors flex items-center gap-1 disabled:opacity-50"
-                                title="Sync payment from HitPay"
-                              >
-                                {syncingPaymentId === booking.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                                <span className="hidden 2xl:inline">Sync</span>
-                              </button>
-                            )}
-                            {isDraft && (
-                              <>
-                                <button
-                                  onClick={() => handleStatusUpdate(booking.id, "confirmed")}
-                                  disabled={updatingStatus === booking.id}
-                                  className="text-xs px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded transition-colors flex items-center gap-1 disabled:opacity-50"
-                                  title="Mark as Confirmed"
-                                >
-                                  <CheckCircle className="w-3 h-3" />
-                                  <span className="hidden 2xl:inline">Confirm</span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setCancelBookingId(booking.id);
-                                    setCancelReason("");
-                                    setCancelModalOpen(true);
-                                  }}
-                                  disabled={updatingStatus === booking.id}
-                                  className="text-xs px-2 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded transition-colors flex items-center gap-1 disabled:opacity-50"
-                                  title="Mark as Cancelled/Followed Up"
-                                >
-                                  <XCircle className="w-3 h-3" />
-                                  <span className="hidden 2xl:inline">Cancel</span>
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteClick(booking.id, booking.guestName)}
-                                  disabled={deletingId === booking.id}
-                                  className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors flex items-center gap-1 disabled:opacity-50"
-                                  title="Delete Draft"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                  <span className="hidden 2xl:inline">Delete</span>
-                                </button>
-                              </>
-                            )}
-                            {booking.status === "confirmed" && (
-                              <>
-                                <button
-                                  onClick={() => handleStatusUpdate(booking.id, "attended")}
-                                  disabled={updatingStatus === booking.id}
-                                  className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors flex items-center gap-1 disabled:opacity-50"
-                                  title="Mark as Attended"
-                                >
-                                  <CheckCircle className="w-3 h-3" />
-                                  <span className="hidden 2xl:inline">Attended</span>
-                                </button>
-                                <button
-                                  onClick={() => handleStatusUpdate(booking.id, "no-show")}
-                                  disabled={updatingStatus === booking.id}
-                                  className="text-xs px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded transition-colors flex items-center gap-1 disabled:opacity-50"
-                                  title="Mark as No Show"
-                                >
-                                  <XCircle className="w-3 h-3" />
-                                  <span className="hidden 2xl:inline">No Show</span>
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteClick(booking.id, booking.guestName)}
-                                  disabled={deletingId === booking.id}
-                                  className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors flex items-center gap-1 disabled:opacity-50"
-                                  title="Delete Booking"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                  <span className="hidden 2xl:inline">Delete</span>
-                                </button>
-                              </>
-                            )}
-                            {(booking.status === "cancelled" || booking.status === "cancelled-late") && (
-                              <button
-                                onClick={() => handleDeleteClick(booking.id, booking.guestName)}
-                                disabled={deletingId === booking.id}
-                                className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors flex items-center gap-1 disabled:opacity-50"
-                                title="Delete Booking"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                                <span className="hidden 2xl:inline">Delete</span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )})}
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-600 dark:text-gray-400">
-                    Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to{" "}
-                    {Math.min(currentPage * ITEMS_PER_PAGE, total)} of {total} bookings
-                    {ageGroupFilter !== "all" && (
-                      <span className="ml-2 text-xs">
-                        ({bookings.filter((b) => {
-                          const isKid = isKidBooking(b);
-                          return ageGroupFilter === "kid" ? isKid : !isKid;
-                        }).length} {ageGroupFilter === "kid" ? "kids" : "adults"} on this page)
-                      </span>
-                    )}
-                  </div>
-                  <Pagination
-                    currentPage={currentPage}
-                    totalPages={totalPages}
-                    onPageChange={setCurrentPage}
-                  />
-                </div>
-              </div>
-            )}
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 dark:border-gray-800">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Showing {Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, total)}–{Math.min(currentPage * ITEMS_PER_PAGE, total)} of {total} booking{total !== 1 ? "s" : ""}
+              </p>
+              {totalPages > 1 && (
+                <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+              )}
+            </div>
           </>
         )}
       </div>

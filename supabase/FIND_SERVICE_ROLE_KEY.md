@@ -38,3 +38,32 @@
 
 If you can't find the service role key or prefer SQL, you can create the super_admin directly in Supabase SQL Editor. See the alternative method below.
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+rent the car ...... the ar is parked you cna use it on teh plaform... cars images. pricing,, invoice ,, fleet partners cool...
+
+regulations.... hybird....
+
+self drive or it cuffured meaning the people will drive you... self drive... issues 

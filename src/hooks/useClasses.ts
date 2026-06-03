@@ -60,6 +60,7 @@ export interface ClassWithAvailability {
   isBookable: boolean
   allowDropIn?: boolean
   dropInTokenCost?: number | null
+  isOutdoor?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -89,6 +90,7 @@ export interface CreateClassData {
   // Walk-in/drop-in settings
   allowDropIn?: boolean
   dropInTokenCost?: number
+  isOutdoor?: boolean
 }
 
 export interface ClassListQuery {

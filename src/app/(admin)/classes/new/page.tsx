@@ -122,6 +122,8 @@ function NewClassPageContent() {
     // Drop-in/walk-in settings
     allowDropIn: false,
     dropInTokenCost: "",
+    // Location type
+    isOutdoor: false,
   });
 
   // Populate form when class data is loaded (edit mode)
@@ -221,6 +223,7 @@ function NewClassPageContent() {
         ageGroup: (existingClass as any).ageGroup || "all", // Default to 'all' if not set
         allowDropIn: (existingClass as any).allowDropIn || false,
         dropInTokenCost: (existingClass as any).dropInTokenCost ? String((existingClass as any).dropInTokenCost) : "",
+        isOutdoor: (existingClass as any).isOutdoor || false,
         date: (detectedClassType === "single" || isIndividualInstance) ? dateStr : prev.date,
         startDate: detectedClassType === "recurring" && !isIndividualInstance ? dateStr : prev.startDate,
         endDate: detectedClassType === "recurring" && !isIndividualInstance && existingClass.recurrencePattern 
@@ -453,9 +456,10 @@ function NewClassPageContent() {
         ? (existingClass?.recurrencePattern && typeof existingClass.recurrencePattern === 'object' && 'days' in existingClass.recurrencePattern ? existingClass.recurrencePattern : undefined)
         : recurrencePattern,
       allowDropIn: formData.allowDropIn || false,
-      dropInTokenCost: formData.allowDropIn && formData.dropInTokenCost 
-        ? parseInt(formData.dropInTokenCost) 
+      dropInTokenCost: formData.allowDropIn && formData.dropInTokenCost
+        ? parseInt(formData.dropInTokenCost)
         : undefined,
+      isOutdoor: formData.isOutdoor || false,
     };
 
       if (isEditMode && classId) {
@@ -776,6 +780,48 @@ function NewClassPageContent() {
                   <p className="text-xs text-gray-500 mt-1">
                     Determines who can book this class based on their age
                   </p>
+                </div>
+
+                {/* Indoor / Outdoor toggle */}
+                <div className="md:col-span-2">
+                  <Label>Location Type</Label>
+                  <div className="mt-2 flex items-center gap-3">
+                    <div className="flex rounded-lg border border-gray-300 dark:border-gray-700 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, isOutdoor: false }))}
+                        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+                          !formData.isOutdoor
+                            ? "bg-amber-500 text-white"
+                            : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                        }`}
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
+                        Indoor / Studio
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, isOutdoor: true }))}
+                        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-l border-gray-300 dark:border-gray-700 ${
+                          formData.isOutdoor
+                            ? "bg-amber-500 text-white"
+                            : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                        }`}
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                        </svg>
+                        Outdoors
+                      </button>
+                    </div>
+                    {formData.isOutdoor && (
+                      <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                        &ldquo;(outdoors)&rdquo; will be shown after the class name on the website
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="md:col-span-2">
@@ -1213,8 +1259,10 @@ function NewClassPageContent() {
                 }`}>
                 </div>
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-semibold text-gray-900 dark:text-white">{formData.name}</h4>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="font-semibold text-gray-900 dark:text-white">
+                      {formData.name}{formData.isOutdoor ? " (outdoors)" : ""}
+                    </h4>
                     <span className={`text-xs px-2 py-0.5 rounded-full ${
                       classType === "course"
                         ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
@@ -1224,6 +1272,11 @@ function NewClassPageContent() {
                     }`}>
                       {classType === "single" ? "Single" : classType === "recurring" ? "Recurring" : "Course"}
                     </span>
+                    {formData.isOutdoor && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                        Outdoors
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                     {selectedCategory?.name}

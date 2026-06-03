@@ -37,6 +37,7 @@ export const ClassSchema = BaseTimestampsSchema.extend({
   categoryId: UuidSchema.nullable().optional(),
   allowDropIn: z.boolean().default(false).optional(),
   dropInTokenCost: z.number().int().positive().nullable().optional(),
+  isOutdoor: z.boolean().default(false).optional(),
 })
 export type Class = z.infer<typeof ClassSchema>
 
@@ -74,6 +75,7 @@ export const CreateClassRequestSchema = z.object({
   }).optional(),
   allowDropIn: z.boolean().optional(),
   dropInTokenCost: z.number().int().positive().nullable().optional(),
+  isOutdoor: z.boolean().optional(),
 })
 export type CreateClassRequest = z.infer<typeof CreateClassRequestSchema>
 
@@ -98,6 +100,7 @@ export const UpdateClassRequestSchema = z.object({
   categoryId: UuidSchema.nullable().optional(),
   recurrenceType: z.enum(['single', 'recurring', 'course']).optional(),
   recurrencePattern: z.record(z.any()).nullable().optional(),
+  isOutdoor: z.boolean().optional(),
 })
 export type UpdateClassRequest = z.infer<typeof UpdateClassRequestSchema>
 

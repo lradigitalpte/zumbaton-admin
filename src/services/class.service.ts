@@ -190,6 +190,7 @@ export async function createClass(data: CreateClassRequest & {
     // Walk-in/drop-in settings (requires migration 005_add_drop_in_to_classes.sql)
     allow_drop_in: data.allowDropIn || false,
     drop_in_token_cost: data.dropInTokenCost || null,
+    is_outdoor: data.isOutdoor || false,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
@@ -530,6 +531,7 @@ export async function updateClass(
   if (data.recurrencePattern !== undefined) updateData.recurrence_pattern = data.recurrencePattern
   if (data.allowDropIn !== undefined) updateData.allow_drop_in = data.allowDropIn
   if (data.dropInTokenCost !== undefined) updateData.drop_in_token_cost = data.dropInTokenCost
+  if (data.isOutdoor !== undefined) updateData.is_outdoor = data.isOutdoor
 
   // Handle instructor update
     // Handle multiple instructors (instructorIds takes precedence over instructorId)
@@ -598,6 +600,7 @@ export async function updateClass(
     if (data.categoryId !== undefined) childUpdateData.category_id = data.categoryId
     if (data.allowDropIn !== undefined) childUpdateData.allow_drop_in = data.allowDropIn
     if (data.dropInTokenCost !== undefined) childUpdateData.drop_in_token_cost = data.dropInTokenCost
+    if (data.isOutdoor !== undefined) childUpdateData.is_outdoor = data.isOutdoor
 
     // Handle instructor update for children
     if (data.instructorId !== undefined) {
@@ -1038,6 +1041,9 @@ function mapClassToSchema(row: Record<string, unknown>): Class {
     recurrencePattern: (row.recurrence_pattern as Record<string, unknown> | null) || null,
     roomId: row.room_id as string | null | undefined,
     categoryId: row.category_id as string | null | undefined,
+    allowDropIn: (row.allow_drop_in as boolean) || false,
+    dropInTokenCost: row.drop_in_token_cost as number | null | undefined,
+    isOutdoor: (row.is_outdoor as boolean) || false,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }

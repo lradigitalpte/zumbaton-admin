@@ -89,6 +89,7 @@ interface DisplayClass {
   roomName?: string | null;
   level?: string;
   classType?: string;
+  isOutdoor?: boolean;
 }
 
 // Helper to get day of week from date
@@ -202,6 +203,7 @@ function transformClass(cls: ClassWithAvailability): DisplayClass {
     roomId: cls.roomId || null,
     level: cls.level,
     classType: cls.classType,
+    isOutdoor: (cls as any).isOutdoor || false,
   };
 }
 
@@ -1116,6 +1118,11 @@ export default function ClassesPage() {
                         )}
                       </h3>
                       {getClassTypeBadge(cls.recurrenceType)}
+                      {cls.isOutdoor && (
+                        <span className="inline-flex rounded-full border border-green-300 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
+                          Outdoors
+                        </span>
+                      )}
                       <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${getStatusStyles(cls.status)}`}>
                         {cls.status}
                       </span>
@@ -1434,6 +1441,11 @@ export default function ClassesPage() {
                         <div className="flex items-center gap-2">
                           <p className="font-medium text-gray-900 dark:text-white">{cls.name}</p>
                           {getClassTypeBadge(cls.recurrenceType)}
+                          {cls.isOutdoor && (
+                            <span className="inline-flex rounded-full border border-green-300 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
+                              Outdoors
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm text-gray-500 dark:text-gray-400">{cls.duration} minutes</p>
                         {(cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && (
