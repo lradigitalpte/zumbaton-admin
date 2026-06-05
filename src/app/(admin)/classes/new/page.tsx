@@ -363,8 +363,10 @@ function NewClassPageContent() {
 
     try {
     let scheduledAt: string;
-    // Single class with multiple time slots uses slot.startTime per slot, not formData.startTime — skip here
-    if (classType === "single" && timeSlots.length > 0 && !isIndividualInstance) {
+    // Single class with multiple time slots (CREATE mode only):
+    // we create one class per slot in the loop below, so the base scheduledAt can be blank.
+    // In EDIT mode we must send a real datetime for the single class record.
+    if (!isEditMode && classType === "single" && timeSlots.length > 0 && !isIndividualInstance) {
       scheduledAt = ""; // not used; we compute per-slot in the loop below
     } else if (classType === "single" || isIndividualInstance) {
       scheduledAt = convertSGTimeToUTC(formData.date, formData.startTime);
