@@ -210,6 +210,51 @@ function transformClass(cls: ClassWithAvailability): DisplayClass {
 // Loading timeout in milliseconds (15 seconds)
 const LOADING_TIMEOUT = 15000;
 
+const MONTH_OPTIONS = [
+  { value: 1, label: "January" },
+  { value: 2, label: "February" },
+  { value: 3, label: "March" },
+  { value: 4, label: "April" },
+  { value: 5, label: "May" },
+  { value: 6, label: "June" },
+  { value: 7, label: "July" },
+  { value: 8, label: "August" },
+  { value: 9, label: "September" },
+  { value: 10, label: "October" },
+  { value: 11, label: "November" },
+  { value: 12, label: "December" },
+];
+
+function getCurrentSgtYearMonth() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Singapore",
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(now);
+  return {
+    year: parseInt(parts.find((p) => p.type === "year")?.value || "2026", 10),
+    month: parseInt(parts.find((p) => p.type === "month")?.value || "1", 10),
+  };
+}
+
+function getMonthBounds(year: number, month: number) {
+  const monthStr = String(month).padStart(2, "0");
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    from: `${year}-${monthStr}-01`,
+    to: `${year}-${monthStr}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
+function toSgtIsoStart(ymd: string) {
+  return new Date(`${ymd}T00:00:00+08:00`).toISOString();
+}
+
+function toSgtIsoEnd(ymd: string) {
+  return new Date(`${ymd}T23:59:59.999+08:00`).toISOString();
+}
+
 export default function ClassesPage() {
   // Fetch rooms to get room names
   const { data: roomsData } = useRoomsList();
@@ -225,14 +270,34 @@ export default function ClassesPage() {
     });
     return map;
   }, [rooms]);
+  const currentSgt = getCurrentSgtYearMonth();
   const [filter, setFilter] = useState<"all" | "active" | "completed" | "cancelled" | "full">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list"); // Default to table view
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
-  // Date filter: YYYY-MM-DD or empty = no filter
+  const [dateMode, setDateMode] = useState<"month" | "day" | "range" | "all">("month");
+  const [monthFilter, setMonthFilter] = useState<number | "">(currentSgt.month);
+  const [yearFilter, setYearFilter] = useState(currentSgt.year);
+  const [dayFilter, setDayFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+
+  const effectiveDateRange = useMemo(() => {
+    if (dateMode === "day" && dayFilter) {
+      return { from: dayFilter, to: dayFilter };
+    }
+    if (dateMode === "month") {
+      if (monthFilter) {
+        return getMonthBounds(yearFilter, monthFilter);
+      }
+      return { from: `${yearFilter}-01-01`, to: `${yearFilter}-12-31` };
+    }
+    if (dateMode === "range" && (dateFrom || dateTo)) {
+      return { from: dateFrom, to: dateTo };
+    }
+    return { from: "", to: "" };
+  }, [dateMode, dayFilter, monthFilter, yearFilter, dateFrom, dateTo]);
   const [attendanceModal, setAttendanceModal] = useState<{
     isOpen: boolean;
     classData: DisplayClass | null;
@@ -291,49 +356,36 @@ export default function ClassesPage() {
     refetch,
     isFetching
   } = useQuery({
-    queryKey: [...keys.list(), filter, currentPage, pageSize, dateFrom, dateTo],
+    queryKey: [...keys.list(), filter, currentPage, pageSize, dateMode, effectiveDateRange.from, effectiveDateRange.to],
     queryFn: async () => {
-      const fetchPageSize = filter === "completed" ? 100 : pageSize;
-      const fetchPage = filter === "completed" ? 1 : currentPage;
-      
       const params = new URLSearchParams({
-        page: fetchPage.toString(),
-        pageSize: fetchPageSize.toString(),
+        page: currentPage.toString(),
+        pageSize: pageSize.toString(),
+        lifecycle: filter,
       });
 
-      // Sorting: prioritize what's actionable per view
-      // - Active/Full: soonest upcoming first
-      // - Completed/Cancelled: most recent first
-      // - All: keep most recent first (we'll do a past-vs-future grouping client-side)
       if (filter === "active" || filter === "full") {
         params.set("sort", "scheduled_at_asc");
       } else {
         params.set("sort", "scheduled_at_desc");
       }
-      
-      // Add status filter (except for "all" and "full" which require client-side filtering)
-      if (filter === "active") {
-        params.set("status", "scheduled");
-      } else if (filter === "cancelled") {
-        params.set("status", "cancelled");
-      } else if (filter === "completed") {
-        // Do NOT filter by DB status. We treat "completed" as: class already ended.
-        // This ensures classes that ended today (but still stored as "scheduled") still appear.
+
+      const rangeFrom = effectiveDateRange.from;
+      const rangeTo = effectiveDateRange.to;
+
+      if (rangeFrom) {
+        params.set("startDate", toSgtIsoStart(rangeFrom));
       }
-      // For "all" and "full", fetch all classes and filter on client side
-      
-      if (dateFrom) {
-        params.set("startDate", new Date(dateFrom + "T00:00:00.000Z").toISOString());
-      }
-      if (dateTo) {
-        params.set("endDate", new Date(dateTo + "T23:59:59.999Z").toISOString());
-      } else if (filter === "completed") {
-        // If no date range selected, cap completed view to "up to today"
-        // so we don't page through future classes and end up with an empty completed list.
-        const today = new Date();
-        const endOfToday = new Date(today);
-        endOfToday.setHours(23, 59, 59, 999);
-        params.set("endDate", endOfToday.toISOString());
+      if (rangeTo) {
+        params.set("endDate", toSgtIsoEnd(rangeTo));
+      } else if (filter === "completed" && !rangeFrom) {
+        const todayParts = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Singapore",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date());
+        params.set("endDate", toSgtIsoEnd(todayParts));
       }
       
       const response = await api.get<{ data: ClassListResponse }>(`/api/classes?${params.toString()}`);
@@ -392,7 +444,7 @@ export default function ClassesPage() {
   // Reset to page 1 when filter or date range changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [filter, dateFrom, dateTo]);
+  }, [filter, dateMode, dayFilter, monthFilter, yearFilter, dateFrom, dateTo]);
 
   // Cache invalidation hook
   const { invalidateAll } = useInvalidateEntity("classes");
@@ -736,28 +788,15 @@ export default function ClassesPage() {
   };
 
   const filteredClasses = displayClasses.filter((cls) => {
-    // For completed filter, displayClasses already contains only completed classes
-    // For other filters, apply the filter logic
-    let matchesFilter = true;
-    if (filter === "all") {
-      // Exclude cancelled classes from "all" filter - they should only show when explicitly filtered
-      matchesFilter = cls.status !== "cancelled";
-    } else if (filter === "completed") {
-      // For "completed" filter, displayClasses already filtered, so all match
-      matchesFilter = true;
-    } else if (filter === "active") {
-      matchesFilter = cls.status === "active";
-    } else if (filter === "cancelled") {
-      matchesFilter = cls.status === "cancelled";
-    } else if (filter === "full") {
-      matchesFilter = cls.status === "full";
-    }
-    
     const matchesSearch =
       cls.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       cls.instructor.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesFilter && matchesSearch;
+    return matchesSearch;
   });
+
+  const pageStart = totalClasses === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(currentPage * pageSize, totalClasses);
+  const totalPages = Math.max(1, Math.ceil(totalClasses / pageSize));
 
   const getStatusStyles = (status: DisplayClass["status"]) => {
     switch (status) {
@@ -800,7 +839,14 @@ export default function ClassesPage() {
     totalEnrolled: classes.reduce((sum, c) => sum + c.enrolled, 0),
     totalCapacity: classes.reduce((sum, c) => sum + c.capacity, 0),
   };
-  const hasDateFilter = Boolean(dateFrom || dateTo);
+  const hasDateFilter = Boolean(effectiveDateRange.from || effectiveDateRange.to);
+  const yearOptions = useMemo(() => {
+    const years: number[] = [];
+    for (let y = currentSgt.year + 1; y >= currentSgt.year - 2; y--) {
+      years.push(y);
+    }
+    return years;
+  }, [currentSgt.year]);
 
   // Helper to get class type badge
   const getClassTypeBadge = (recurrenceType?: 'single' | 'recurring' | 'course') => {
@@ -919,11 +965,10 @@ export default function ClassesPage() {
       <PageBreadCrumb pageTitle="Classes Management" />
 
       {/* Stats Cards – all numbers reflect current filter (e.g. date range) */}
-      {hasDateFilter && (
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          Stats below are for the selected date range.
-        </p>
-      )}
+      <p className="text-sm text-gray-500 dark:text-gray-400">
+        {hasDateFilter ? "Stats below are for the selected date range. " : ""}
+        Booked counts match the Booking Report. Use the people icon on a class to see who booked.
+      </p>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex items-center gap-3">
@@ -961,9 +1006,9 @@ export default function ClassesPage() {
               </svg>
             </div>
             <div className="min-w-0" title="Total bookings across all classes in current view">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Enrolled</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Booked</p>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.totalEnrolled}<span className="text-sm font-normal text-gray-400">/{stats.totalCapacity}</span></p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 truncate">bookings / capacity</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 truncate">confirmed + attended + no-show</p>
             </div>
           </div>
         </div>
@@ -984,19 +1029,114 @@ export default function ClassesPage() {
         </div>
       </div>
 
-      {/* Date filter - calendar range picker (reusable component) */}
+      {/* Date filters: by month, by day, or custom range */}
       <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Date range</span>
-          <DateRangePicker
-            value={{ from: dateFrom, to: dateTo }}
-            onChange={(from, to) => {
-              setDateFrom(from);
-              setDateTo(to);
-            }}
-            placeholder="Select date range"
-            presets={["today", "week", "month", "clear"]}
-          />
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Show classes for</span>
+            {([
+              { key: "month" as const, label: "Month" },
+              { key: "day" as const, label: "Day" },
+              { key: "range" as const, label: "Custom range" },
+              { key: "all" as const, label: "All time" },
+            ]).map((mode) => (
+              <button
+                key={mode.key}
+                type="button"
+                onClick={() => {
+                  setDateMode(mode.key);
+                  if (mode.key === "month" && !monthFilter) {
+                    setMonthFilter(currentSgt.month);
+                    setYearFilter(currentSgt.year);
+                  }
+                }}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  dateMode === mode.key
+                    ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                }`}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+
+          {dateMode === "month" && (
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value ? parseInt(e.target.value, 10) : "")}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              >
+                <option value="">All months</option>
+                {MONTH_OPTIONS.map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+              <select
+                value={yearFilter}
+                onChange={(e) => setYearFilter(parseInt(e.target.value, 10))}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              >
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              {monthFilter && (
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {MONTH_OPTIONS.find((m) => m.value === monthFilter)?.label} {yearFilter}
+                </span>
+              )}
+            </div>
+          )}
+
+          {dateMode === "day" && (
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="date"
+                value={dayFilter}
+                onChange={(e) => setDayFilter(e.target.value)}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const today = new Intl.DateTimeFormat("en-CA", {
+                    timeZone: "Asia/Singapore",
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                  }).format(new Date());
+                  setDayFilter(today);
+                }}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                Today
+              </button>
+            </div>
+          )}
+
+          {dateMode === "range" && (
+            <div className="flex flex-wrap items-center gap-3">
+              <DateRangePicker
+                value={{ from: dateFrom, to: dateTo }}
+                onChange={(from, to) => {
+                  setDateFrom(from);
+                  setDateTo(to);
+                }}
+                placeholder="Select date range"
+                presets={["today", "week", "month", "clear"]}
+              />
+            </div>
+          )}
+
+          {hasDateFilter && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {effectiveDateRange.from === effectiveDateRange.to
+                ? `Showing classes on ${effectiveDateRange.from}`
+                : `Showing classes from ${effectiveDateRange.from} to ${effectiveDateRange.to}`}
+            </p>
+          )}
         </div>
       </div>
 
@@ -1411,7 +1551,7 @@ export default function ClassesPage() {
                   <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Class</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Instructor</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Schedule</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Capacity</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Booked</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Tokens</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Status</th>
                   <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
@@ -1491,7 +1631,7 @@ export default function ClassesPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="w-32">
+                      <div className="w-32" title={cls.enrolled > 0 ? "Click the people icon in Actions to see names" : "No bookings"}>
                         <div className="flex items-center justify-between text-sm">
                           <span className="font-medium text-gray-900 dark:text-white">{cls.enrolled}/{cls.capacity}</span>
                           <span className="text-gray-500 dark:text-gray-400">{Math.round((cls.enrolled / cls.capacity) * 100)}%</span>
@@ -1604,29 +1744,46 @@ export default function ClassesPage() {
         </div>
       )}
 
-      {/* Pagination Controls - Only show if not completed filter (completed uses max pageSize) */}
-      {filter !== "completed" && filteredClasses.length > 0 && (
-        <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-6 py-4 dark:border-gray-800 dark:bg-gray-900">
+      {/* Pagination */}
+      {totalClasses > 0 && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white px-6 py-4 dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm text-gray-600 dark:text-gray-400">
-            Showing {(currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, totalClasses)} of {totalClasses} classes
+            Showing {pageStart} to {pageEnd} of {totalClasses} classes
+            {searchQuery && filteredClasses.length !== displayClasses.length && (
+              <span> ({filteredClasses.length} match search on this page)</span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1 || isLoading}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              First
+            </button>
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1 || isLoading}
               className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
             >
               Previous
             </button>
             <span className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
-              Page {currentPage} of {Math.ceil(totalClasses / pageSize)}
+              Page {currentPage} of {totalPages}
             </span>
             <button
-              onClick={() => setCurrentPage(p => p + 1)}
+              onClick={() => setCurrentPage((p) => p + 1)}
               disabled={!hasMore || isLoading}
               className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
             >
               Next
+            </button>
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage >= totalPages || isLoading}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              Last
             </button>
           </div>
         </div>

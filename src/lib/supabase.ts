@@ -100,6 +100,7 @@ export const TABLES = {
   PAYMENTS: 'payments',
   AUDIT_LOGS: 'audit_logs',
   REGISTRATION_FORMS: 'registration_forms',
+  BLOG_POSTS: 'blog_posts',
 } as const
 
 // Supabase error codes

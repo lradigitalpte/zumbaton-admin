@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api-client";
 
 interface CronJob {
   name: string;
@@ -138,17 +139,19 @@ export default function CronJobsPage() {
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(`/api/cron?job=${jobParam}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+      const response = await api.post<{
+        success: boolean;
+        data: { results: JobResult[]; summary: { totalDuration: number } };
+        error?: { message?: string };
+      }>(`/api/cron?job=${jobParam}`, {});
 
-      const data = await response.json();
+      if (response.error) {
+        throw new Error(response.error.message || "Failed to run job");
+      }
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error?.message || "Failed to run job");
+      const data = response.data;
+      if (!data?.success || !data.data?.results) {
+        throw new Error(data?.error?.message || "Failed to run job");
       }
 
       // Add to history
@@ -170,7 +173,7 @@ export default function CronJobsPage() {
 
       if (failCount === 0) {
         setSuccessMessage(
-          `✅ ${jobParam === "all" ? "All jobs" : jobName} completed successfully! (${successCount} job${successCount > 1 ? "s" : ""}, ${data.data.summary.totalDuration}ms)`
+          `✅ ${jobParam === "all" ? "All jobs" : jobName} completed successfully! (${successCount} job${successCount > 1 ? "s" : ""}, ${data.data?.summary?.totalDuration ?? 0}ms)`
         );
       } else {
         setError(

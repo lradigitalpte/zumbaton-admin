@@ -1,8 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
-import { useRevenueReport } from "@/hooks/useReports";
+import { useRevenueReport, type RevenueSummary } from "@/hooks/useReports";
+
+const MONTHS = [
+  { value: 1, label: "January" },
+  { value: 2, label: "February" },
+  { value: 3, label: "March" },
+  { value: 4, label: "April" },
+  { value: 5, label: "May" },
+  { value: 6, label: "June" },
+  { value: 7, label: "July" },
+  { value: 8, label: "August" },
+  { value: 9, label: "September" },
+  { value: 10, label: "October" },
+  { value: 11, label: "November" },
+  { value: 12, label: "December" },
+];
+
+function getCurrentSgtYearMonth() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Singapore",
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(now);
+  return {
+    year: parseInt(parts.find((p) => p.type === "year")?.value || "2026", 10),
+    month: parseInt(parts.find((p) => p.type === "month")?.value || "1", 10),
+  };
+}
 
 // Skeleton components
 const MetricCardSkeleton = () => (
@@ -107,21 +135,28 @@ const TableSkeleton = () => (
 );
 
 // Default empty data for loading state
-const defaultSummary = {
+const defaultSummary: RevenueSummary = {
   totalRevenue: 0,
   totalTransactions: 0,
   avgMonthlyRevenue: 0,
   growth: 0,
   thisMonth: 0,
   lastMonth: 0,
+  prevPeriodRevenue: 0,
   avgOrderValue: 0,
+  packageRevenue: 0,
+  classRevenue: 0,
 };
 
 export default function RevenueReportPage() {
-  const [dateRange, setDateRange] = useState<"week" | "month" | "quarter" | "year">("month");
+  const current = getCurrentSgtYearMonth();
+  const [selectedYear, setSelectedYear] = useState(current.year);
+  const [selectedMonth, setSelectedMonth] = useState<number | "all">("all");
 
-  // Fetch real data from API
-  const { data, isLoading, isFetching, error } = useRevenueReport(dateRange);
+  const { data, isLoading, isFetching, isError, error } = useRevenueReport({
+    year: selectedYear,
+    month: selectedMonth === "all" ? null : selectedMonth,
+  });
   
   // Use API data or defaults
   const summary = data?.summary || defaultSummary;
@@ -130,15 +165,25 @@ export default function RevenueReportPage() {
   const topCustomers = data?.topCustomers || [];
   const recentTransactions = data?.recentTransactions || [];
 
-  // Show loading when fetching (even if we have cached data)
-  const showLoading = isLoading || isFetching;
+  const showInitialLoading = isLoading && !data;
+  const isRefetching = isFetching && !isLoading;
+
+  const periodLabel =
+    data?.periodLabel ||
+    (selectedMonth === "all"
+      ? `${selectedYear}`
+      : `${MONTHS.find((m) => m.value === selectedMonth)?.label} ${selectedYear}`);
+
+  const yearOptions = useMemo(() => {
+    const years: number[] = [];
+    for (let y = current.year + 1; y >= current.year - 2; y--) years.push(y);
+    return years;
+  }, [current.year]);
 
   const totalRevenue = summary.totalRevenue;
   const totalTransactions = summary.totalTransactions;
   const avgMonthlyRevenue = summary.avgMonthlyRevenue;
-  const maxRevenue = monthlyRevenue.length > 0 ? Math.max(...monthlyRevenue.map(m => m.total)) : 1;
-  const lastMonth = monthlyRevenue[monthlyRevenue.length - 1] || { total: 0 };
-  const prevMonth = monthlyRevenue[monthlyRevenue.length - 2] || { total: 0 };
+  const maxRevenue = monthlyRevenue.length > 0 ? Math.max(...monthlyRevenue.map(m => m.total), 1) : 1;
   
   // Format growth properly (handle edge cases)
   const growth = isNaN(summary.growth) || !isFinite(summary.growth) 
@@ -147,15 +192,14 @@ export default function RevenueReportPage() {
       ? 1000 
       : summary.growth;
 
-  // Get dynamic period label
-  const getPeriodLabel = () => {
-    switch (dateRange) {
-      case 'week': return 'This week';
-      case 'quarter': return `Last ${monthlyRevenue.length} months`;
-      case 'year': return 'Last 12 months';
-      default: return `Last ${monthlyRevenue.length} months`;
-    }
+  const openMonth = (monthNumber: number) => {
+    setSelectedMonth(monthNumber);
   };
+
+  const periodChange =
+    summary.prevPeriodRevenue != null
+      ? totalRevenue - summary.prevPeriodRevenue
+      : null;
 
   // Export to CSV function
   const handleExportReport = () => {
@@ -170,7 +214,7 @@ export default function RevenueReportPage() {
     // Add header section
     csvRows.push('Revenue Report Export');
     csvRows.push(`Generated: ${new Date().toLocaleString()}`);
-    csvRows.push(`Date Range: ${dateRange.charAt(0).toUpperCase() + dateRange.slice(1)}`);
+    csvRows.push(`Period: ${periodLabel}`);
     csvRows.push('');
 
     // Summary Section
@@ -232,9 +276,8 @@ export default function RevenueReportPage() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     
-    const rangeLabel = dateRange.charAt(0).toUpperCase() + dateRange.slice(1);
     link.setAttribute('href', url);
-    link.setAttribute('download', `revenue-report-${rangeLabel.toLowerCase()}-${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `revenue-report-${selectedYear}${selectedMonth !== "all" ? `-${String(selectedMonth).padStart(2, "0")}` : ""}.csv`);
     link.style.visibility = 'hidden';
     
     document.body.appendChild(link);
@@ -262,19 +305,6 @@ export default function RevenueReportPage() {
 
   return (
     <div className="space-y-6 relative">
-      {/* Loading Overlay */}
-      {showLoading && data && (
-        <div className="absolute inset-0 bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm z-50 flex items-center justify-center rounded-2xl">
-          <div className="flex flex-col items-center gap-3 bg-white dark:bg-gray-800 rounded-xl shadow-lg px-6 py-4 border border-gray-200 dark:border-gray-700">
-            <svg className="h-6 w-6 animate-spin text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Loading data...</p>
-          </div>
-        </div>
-      )}
-      
       <PageBreadCrumb pageTitle="Revenue Report" />
 
       {/* Header */}
@@ -288,47 +318,44 @@ export default function RevenueReportPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Revenue Report</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Detailed financial analytics and trends
-              {showLoading && (
-                <span className="ml-2 inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                  <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Loading...
-                </span>
+              {showInitialLoading ? "Loading..." : periodLabel}
+              {isRefetching && (
+                <span className="ml-2 text-emerald-600 dark:text-emerald-400">Updating...</span>
               )}
+            </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+              Succeeded payments by payment date · click a month row to filter
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden relative">
-            {showLoading && (
-              <div className="absolute inset-0 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
-                <svg className="h-4 w-4 animate-spin text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              </div>
-            )}
-            {(["week", "month", "quarter", "year"] as const).map((range) => (
-              <button
-                key={range}
-                onClick={() => setDateRange(range)}
-                disabled={showLoading}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors relative ${
-                  dateRange === range
-                    ? "bg-emerald-600 text-white"
-                    : "bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                } ${showLoading ? "opacity-50 cursor-not-allowed" : ""}`}
-              >
-                {range.charAt(0).toUpperCase() + range.slice(1)}
-              </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedMonth}
+            disabled={showInitialLoading}
+            onChange={(e) => {
+              const v = e.target.value;
+              setSelectedMonth(v === "all" ? "all" : parseInt(v, 10));
+            }}
+            className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+          >
+            <option value="all">All months</option>
+            {MONTHS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
             ))}
-          </div>
+          </select>
+          <select
+            value={selectedYear}
+            disabled={showInitialLoading}
+            onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
+            className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+          >
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
           <button 
             onClick={handleExportReport}
-            disabled={showLoading || !data}
+            disabled={showInitialLoading || !data}
             className="inline-flex items-center gap-2 rounded-xl bg-linear-to-r from-emerald-500 to-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -339,8 +366,14 @@ export default function RevenueReportPage() {
         </div>
       </div>
 
+      {isError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {(error as Error)?.message || "Failed to load revenue report"}
+        </div>
+      )}
+
       {/* Key Metrics */}
-      {showLoading && !data ? (
+      {showInitialLoading ? (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <MetricCardSkeleton />
           <MetricCardSkeleton />
@@ -368,7 +401,10 @@ export default function RevenueReportPage() {
           <div className="mt-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white">${totalRevenue.toLocaleString()}</p>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{getPeriodLabel()}</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{periodLabel}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              ${(summary.packageRevenue ?? 0).toLocaleString()} packages · ${(summary.classRevenue ?? 0).toLocaleString()} trials/guest
+            </p>
           </div>
         </div>
 
@@ -396,15 +432,10 @@ export default function RevenueReportPage() {
             </div>
           </div>
           <div className="mt-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {dateRange === 'week' ? 'Avg Daily' : 'Avg Monthly'}
-            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Avg Monthly</p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white">${avgMonthlyRevenue.toLocaleString()}</p>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {dateRange === 'week' 
-                ? `Based on ${monthlyRevenue.length} ${monthlyRevenue.length === 1 ? 'day' : 'days'}`
-                : `Based on ${monthlyRevenue.length} ${monthlyRevenue.length === 1 ? 'month' : 'months'}`
-              }
+              Months with revenue in {periodLabel}
             </p>
           </div>
         </div>
@@ -418,16 +449,15 @@ export default function RevenueReportPage() {
             </div>
           </div>
           <div className="mt-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {dateRange === 'week' ? 'This Week' : 
-               dateRange === 'quarter' ? 'This Quarter' : 
-               dateRange === 'year' ? 'This Year' : 
-               'This Month'}
+            <p className="text-sm text-gray-500 dark:text-gray-400">vs Previous Period</p>
+            <p className="text-3xl font-bold text-gray-900 dark:text-white">
+              {periodChange != null
+                ? `${periodChange >= 0 ? "+" : ""}$${periodChange.toLocaleString()}`
+                : "—"}
             </p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">${lastMonth.total.toLocaleString()}</p>
-            {prevMonth.total > 0 && (
-              <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
-                +${(lastMonth.total - prevMonth.total).toLocaleString()} vs {dateRange === 'week' ? 'last week' : dateRange === 'quarter' ? 'last quarter' : dateRange === 'year' ? 'last year' : 'last month'}
+            {summary.prevPeriodRevenue != null && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Previous: ${summary.prevPeriodRevenue.toLocaleString()}
               </p>
             )}
           </div>
@@ -436,7 +466,7 @@ export default function RevenueReportPage() {
       )}
 
       {/* Revenue Chart & Package Breakdown */}
-      {showLoading && !data ? (
+      {showInitialLoading ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <ChartSkeleton />
           <ListSkeleton />
@@ -447,10 +477,8 @@ export default function RevenueReportPage() {
         <div className="lg:col-span-2 rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {dateRange === 'week' ? 'Daily Revenue' : 'Monthly Revenue'}
-              </h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Package sales vs class fees</p>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Monthly Revenue</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{selectedYear} · click a month to filter</p>
             </div>
             <div className="flex items-center gap-4 text-sm">
               <div className="flex items-center gap-2">
@@ -466,6 +494,7 @@ export default function RevenueReportPage() {
 
           <div className="space-y-3">
             {monthlyRevenue.map((data) => {
+              const isSelected = selectedMonth !== "all" && data.monthNumber === selectedMonth;
               const packagesWidth = data.total > 0 ? (data.packages / maxRevenue) * 100 : 0;
               const classesWidth = data.total > 0 ? (data.classes / maxRevenue) * 100 : 0;
               const formatAmount = (amount: number) => {
@@ -475,7 +504,14 @@ export default function RevenueReportPage() {
               };
               
               return (
-                <div key={data.month} className="group">
+                <button
+                  key={data.month}
+                  type="button"
+                  onClick={() => data.monthNumber && openMonth(data.monthNumber)}
+                  className={`group w-full text-left rounded-lg p-1 -m-1 transition-colors ${
+                    isSelected ? "bg-emerald-50 dark:bg-emerald-900/20 ring-1 ring-emerald-200 dark:ring-emerald-800" : "hover:bg-gray-50 dark:hover:bg-gray-700/30"
+                  }`}
+                >
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">{data.month}</span>
                     <span className="text-sm font-semibold text-gray-900 dark:text-white">${data.total.toLocaleString()}</span>
@@ -502,7 +538,7 @@ export default function RevenueReportPage() {
                       </div>
                     )}
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -512,29 +548,19 @@ export default function RevenueReportPage() {
             <div className="text-center p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">
               <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Package Revenue</p>
               <p className="text-xl font-bold text-emerald-700 dark:text-emerald-300">
-                {(() => {
-                  const total = monthlyRevenue.reduce((sum, d) => sum + d.packages, 0);
-                  if (total === 0) return '$0';
-                  if (total >= 1000) return `$${(total / 1000).toFixed(1)}k`;
-                  return `$${total.toLocaleString()}`;
-                })()}
+                ${(summary.packageRevenue ?? 0).toLocaleString()}
               </p>
             </div>
             <div className="text-center p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20">
               <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">Class Fees</p>
               <p className="text-xl font-bold text-blue-700 dark:text-blue-300">
-                {(() => {
-                  const total = monthlyRevenue.reduce((sum, d) => sum + d.classes, 0);
-                  if (total === 0) return '$0';
-                  if (total >= 1000) return `$${(total / 1000).toFixed(1)}k`;
-                  return `$${total.toLocaleString()}`;
-                })()}
+                ${(summary.classRevenue ?? 0).toLocaleString()}
               </p>
             </div>
             <div className="text-center p-3 rounded-xl bg-gray-100 dark:bg-gray-700">
               <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Avg Order Value</p>
               <p className="text-xl font-bold text-gray-700 dark:text-gray-300">
-                ${monthlyRevenue.length > 0 ? Math.round(monthlyRevenue.reduce((sum, d) => sum + d.avgOrder, 0) / monthlyRevenue.length) : 0}
+                ${summary.avgOrderValue}
               </p>
             </div>
           </div>
@@ -571,7 +597,7 @@ export default function RevenueReportPage() {
       )}
 
       {/* Top Customers & Recent Transactions */}
-      {showLoading && !data ? (
+      {showInitialLoading ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <CustomerSkeleton />
           <CustomerSkeleton />
@@ -581,7 +607,10 @@ export default function RevenueReportPage() {
         {/* Top Customers */}
         <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Top Customers</h3>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Top Customers</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Spending in {periodLabel}</p>
+            </div>
             <button className="text-sm text-emerald-600 hover:text-emerald-700 dark:text-emerald-400">View all</button>
           </div>
           <div className="space-y-3">
@@ -598,11 +627,14 @@ export default function RevenueReportPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-900 dark:text-white">{customer.name}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{customer.purchases} purchases / {customer.tokens} tokens</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {customer.purchases} payment{customer.purchases !== 1 ? "s" : ""}
+                    {customer.tokens > 0 ? ` · ${customer.tokens} tokens` : " · trial/guest"}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">${customer.spent}</p>
-                  <p className="text-xs text-gray-400">lifetime</p>
+                  <p className="text-xs text-gray-400">in period</p>
                 </div>
               </div>
             ))}
@@ -612,7 +644,10 @@ export default function RevenueReportPage() {
         {/* Recent Transactions */}
         <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Transactions</h3>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Transactions</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">In {periodLabel}</p>
+            </div>
             <button className="text-sm text-emerald-600 hover:text-emerald-700 dark:text-emerald-400">View all</button>
           </div>
           <div className="space-y-3">
@@ -642,25 +677,21 @@ export default function RevenueReportPage() {
       )}
 
       {/* Monthly Breakdown Table */}
-      {showLoading && !data ? (
+      {showInitialLoading ? (
         <TableSkeleton />
       ) : (
       <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            {dateRange === 'week' ? 'Daily Breakdown' : 'Monthly Breakdown'}
-          </h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Monthly Breakdown</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            {dateRange === 'week' ? 'Detailed revenue by day' : 'Detailed revenue by month'}
+            {selectedYear} · click a row to filter all stats above
           </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800/50">
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  {dateRange === 'week' ? 'Day' : 'Month'}
-                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Month</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Packages</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Classes</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Total</th>
@@ -683,8 +714,17 @@ export default function RevenueReportPage() {
                     growthPct = 100;
                   }
                 }
+                const isSelected = selectedMonth !== "all" && row.monthNumber === selectedMonth;
                 return (
-                  <tr key={row.month} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                  <tr
+                    key={row.month}
+                    onClick={() => row.monthNumber && openMonth(row.monthNumber)}
+                    className={`cursor-pointer transition-colors ${
+                      isSelected
+                        ? "bg-emerald-50 dark:bg-emerald-900/20"
+                        : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                    }`}
+                  >
                     <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900 dark:text-white">{row.month}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-gray-600 dark:text-gray-300">${row.packages.toLocaleString()}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-gray-600 dark:text-gray-300">${row.classes.toLocaleString()}</td>
@@ -708,12 +748,14 @@ export default function RevenueReportPage() {
             </tbody>
             <tfoot>
               <tr className="bg-gray-50 dark:bg-gray-800/50 font-semibold">
-                <td className="px-6 py-4 text-gray-900 dark:text-white">Total</td>
-                <td className="px-6 py-4 text-right text-gray-900 dark:text-white">${monthlyRevenue.reduce((sum, d) => sum + d.packages, 0).toLocaleString()}</td>
-                <td className="px-6 py-4 text-right text-gray-900 dark:text-white">${monthlyRevenue.reduce((sum, d) => sum + d.classes, 0).toLocaleString()}</td>
+                <td className="px-6 py-4 text-gray-900 dark:text-white">
+                  Total{selectedMonth !== "all" ? ` (${periodLabel})` : ` (${selectedYear})`}
+                </td>
+                <td className="px-6 py-4 text-right text-gray-900 dark:text-white">${(summary.packageRevenue ?? 0).toLocaleString()}</td>
+                <td className="px-6 py-4 text-right text-gray-900 dark:text-white">${(summary.classRevenue ?? 0).toLocaleString()}</td>
                 <td className="px-6 py-4 text-right text-emerald-600 dark:text-emerald-400">${totalRevenue.toLocaleString()}</td>
                 <td className="px-6 py-4 text-right text-gray-900 dark:text-white">{totalTransactions}</td>
-                <td className="px-6 py-4 text-right text-gray-900 dark:text-white">${totalTransactions > 0 ? Math.round(totalRevenue / totalTransactions) : 0}</td>
+                <td className="px-6 py-4 text-right text-gray-900 dark:text-white">${summary.avgOrderValue}</td>
                 <td className="px-6 py-4 text-right"></td>
               </tr>
             </tfoot>

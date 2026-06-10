@@ -14,6 +14,10 @@ export interface ReportStats {
   userGrowth: number
   totalTokensSold: number
   totalRevenue: number
+  packageRevenue?: number
+  trialRevenue?: number
+  paymentCount?: number
+  totalBookings?: number
   revenueGrowth: number
   classesThisMonth: number
   totalClasses: number
@@ -27,11 +31,17 @@ export interface ReportStats {
 
 export interface MonthlyData {
   month: string
+  monthNumber?: number
   year?: number
   revenue: number
   attendance: number
   newUsers: number
   classes: number
+}
+
+export interface ReportsOverviewParams {
+  year: number
+  month?: number | null
 }
 
 export interface TopClass {
@@ -61,6 +71,9 @@ export interface RecentActivity {
 }
 
 export interface ReportsOverviewData {
+  periodLabel?: string
+  year?: number
+  month?: number | null
   stats: ReportStats
   monthlyData: MonthlyData[]
   topClasses: TopClass[]
@@ -69,6 +82,11 @@ export interface ReportsOverviewData {
 }
 
 // Revenue types
+export interface RevenueReportParams {
+  year: number
+  month?: number | null
+}
+
 export interface RevenueSummary {
   totalRevenue: number
   totalTransactions: number
@@ -76,11 +94,16 @@ export interface RevenueSummary {
   growth: number
   thisMonth: number
   lastMonth: number
+  prevPeriodRevenue?: number
   avgOrderValue: number
+  packageRevenue?: number
+  classRevenue?: number
 }
 
 export interface MonthlyRevenue {
   month: string
+  monthNumber?: number
+  year?: number
   packages: number
   classes: number
   total: number
@@ -113,6 +136,9 @@ export interface RecentTransaction {
 }
 
 export interface RevenueReportData {
+  periodLabel?: string
+  year?: number
+  month?: number | null
   summary: RevenueSummary
   monthlyRevenue: MonthlyRevenue[]
   packageSales: PackageSale[]
@@ -120,109 +146,132 @@ export interface RevenueReportData {
   recentTransactions: RecentTransaction[]
 }
 
-// Attendance types
-export interface AttendanceTotals {
-  totalBooked: number
-  totalAttended: number
-  totalNoShows: number
-  totalCancelled: number
-  overallRate: number
-  noShowRate: number
+// Marketing demographics types
+export interface MarketingReportParams {
+  year: number
+  month?: number | null
 }
 
-export interface WeeklyData {
-  day: string
-  classes: number
-  booked: number
-  attended: number
-  noShows: number
-  cancelled: number
-  rate: number
+export interface DemographicCount {
+  label: string
+  count: number
+  percentage: number
+  key?: string
 }
 
-export interface TimeSlotData {
-  slot: string
-  classes: number
-  avgAttendance: number
-  rate: number
+export interface DemographicBreakdown {
+  segment: 'trial' | 'member'
+  total: number
+  withGender: number
+  withAge: number
+  genderCoverage: number
+  ageCoverage: number
+  avgAge: number | null
+  medianAge?: number | null
+  kidsUnder13?: number
+  minorsUnder18?: number
+  adults18Plus?: number
+  kidsPct?: number
+  minorsPct?: number
+  gender: DemographicCount[]
+  ageGroups: DemographicCount[]
 }
 
-export interface ClassPerformance {
-  name: string
-  instructor: string
-  totalClasses: number
-  avgAttendance: number
-  capacity: number
-  rate: number
-  noShowRate: number
+export interface CombinedAgeGroup {
+  key: string
+  label: string
+  shortLabel: string
+  trial: number
+  members: number
+  total: number
+  trialPct: number
+  membersPct: number
 }
 
-export interface FrequentNoShow {
-  name: string
-  email: string
-  noShows: number
-  totalBookings: number
-  rate: number
-  lastNoShow: string
+export interface MarketingSummary {
+  trialUsers: number
+  members: number
+  trialAgeCoverage: number
+  memberAgeCoverage: number
+  trialAvgAge: number | null
+  memberAvgAge: number | null
+  trialMedianAge?: number | null
+  memberMedianAge?: number | null
+  trialKidsPct?: number
+  memberKidsPct?: number
 }
 
-export interface MonthlyTrend {
+export interface MonthlyAudienceTrend {
   month: string
+  monthNumber: number
+  year: number
+  trialBookings: number
+  newMembers: number
+}
+
+export interface MarketingReportData {
+  periodLabel?: string
   year?: number
-  attendance: number
-  noShows: number
-  cancellations: number
-  rate: number
+  month?: number | null
+  summary: MarketingSummary
+  trial: DemographicBreakdown
+  members: DemographicBreakdown
+  combinedAgeGroups?: CombinedAgeGroup[]
+  monthlyTrend: MonthlyAudienceTrend[]
+  dataNotes?: string[]
+}
+
+// Attendance / booking types
+export interface BookingTotals {
+  totalClasses: number
+  classesWithBookings: number
+  totalBookings: number
+  memberBookings: number
+  trialBookings: number
+}
+
+export interface ClassSession {
+  id: string
+  title: string
+  instructor: string
+  scheduledAt: string
+  dateLabel: string
+  timeLabel: string
+  capacity: number
+  totalBookings: number
+  memberBookings: number
+  trialBookings: number
+  hasBookings: boolean
+}
+
+export interface YearMonthSummary extends BookingTotals {
+  month: number
+  monthName: string
+  year: number
+}
+
+export interface AttendanceReportParams {
+  year: number
+  month: number
+  scope: 'month' | 'year'
 }
 
 export interface AttendanceReportData {
-  totals: AttendanceTotals
-  weeklyData: WeeklyData[]
-  timeSlotData: TimeSlotData[]
-  classPerformance: ClassPerformance[]
-  frequentNoShows: FrequentNoShow[]
-  monthlyTrends: MonthlyTrend[]
+  scope: 'month' | 'year'
+  year: number
+  month: number | null
+  periodLabel: string
+  totals: BookingTotals
+  classSessions: ClassSession[]
+  yearSummary: YearMonthSummary[]
+  yearTotals: BookingTotals
 }
-
-// Audits types
-export interface AuditLog {
-  id: string
-  userId: string | null
-  userName: string
-  userEmail: string | null
-  userRole: string | null
-  action: string
-  resourceType: string
-  resourceId: string | null
-  oldValues: Record<string, unknown> | null
-  newValues: Record<string, unknown> | null
-  ipAddress: string | null
-  userAgent: string | null
-  createdAt: string
-}
-
-export interface AuditStats {
-  totalLogs: number
-  todayLogs: number
-  uniqueUsers: number
-  uniqueActions: number
-  uniqueResources: number
-}
-
-export interface AuditReportData {
-  logs: AuditLog[]
-  stats: AuditStats
-  total: number
-  page: number
-  pageSize: number
-  hasMore: boolean
-}
-
-type DateRange = 'week' | 'month' | 'quarter' | 'year'
 
 // Fetch functions
-async function fetchReportsOverview(range: DateRange): Promise<ReportsOverviewData> {
-  const response = await fetch(`/api/reports?range=${range}`)
+async function fetchReportsOverview(params: ReportsOverviewParams): Promise<ReportsOverviewData> {
+  const query = new URLSearchParams({ year: String(params.year) })
+  if (params.month) query.set('month', String(params.month))
+  const response = await fetch(`/api/reports?${query.toString()}`)
   if (!response.ok) {
     throw new Error('Failed to fetch reports overview')
   }
@@ -233,8 +282,24 @@ async function fetchReportsOverview(range: DateRange): Promise<ReportsOverviewDa
   return json.data
 }
 
-async function fetchRevenueReport(range: DateRange): Promise<RevenueReportData> {
-  const response = await fetch(`/api/reports/revenue?range=${range}`)
+async function fetchMarketingReport(params: MarketingReportParams): Promise<MarketingReportData> {
+  const query = new URLSearchParams({ year: String(params.year) })
+  if (params.month) query.set('month', String(params.month))
+  const response = await fetch(`/api/reports/marketing?${query.toString()}`)
+  if (!response.ok) {
+    throw new Error('Failed to fetch marketing report')
+  }
+  const json = await response.json()
+  if (!json.success) {
+    throw new Error(json.error?.message || 'Failed to fetch marketing report')
+  }
+  return json.data
+}
+
+async function fetchRevenueReport(params: RevenueReportParams): Promise<RevenueReportData> {
+  const query = new URLSearchParams({ year: String(params.year) })
+  if (params.month) query.set('month', String(params.month))
+  const response = await fetch(`/api/reports/revenue?${query.toString()}`)
   if (!response.ok) {
     throw new Error('Failed to fetch revenue report')
   }
@@ -245,8 +310,12 @@ async function fetchRevenueReport(range: DateRange): Promise<RevenueReportData> 
   return json.data
 }
 
-async function fetchAttendanceReport(range: DateRange): Promise<AttendanceReportData> {
-  const response = await fetch(`/api/reports/attendance?range=${range}`)
+async function fetchAttendanceReport(params: AttendanceReportParams): Promise<AttendanceReportData> {
+  const query = new URLSearchParams({ year: String(params.year), scope: params.scope })
+  if (params.scope === 'month') {
+    query.set('month', String(params.month))
+  }
+  const response = await fetch(`/api/reports/attendance?${query.toString()}`)
   if (!response.ok) {
     throw new Error('Failed to fetch attendance report')
   }
@@ -306,33 +375,77 @@ async function fetchAuditReport(params: {
   }
 }
 
+// Audits types
+export interface AuditLog {
+  id: string
+  userId: string | null
+  userName: string
+  userEmail: string | null
+  userRole: string | null
+  action: string
+  resourceType: string
+  resourceId: string | null
+  oldValues: Record<string, unknown> | null
+  newValues: Record<string, unknown> | null
+  ipAddress: string | null
+  userAgent: string | null
+  createdAt: string
+}
+
+export interface AuditStats {
+  totalLogs: number
+  todayLogs: number
+  uniqueUsers: number
+  uniqueActions: number
+  uniqueResources: number
+}
+
+export interface AuditReportData {
+  logs: AuditLog[]
+  stats: AuditStats
+  total: number
+  page: number
+  pageSize: number
+  hasMore: boolean
+}
+
 // Hooks
-export function useReportsOverview(range: DateRange = 'month') {
+export function useReportsOverview(params: ReportsOverviewParams) {
   return useQuery({
-    queryKey: ['reports', 'overview', range],
-    queryFn: () => fetchReportsOverview(range),
-    // Uses global 30-minute staleTime from react-query.tsx
+    queryKey: ['reports', 'overview', params.year, params.month ?? 'all'],
+    queryFn: () => fetchReportsOverview(params),
+    staleTime: 0,
     refetchOnMount: true,
     refetchOnWindowFocus: false,
   })
 }
 
-export function useRevenueReport(range: DateRange = 'month') {
+export function useRevenueReport(params: RevenueReportParams) {
   return useQuery({
-    queryKey: ['reports', 'revenue', range],
-    queryFn: () => fetchRevenueReport(range),
-    // Uses global 30-minute staleTime from react-query.tsx
+    queryKey: ['reports', 'revenue', params.year, params.month ?? 'all'],
+    queryFn: () => fetchRevenueReport(params),
+    staleTime: 0,
     refetchOnMount: true,
     refetchOnWindowFocus: false,
   })
 }
 
-export function useAttendanceReport(range: DateRange = 'month') {
+export function useMarketingReport(params: MarketingReportParams) {
   return useQuery({
-    queryKey: ['reports', 'attendance', range],
-    queryFn: () => fetchAttendanceReport(range),
-    // Uses global 30-minute staleTime from react-query.tsx
+    queryKey: ['reports', 'marketing', params.year, params.month ?? 'all'],
+    queryFn: () => fetchMarketingReport(params),
+    staleTime: 0,
     refetchOnMount: true,
+    refetchOnWindowFocus: false,
+  })
+}
+
+export function useAttendanceReport(params: AttendanceReportParams) {
+  return useQuery({
+    queryKey: ['reports', 'attendance', params.scope, params.year, params.month],
+    queryFn: () => fetchAttendanceReport(params),
+    staleTime: 0,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
   })
 }
@@ -349,6 +462,5 @@ export function useAuditReport(params: {
   return useQuery({
     queryKey: ['reports', 'audits', params],
     queryFn: () => fetchAuditReport(params),
-    // Uses global 30-minute staleTime from react-query.tsx
   })
 }

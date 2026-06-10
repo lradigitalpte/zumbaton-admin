@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
       classType: searchParams.get('classType') || undefined,
       level: searchParams.get('level') || undefined,
       status: searchParams.get('status') || undefined,
+      lifecycle: searchParams.get('lifecycle') || undefined,
       instructorId: searchParams.get('instructorId') || undefined,
       startDate: searchParams.get('startDate') || undefined,
       endDate: searchParams.get('endDate') || undefined,

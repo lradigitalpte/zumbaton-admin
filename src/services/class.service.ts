@@ -12,7 +12,11 @@ import type {
   ClassListResponse,
   ClassListQuery,
   ClassAttendeesResponse,
+  ClassLifecycle,
 } from '@/api/schemas'
+
+/** Statuses that mean someone actually booked a spot (matches Booking Report). */
+const BOOKING_COUNT_STATUSES = ['confirmed', 'attended', 'no-show'] as const
 
 // Helper function to generate class occurrences based on recurrence pattern
 // maxWeeks parameter limits how many weeks to generate (for hybrid auto-generation)
@@ -314,14 +318,13 @@ export async function getClass(classId: string): Promise<ClassResponse> {
     throw new ApiError('NOT_FOUND_ERROR', 'Class not found', 404)
   }
 
-  // Get booking count (count both confirmed and attended as enrolled)
-  // Use admin client to bypass RLS and read all bookings
+  // Count real bookings (confirmed, attended, no-show — same rules as Booking Report)
   const adminClient = getSupabaseAdminClient()
   const { count: bookedCount } = await adminClient
     .from(TABLES.BOOKINGS)
     .select('*', { count: 'exact', head: true })
     .eq('class_id', classId)
-    .in('status', ['confirmed', 'attended'])
+    .in('status', [...BOOKING_COUNT_STATUSES])
 
   // Get waitlist count
   const { count: waitlistCount } = await supabase
@@ -347,6 +350,32 @@ export async function getClass(classId: string): Promise<ClassResponse> {
   }
 }
 
+function computeClassLifecycle(
+  classData: Record<string, unknown>,
+  bookedCount: number,
+  now: Date
+): ClassLifecycle {
+  const status = classData.status as string
+  const scheduledAt = classData.scheduled_at as string
+  const durationMinutes = (classData.duration_minutes as number) || 60
+  const capacity = classData.capacity as number
+
+  if (status === 'cancelled') return 'cancelled'
+  if (status === 'completed') return 'completed'
+
+  const classEndTime = new Date(
+    new Date(scheduledAt).getTime() + durationMinutes * 60 * 1000
+  )
+  if (classEndTime < now && status === 'scheduled') return 'completed'
+  if (bookedCount >= capacity) return 'full'
+  return 'active'
+}
+
+function matchesLifecycleFilter(lifecycle: ClassLifecycle, filter?: ClassLifecycle): boolean {
+  if (!filter || filter === 'all') return lifecycle !== 'cancelled'
+  return lifecycle === filter
+}
+
 // List classes with filtering and pagination
 export async function listClasses(query: ClassListQuery): Promise<ClassListResponse> {
   const {
@@ -358,15 +387,15 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
     level,
     instructorId,
     status,
+    lifecycle,
     sort = 'scheduled_at_asc',
   } = query
 
-  // Use admin client to bypass RLS for admin operations
   const adminClient = getSupabaseAdminClient()
 
   let dbQuery = adminClient
     .from(TABLES.CLASSES)
-    .select('*', { count: 'exact' })
+    .select('*')
     .order('scheduled_at', { ascending: sort !== 'scheduled_at_desc' })
 
   if (startDate) {
@@ -393,29 +422,19 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
     dbQuery = dbQuery.eq('status', status)
   }
 
-  const from = (page - 1) * pageSize
-  const to = from + pageSize - 1
-  dbQuery = dbQuery.range(from, to)
-
-  const { data, error, count } = await dbQuery
+  const { data, error } = await dbQuery
 
   if (error) {
     throw new ApiError('SERVER_ERROR', 'Failed to fetch classes', 500, error)
   }
 
-  // Get ALL classes for stats calculation (same date range as list when filtered)
-  let allClassesQuery = adminClient
-    .from(TABLES.CLASSES)
-    .select('id, status, scheduled_at, duration_minutes, capacity')
-    .order('scheduled_at', { ascending: sort !== 'scheduled_at_desc' })
-  if (startDate) allClassesQuery = allClassesQuery.gte('scheduled_at', startDate)
-  if (endDate) allClassesQuery = allClassesQuery.lte('scheduled_at', endDate)
-  const { data: allClassesData } = await allClassesQuery
-
-  // Calculate stats from ALL classes in the filtered set (same date range as list)
   const now = new Date()
+  const allClassIds = (data || []).map((c: Record<string, unknown>) => c.id as string)
+  const bookingCounts = await getBookingCounts(allClassIds)
+  const waitlistCounts = await getWaitlistCounts(allClassIds)
+
   let stats = {
-    total: (allClassesData?.length || 0),
+    total: 0,
     active: 0,
     completed: 0,
     cancelled: 0,
@@ -424,69 +443,59 @@ export async function listClasses(query: ClassListQuery): Promise<ClassListRespo
     totalCapacity: 0,
   }
 
-  if (allClassesData) {
-    const allClassIds = allClassesData.map((c: Record<string, unknown>) => c.id as string)
-    const allBookingCounts = await getBookingCounts(allClassIds)
-
-    allClassesData.forEach((classData: Record<string, unknown>) => {
-      const id = classData.id as string
-      const status = classData.status as string
-      const scheduledAt = classData.scheduled_at as string
-      const durationMinutes = (classData.duration_minutes as number) || 60
-      const capacity = classData.capacity as number
-      const bookedCount = allBookingCounts[id] || 0
-
-      stats.totalCapacity += capacity
-      stats.totalEnrolled += bookedCount
-
-      if (status === 'cancelled') {
-        stats.cancelled++
-      } else if (status === 'completed') {
-        stats.completed++
-      } else {
-        const classDate = new Date(scheduledAt)
-        const classEndTime = new Date(classDate.getTime() + durationMinutes * 60 * 1000)
-        if (classEndTime < now && status === 'scheduled') {
-          stats.completed++
-        } else if (bookedCount >= capacity) {
-          stats.full++
-        } else {
-          stats.active++
-        }
-      }
-    })
-  }
-
-  // Get booking counts for paginated classes
-  const classIds = (data || []).map((c: Record<string, unknown>) => c.id as string)
-  const bookingCounts = await getBookingCounts(classIds)
-  const waitlistCounts = await getWaitlistCounts(classIds)
-
-  const classesWithAvailability = (data || []).map((classData: Record<string, unknown>) => {
+  const classesWithMeta = (data || []).map((classData: Record<string, unknown>) => {
     const id = classData.id as string
     const capacity = classData.capacity as number
     const bookedCount = bookingCounts[id] || 0
+    const classLifecycle = computeClassLifecycle(classData, bookedCount, now)
     const spotsRemaining = capacity - bookedCount
     const isBookable = classData.status === 'scheduled' &&
-      new Date(classData.scheduled_at as string) > new Date() &&
+      new Date(classData.scheduled_at as string) > now &&
       spotsRemaining > 0
 
+    stats.total++
+    stats.totalCapacity += capacity
+    stats.totalEnrolled += bookedCount
+    if (classLifecycle === 'cancelled') stats.cancelled++
+    else if (classLifecycle === 'completed') stats.completed++
+    else if (classLifecycle === 'full') stats.full++
+    else stats.active++
+
     return {
-      ...mapClassToSchema(classData),
-      bookedCount,
-      spotsRemaining,
-      waitlistCount: waitlistCounts[id] || 0,
-      isBookable,
+      classData,
+      lifecycle: classLifecycle,
+      mapped: {
+        ...mapClassToSchema(classData),
+        bookedCount,
+        spotsRemaining,
+        waitlistCount: waitlistCounts[id] || 0,
+        isBookable,
+      } satisfies ClassWithAvailability,
     }
   })
 
+  const filtered = classesWithMeta.filter((item) =>
+    matchesLifecycleFilter(item.lifecycle, lifecycle)
+  )
+
+  const ascending = sort !== 'scheduled_at_desc'
+  filtered.sort((a, b) => {
+    const aTime = new Date(a.mapped.scheduledAt).getTime()
+    const bTime = new Date(b.mapped.scheduledAt).getTime()
+    return ascending ? aTime - bTime : bTime - aTime
+  })
+
+  const total = filtered.length
+  const from = (page - 1) * pageSize
+  const pageItems = filtered.slice(from, from + pageSize)
+
   return {
-    classes: classesWithAvailability,
-    total: count || 0,
+    classes: pageItems.map((item) => item.mapped),
+    total,
     page,
     pageSize,
-    hasMore: (count || 0) > page * pageSize,
-    stats, // Include aggregated stats
+    hasMore: total > page * pageSize,
+    stats,
   }
 }
 
@@ -869,38 +878,33 @@ export async function getUpcomingClasses(limit: number = 10): Promise<ClassListR
   })
 }
 
-// Helper: Get booking counts for multiple classes
-// Counts both 'confirmed' and 'attended' bookings as enrolled (they both take up capacity)
-// Excludes cancelled bookings (cancelled, cancelled-late) and no-show
-// Uses admin client to bypass RLS and read all bookings
+// Helper: Get booking counts for multiple classes (batched for large months)
 async function getBookingCounts(classIds: string[]): Promise<Record<string, number>> {
   if (classIds.length === 0) return {}
 
   const adminClient = getSupabaseAdminClient()
-  
-  const { data, error } = await adminClient
-    .from(TABLES.BOOKINGS)
-    .select('class_id')
-    .in('class_id', classIds)
-    .in('status', ['confirmed', 'attended']) // Count both confirmed and attended as enrolled
-
-  if (error) {
-    console.error('[Class Service] Error fetching booking counts:', error)
-    return {}
-  }
-
+  const batchSize = 80
   const counts: Record<string, number> = {}
-  for (const booking of data || []) {
-    const classId = booking.class_id as string
-    counts[classId] = (counts[classId] || 0) + 1
+
+  for (let i = 0; i < classIds.length; i += batchSize) {
+    const batch = classIds.slice(i, i + batchSize)
+    const { data, error } = await adminClient
+      .from(TABLES.BOOKINGS)
+      .select('class_id')
+      .in('class_id', batch)
+      .in('status', [...BOOKING_COUNT_STATUSES])
+
+    if (error) {
+      console.error('[Class Service] Error fetching booking counts:', error)
+      continue
+    }
+
+    for (const booking of data || []) {
+      const classId = booking.class_id as string
+      counts[classId] = (counts[classId] || 0) + 1
+    }
   }
-  
-  // Debug logging
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[Class Service] Booking counts for', classIds.length, 'classes:', counts)
-    console.log('[Class Service] Found', data?.length || 0, 'bookings')
-  }
-  
+
   return counts
 }
 // Generate future occurrences for a recurring parent class

@@ -58,6 +58,7 @@ export interface UseTokenTransactionsParams {
   search?: string
   page?: number
   pageSize?: number
+  enabled?: boolean
 }
 
 async function fetchTransactions(params: UseTokenTransactionsParams): Promise<TransactionsResponse> {
@@ -112,10 +113,13 @@ async function fetchTransactions(params: UseTokenTransactionsParams): Promise<Tr
 }
 
 export function useTokenTransactions(params: UseTokenTransactionsParams = {}) {
+  const { enabled = true, ...queryParams } = params
+
   return useQuery({
-    queryKey: ['token-transactions', params],
-    queryFn: () => fetchTransactions(params),
+    queryKey: ['token-transactions', queryParams],
+    queryFn: () => fetchTransactions(queryParams),
     staleTime: 30 * 1000, // 30 seconds
     refetchOnWindowFocus: true,
+    enabled,
   })
 }

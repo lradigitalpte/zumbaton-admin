@@ -3,6 +3,7 @@
 // All operations are server-side only for security
 
 import { supabase, getSupabaseAdminClient, TABLES, isSupabaseError, SUPABASE_ERRORS } from '@/lib/supabase'
+import { getUsablePackageExpiryCutoff } from '@/lib/token-expiry-utils'
 import { ApiError } from '@/lib/api-error'
 import type {
   Package,
@@ -56,13 +57,14 @@ export async function getUserTokenBalance(
   adminClient?: ReturnType<typeof getSupabaseAdminClient>
 ): Promise<TokenBalance> {
   const client = adminClient || supabase
-  
+  const expiryCutoff = getUsablePackageExpiryCutoff()
+
   const { data: packages, error } = await client
     .from(TABLES.USER_PACKAGES)
     .select('*')
     .eq('user_id', userId)
     .eq('status', 'active')
-    .gt('expires_at', new Date().toISOString())
+    .gte('expires_at', expiryCutoff)
     .order('expires_at', { ascending: true })
 
   if (error) {
@@ -103,6 +105,8 @@ async function getAvailablePackages(
   classType?: string,
   strategy: TokenSelectionStrategy = 'expiring-first'
 ): Promise<UserPackage[]> {
+  const expiryCutoff = getUsablePackageExpiryCutoff()
+
   let query = supabase
     .from(TABLES.USER_PACKAGES)
     .select(`
@@ -111,7 +115,7 @@ async function getAvailablePackages(
     `)
     .eq('user_id', userId)
     .eq('status', 'active')
-    .gt('expires_at', new Date().toISOString())
+    .gte('expires_at', expiryCutoff)
     .gt('tokens_remaining', 0) // has tokens
 
   // Order by strategy
@@ -464,12 +468,13 @@ export async function adminAdjustTokens(params: {
   // If no package specified, find an active one or create adjustment
   if (!targetPackageId) {
     // Use admin client to find packages
+    const expiryCutoff = getUsablePackageExpiryCutoff()
     const { data: packages, error: packagesError } = await adminClient
       .from(TABLES.USER_PACKAGES)
       .select('*')
       .eq('user_id', userId)
       .eq('status', 'active')
-      .gt('expires_at', new Date().toISOString())
+      .gte('expires_at', expiryCutoff)
       .gt('tokens_remaining', 0)
       .order('expires_at', { ascending: true })
       .limit(1)
@@ -686,7 +691,9 @@ export async function getTokenTransactions(params: {
 }> {
   const { userId, transactionType, startDate, endDate, page = 1, pageSize = 20 } = params
 
-  let query = supabase
+  const adminClient = getSupabaseAdminClient()
+
+  let query = adminClient
     .from(TABLES.TOKEN_TRANSACTIONS)
     .select('*', { count: 'exact' })
     .eq('user_id', userId)

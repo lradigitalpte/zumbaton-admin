@@ -1164,7 +1164,9 @@ export async function getUserBookings(params: {
 }) {
   const { userId, status, upcoming, page = 1, pageSize = 20 } = params
 
-  let query = supabase
+  const adminClient = getSupabaseAdminClient()
+
+  let query = adminClient
     .from(TABLES.BOOKINGS)
     .select(`
       *,

@@ -16,6 +16,7 @@ import {
   getJobSchedule,
 } from '@/services/scheduled-jobs.service'
 import { ApiError } from '@/lib/api-error'
+import { getAuthenticatedUser, hasRequiredRole } from '@/middleware/rbac'
 
 // GET /api/cron - Get job schedule info
 export async function GET() {
@@ -31,16 +32,33 @@ export async function GET() {
   }
 }
 
+async function authorizeCronRequest(request: NextRequest): Promise<void> {
+  const authHeader = request.headers.get('authorization')
+  const cronSecret = process.env.CRON_SECRET
+
+  // Supabase pg_cron / external scheduler
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+    return
+  }
+
+  // Settings UI: logged-in admin running a job manually
+  const user = await getAuthenticatedUser(request)
+  if (user && hasRequiredRole(user.role, 'admin')) {
+    return
+  }
+
+  // Local dev when CRON_SECRET is not configured
+  if (!cronSecret) {
+    return
+  }
+
+  throw new ApiError('AUTHENTICATION_ERROR', 'Invalid cron secret', 401)
+}
+
 // POST /api/cron - Run scheduled jobs
 export async function POST(request: NextRequest) {
   try {
-    // Verify cron secret (for security)
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      throw new ApiError('AUTHENTICATION_ERROR', 'Invalid cron secret', 401)
-    }
+    await authorizeCronRequest(request)
 
     const { searchParams } = new URL(request.url)
     const job = searchParams.get('job')

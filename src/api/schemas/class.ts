@@ -130,6 +130,9 @@ export const ClassListResponseSchema = z.object({
 export type ClassListResponse = z.infer<typeof ClassListResponseSchema>
 
 // Query: List classes
+export const ClassLifecycleSchema = z.enum(['all', 'active', 'completed', 'cancelled', 'full'])
+export type ClassLifecycle = z.infer<typeof ClassLifecycleSchema>
+
 export const ClassListQuerySchema = z.object({
   page: z.number().int().positive().default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
@@ -139,6 +142,7 @@ export const ClassListQuerySchema = z.object({
   level: ClassLevelSchema.optional(),
   instructorId: UuidSchema.optional(),
   status: ClassStatusSchema.optional(),
+  lifecycle: ClassLifecycleSchema.optional(),
   sort: z.enum(['scheduled_at_asc', 'scheduled_at_desc']).default('scheduled_at_asc'),
 })
 export type ClassListQuery = z.infer<typeof ClassListQuerySchema>

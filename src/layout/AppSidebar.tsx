@@ -78,6 +78,7 @@ const getNavItems = (user: { role: string } | null): NavItem[] => [
     subItems: [
       { name: "Overview", path: "/reports", pro: false },
       { name: "Revenue", path: "/reports/revenue", pro: false },
+      { name: "Marketing", path: "/reports/marketing", pro: false },
       { name: "Attendance", path: "/reports/attendance", pro: false },
       ...(user && isRoleAtLeast(user.role as UserRole, 'admin') ? [{ name: "Audits", path: "/reports/audits", pro: false }] : []),
     ],
@@ -87,6 +88,16 @@ const getNavItems = (user: { role: string } | null): NavItem[] => [
     name: "Ticker",
     path: "/ticker",
   },
+  ...(user && isRoleAtLeast(user.role as UserRole, 'admin')
+    ? [{
+        icon: <PageIcon />,
+        name: "Blog",
+        subItems: [
+          { name: "All Posts", path: "/blog", pro: false },
+          { name: "New Post", path: "/blog/new", pro: false },
+        ],
+      }]
+    : []),
 ];
 
 const othersItems: NavItem[] = [

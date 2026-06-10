@@ -744,3 +744,65 @@ span.flatpickr-weekday,
   font-family: 'Brush Script MT', 'Lucida Handwriting', cursive;
   font-style: italic;
 }
+
+/* TipTap rich text editor (blog) */
+.tiptap {
+  outline: none;
+  min-height: 320px;
+  color: #111827;
+}
+.dark .tiptap {
+  color: #f3f4f6;
+}
+.tiptap p {
+  margin: 0 0 0.75rem;
+  line-height: 1.7;
+}
+.tiptap h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 1.25rem 0 0.5rem;
+}
+.tiptap h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 1rem 0 0.5rem;
+}
+.tiptap ul,
+.tiptap ol {
+  margin: 0 0 0.75rem 1.25rem;
+  padding: 0;
+}
+.tiptap ul {
+  list-style: disc;
+}
+.tiptap ol {
+  list-style: decimal;
+}
+.tiptap li {
+  margin-bottom: 0.25rem;
+}
+.tiptap blockquote {
+  border-left: 4px solid #65a30d;
+  margin: 1rem 0;
+  padding-left: 1rem;
+  font-style: italic;
+  color: #6b7280;
+}
+.tiptap a {
+  color: #65a30d;
+  text-decoration: underline;
+}
+.tiptap img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+}
+.tiptap p.is-editor-empty:first-child::before {
+  color: #9ca3af;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

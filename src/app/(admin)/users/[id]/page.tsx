@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/Toast";
 import { supabase } from "@/lib/supabase";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
+import { isExpiredBySgtCalendar, sgtDaysUntilExpiry } from "@/lib/reports-utils";
 
 const LOADING_TIMEOUT = 15000; // 15 seconds
 
@@ -54,7 +55,7 @@ export default function UserDetailPage() {
   const [packages, setPackages] = useState<Array<{ id: string; name: string; tokenCount: number; validityDays: number; priceCents: number; currency: string }>>([]);
   const [isLoadingPackages, setIsLoadingPackages] = useState(false);
   const [discount, setDiscount] = useState("");
-  const [userPackages, setUserPackages] = useState<Array<{ id: string; packageName: string; tokensRemaining: number; expiresAt: string; status: string }>>([]);
+  const [userPackages, setUserPackages] = useState<Array<{ id: string; packageName: string; tokensRemaining: number; purchasedAt: string; expiresAt: string; status: string }>>([]);
   const [isLoadingUserPackages, setIsLoadingUserPackages] = useState(false);
   const [isLoadingTakingTooLong, setIsLoadingTakingTooLong] = useState(false);
   const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
@@ -114,78 +115,114 @@ export default function UserDetailPage() {
 
   // Fetch class history when classes tab is active
   useEffect(() => {
-    if (activeTab === "classes" && user?.id && !isLoadingClassHistory) {
-      setIsLoadingClassHistory(true);
-      const bookingsUrl = `/api/bookings?userId=${user.id}&pageSize=100`;
-      api.get<{ success: boolean; data: { bookings: Array<{ id: string; class: { title: string; instructor_name: string; scheduled_at: string; duration_minutes: number }; status: string; booked_at: string }> } }>(bookingsUrl)
-        .then((response: any) => {
-          if (response.error) {
-            console.error("Failed to fetch class history:", response.error);
-            setClassHistory([]);
-            return;
-          }
-          if (response.data?.success && response.data.data?.bookings) {
-            const history: ClassHistory[] = response.data.data.bookings.map((booking: any) => {
-              const classDate = new Date(booking.class.scheduled_at);
-              const endTime = new Date(classDate.getTime() + (booking.class.duration_minutes * 60000));
-              return {
-                id: booking.id,
-                className: booking.class.title,
-                instructor: booking.class.instructor_name || "TBA",
-                date: booking.class.scheduled_at,
-                time: `${classDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })} - ${endTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`,
-                status: booking.status === "confirmed" ? "attended" : booking.status === "cancelled" ? "cancelled" : booking.status === "no_show" ? "no-show" : "attended",
-              };
-            });
-            setClassHistory(history);
-          }
-        })
-        .catch((err) => {
-          console.error("Failed to fetch class history:", err);
-        })
-        .finally(() => {
-          setIsLoadingClassHistory(false);
+    if (activeTab !== "classes" || !user?.id) return;
+
+    let cancelled = false;
+    setIsLoadingClassHistory(true);
+
+    api.get<{ success: boolean; data: { bookings: unknown[] } }>(`/api/bookings?userId=${user.id}&pageSize=100`)
+      .then((response) => {
+        if (cancelled) return;
+        if (response.error) {
+          console.error("Failed to fetch class history:", response.error);
+          setClassHistory([]);
+          return;
+        }
+
+        const payload = (response.data as { data?: { bookings?: unknown[] }; bookings?: unknown[] })?.data ?? response.data;
+        const bookings = (payload as { bookings?: unknown[] })?.bookings ?? [];
+
+        const history: ClassHistory[] = bookings.map((booking: any) => {
+          const cls = booking.class ?? {};
+          const scheduledAt = cls.scheduled_at || cls.scheduledAt;
+          const durationMinutes = cls.duration_minutes ?? cls.durationMinutes ?? 60;
+          const classDate = new Date(scheduledAt);
+          const endTime = new Date(classDate.getTime() + durationMinutes * 60000);
+          const rawStatus = booking.status as string;
+
+          return {
+            id: booking.id,
+            className: cls.title || "Class",
+            instructor: cls.instructor_name || cls.instructorName || "TBA",
+            date: scheduledAt,
+            time: `${classDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Singapore" })} - ${endTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Singapore" })}`,
+            status:
+              rawStatus === "attended" ? "attended"
+              : rawStatus === "no-show" || rawStatus === "no_show" ? "no-show"
+              : rawStatus === "cancelled" || rawStatus === "cancelled-late" ? "cancelled"
+              : "attended",
+          };
         });
-    }
+
+        setClassHistory(history);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("Failed to fetch class history:", err);
+          setClassHistory([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingClassHistory(false);
+      });
+
+    return () => { cancelled = true; };
   }, [activeTab, user?.id]);
+
+  const mapTokenTransactionType = (txType: string): TokenTransaction["type"] => {
+    if (txType === "purchase" || txType === "trial-booking-purchase") return "purchase";
+    if (txType === "attendance-consume" || txType === "no-show-consume" || txType === "late-cancel-consume") return "consume";
+    if (txType === "expire") return "expire";
+    if (txType === "admin-adjust") return "adjustment";
+    if (txType === "booking-release" || txType === "refund") return "release";
+    if (txType === "booking-hold") return "hold";
+    return "adjustment";
+  };
 
   // Fetch token transactions when tokens tab is active
   useEffect(() => {
-    if (activeTab === "tokens" && user?.id && !isLoadingTokenTransactions) {
-      setIsLoadingTokenTransactions(true);
-      const transactionsUrl = `/api/tokens/transactions?userId=${user.id}&pageSize=100`;
-      api.get(transactionsUrl)
-        .then((response: any) => {
-          if (response.error) {
-            console.error("Failed to fetch token transactions:", response.error);
-            setTokenTransactions([]);
-            return;
-          }
-          if (response.data?.success && response.data.data?.transactions) {
-            const transactions: TokenTransaction[] = response.data.data.transactions.map((tx: any) => ({
-              id: tx.id,
-              type: tx.transaction_type === "purchase" ? "purchase" : 
-                    tx.transaction_type === "attendance-consume" || tx.transaction_type === "no-show-consume" ? "consume" :
-                    tx.transaction_type === "expire" ? "expire" :
-                    tx.transaction_type === "admin-adjust" ? "adjustment" :
-                    tx.transaction_type === "booking-release" ? "release" :
-                    tx.transaction_type === "booking-hold" ? "hold" : "adjustment",
-              amount: tx.tokens_change,
-              balance: tx.tokens_after,
-              description: tx.description || "",
-              date: tx.created_at,
-            }));
-            setTokenTransactions(transactions);
-          }
-        })
-        .catch((err) => {
+    if (activeTab !== "tokens" || !user?.id) return;
+
+    let cancelled = false;
+    setIsLoadingTokenTransactions(true);
+
+    api.get<{ success: boolean; data: { transactions: unknown[] } }>(`/api/tokens/transactions?userId=${user.id}&pageSize=100`)
+      .then((response) => {
+        if (cancelled) return;
+        if (response.error) {
+          console.error("Failed to fetch token transactions:", response.error);
+          setTokenTransactions([]);
+          return;
+        }
+
+        const payload = (response.data as { data?: { transactions?: unknown[] }; transactions?: unknown[] })?.data ?? response.data;
+        const rows = (payload as { transactions?: unknown[] })?.transactions ?? [];
+
+        const transactions: TokenTransaction[] = rows.map((tx: any) => {
+          const txType = tx.transaction_type || tx.transactionType || tx.type || "";
+          return {
+            id: tx.id,
+            type: mapTokenTransactionType(txType),
+            amount: tx.tokens_change ?? tx.tokensChange ?? 0,
+            balance: tx.tokens_after ?? tx.tokensAfter ?? 0,
+            description: tx.description || "",
+            date: tx.created_at || tx.createdAt,
+          };
+        });
+
+        setTokenTransactions(transactions);
+      })
+      .catch((err) => {
+        if (!cancelled) {
           console.error("Failed to fetch token transactions:", err);
           setTokenTransactions([]);
-        })
-        .finally(() => {
-          setIsLoadingTokenTransactions(false);
-        });
-    }
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingTokenTransactions(false);
+      });
+
+    return () => { cancelled = true; };
   }, [activeTab, user?.id]);
 
   // Fetch latest referral voucher when user loads or referral panel opens
@@ -203,7 +240,7 @@ export default function UserDetailPage() {
   useEffect(() => {
     if (user?.id) {
       setIsLoadingUserPackages(true);
-      api.get<{ success: boolean; data: { packages: Array<{ id: string; package?: { name: string }; tokensRemaining: number; expiresAt: string; status: string }> } }>(`/api/user-packages?userId=${user.id}&status=active`)
+      api.get<{ success: boolean; data: { packages: Array<{ id: string; package?: { name: string }; tokensRemaining: number; purchasedAt: string; expiresAt: string; status: string }> } }>(`/api/user-packages?userId=${user.id}&pageSize=50`)
         .then((response) => {
           if (response.error) {
             console.error("Failed to fetch user packages:", response.error);
@@ -215,6 +252,7 @@ export default function UserDetailPage() {
                 id: pkg.id,
                 packageName: pkg.package?.name || "Adjustment Package",
                 tokensRemaining: pkg.tokensRemaining,
+                purchasedAt: pkg.purchasedAt,
                 expiresAt: pkg.expiresAt,
                 status: pkg.status,
               }))
@@ -1438,7 +1476,7 @@ export default function UserDetailPage() {
                     <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">Loading packages...</span>
                   </div>
                 ) : userPackages.length === 0 ? (
-                  <p className="text-sm text-gray-500 dark:text-gray-400">No active packages</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No packages</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full">
@@ -1446,6 +1484,9 @@ export default function UserDetailPage() {
                         <tr className="border-b border-gray-200 dark:border-gray-700">
                           <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                             Package
+                          </th>
+                          <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                            Purchased
                           </th>
                           <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                             Tokens Remaining
@@ -1460,33 +1501,47 @@ export default function UserDetailPage() {
                       </thead>
                       <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                         {userPackages.map((pkg) => {
-                          const expiryDate = new Date(pkg.expiresAt);
-                          const isExpiringSoon = expiryDate.getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000; // 7 days
-                          const isExpired = expiryDate.getTime() < Date.now();
+                          const dateOpts: Intl.DateTimeFormatOptions = {
+                            month: "long",
+                            day: "numeric",
+                            year: "numeric",
+                            timeZone: "Asia/Singapore",
+                          };
+                          const isExpired = pkg.status === "expired" || isExpiredBySgtCalendar(pkg.expiresAt);
+                          const daysLeft = sgtDaysUntilExpiry(pkg.expiresAt);
+                          const isExpiringSoon = !isExpired && daysLeft >= 0 && daysLeft <= 7;
+                          const displayStatus = isExpired
+                            ? pkg.status === "expired"
+                              ? "Expired"
+                              : "Expired (pending cleanup)"
+                            : pkg.status.charAt(0).toUpperCase() + pkg.status.slice(1);
                           return (
                             <tr key={pkg.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                               <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">
                                 {pkg.packageName}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap">
+                                {new Date(pkg.purchasedAt).toLocaleDateString("en-US", dateOpts)}
                               </td>
                               <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
                                 {pkg.tokensRemaining}
                               </td>
                               <td className="px-4 py-3 text-sm">
                                 <span className={isExpired ? "text-red-600 dark:text-red-400" : isExpiringSoon ? "text-amber-600 dark:text-amber-400" : "text-gray-900 dark:text-white"}>
-                                  {expiryDate.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+                                  {new Date(pkg.expiresAt).toLocaleDateString("en-US", dateOpts)}
                                 </span>
                               </td>
                               <td className="px-4 py-3">
                                 <span
                                   className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                                    pkg.status === "active"
-                                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
-                                      : pkg.status === "expired"
+                                    isExpired
                                       ? "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400"
+                                      : pkg.status === "active"
+                                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
                                       : "bg-gray-50 text-gray-700 dark:bg-gray-500/10 dark:text-gray-400"
                                   }`}
                                 >
-                                  {pkg.status.charAt(0).toUpperCase() + pkg.status.slice(1)}
+                                  {displayStatus}
                                 </span>
                               </td>
                             </tr>

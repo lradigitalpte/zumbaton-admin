@@ -2,6 +2,7 @@
 // Handles user package purchases and management
 
 import { supabase, getSupabaseAdminClient, TABLES, isSupabaseError, SUPABASE_ERRORS } from '@/lib/supabase'
+import { getExpiredPackageCutoff } from '@/lib/token-expiry-utils'
 import { ApiError } from '@/lib/api-error'
 import { getUserTokenBalance } from './token.service'
 import type {
@@ -298,47 +299,92 @@ export async function getUserPackages(params: UserPackagesQuery & { userId: stri
   }
 }
 
-// Process expired packages (scheduled job)
+// Process expired packages (scheduled job + admin manual run)
+// Expiry = SGT calendar day passed; marks status expired and zeros tokens.
 export async function processExpiredPackages(): Promise<{
   expired: number
   tokensLost: number
 }> {
-  // Find active packages that have expired
-  const { data: expiredPackages } = await supabase
+  const adminClient = getSupabaseAdminClient()
+  const cutoff = getExpiredPackageCutoff()
+
+  const { data: expiredPackages, error } = await adminClient
     .from(TABLES.USER_PACKAGES)
-    .select('id, user_id, tokens_remaining')
+    .select(`
+      id,
+      user_id,
+      tokens_remaining,
+      tokens_held,
+      expires_at,
+      purchased_at,
+      package:packages(name)
+    `)
     .eq('status', 'active')
-    .lt('expires_at', new Date().toISOString())
+    .lt('expires_at', cutoff)
+
+  if (error) {
+    throw new ApiError('SERVER_ERROR', 'Failed to fetch expired packages', 500, error)
+  }
 
   let expired = 0
   let tokensLost = 0
 
   for (const pkg of expiredPackages || []) {
-    // Update status to expired
-    await supabase
+    const tokensBefore = pkg.tokens_remaining || 0
+
+    const { error: updateError } = await adminClient
       .from(TABLES.USER_PACKAGES)
       .update({
         status: 'expired',
+        tokens_remaining: 0,
+        tokens_held: 0,
         updated_at: new Date().toISOString(),
       })
       .eq('id', pkg.id)
 
-    // Record transaction for expired tokens
-    if (pkg.tokens_remaining > 0) {
-      await supabase
-        .from(TABLES.TOKEN_TRANSACTIONS)
-        .insert({
-          user_id: pkg.user_id,
-          user_package_id: pkg.id,
-          transaction_type: 'expire',
-          tokens_change: -pkg.tokens_remaining,
-          tokens_before: pkg.tokens_remaining,
-          tokens_after: 0,
-          description: 'Package expired',
-          created_at: new Date().toISOString(),
-        })
+    if (updateError) {
+      console.error(`[UserPackageService] Failed to expire package ${pkg.id}:`, updateError)
+      continue
+    }
 
-      tokensLost += pkg.tokens_remaining
+    if (tokensBefore > 0) {
+      const packageRow = pkg as {
+        expires_at?: string
+        purchased_at?: string
+        package?: { name: string } | { name: string }[] | null
+      }
+      const packageName = Array.isArray(packageRow.package)
+        ? packageRow.package[0]?.name
+        : packageRow.package?.name
+      const expiryLabel = packageRow.expires_at
+        ? new Date(packageRow.expires_at).toLocaleDateString('en-SG', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+            timeZone: 'Asia/Singapore',
+          })
+        : null
+      const description = [
+        'Package expired',
+        packageName ? `— ${packageName}` : null,
+        `${tokensBefore} token${tokensBefore === 1 ? '' : 's'} cleared`,
+        expiryLabel ? `(expiry ${expiryLabel})` : null,
+      ]
+        .filter(Boolean)
+        .join(' ')
+
+      await adminClient.from(TABLES.TOKEN_TRANSACTIONS).insert({
+        user_id: pkg.user_id,
+        user_package_id: pkg.id,
+        transaction_type: 'expire',
+        tokens_change: -tokensBefore,
+        tokens_before: tokensBefore,
+        tokens_after: 0,
+        description,
+        created_at: new Date().toISOString(),
+      })
+
+      tokensLost += tokensBefore
     }
 
     expired++

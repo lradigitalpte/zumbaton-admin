@@ -5,41 +5,93 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdminClient, TABLES } from '@/lib/supabase'
+import {
+  BOOKING_COUNT_STATUSES,
+  fetchInBatches,
+  getMonthBoundsSgt,
+  getSgtMonthNumber,
+  getSgtYmd,
+  getYearBoundsSgt,
+  initMonthBuckets,
+  SGT_TIMEZONE,
+} from '@/lib/reports-utils'
+
+type PaymentRow = {
+  amount_cents?: number | null
+  package_id?: string | null
+  is_trial_booking?: boolean | null
+  user_id?: string | null
+  created_at?: string
+  packages?: { token_count?: number } | { token_count?: number }[] | null
+}
+
+function getPackageTokenCount(packages: PaymentRow['packages']) {
+  const pkg = Array.isArray(packages) ? packages[0] : packages
+  return pkg?.token_count || 0
+}
+
+function splitPaymentRevenue(payments: PaymentRow[]) {
+  let packageRevenue = 0
+  let trialRevenue = 0
+  let tokensSold = 0
+
+  for (const payment of payments) {
+    const amount = (payment.amount_cents || 0) / 100
+    if (payment.package_id) {
+      packageRevenue += amount
+      tokensSold += getPackageTokenCount(payment.packages)
+    } else {
+      trialRevenue += amount
+    }
+  }
+
+  return {
+    totalRevenue: packageRevenue + trialRevenue,
+    packageRevenue,
+    trialRevenue,
+    paymentCount: payments.length,
+    tokensSold,
+  }
+}
 
 // GET /api/reports - Get overview statistics
 export async function GET(request: NextRequest) {
   try {
     const supabase = getSupabaseAdminClient()
     const { searchParams } = new URL(request.url)
-    
-    const range = searchParams.get('range') || 'month' // week, month, quarter, year
-    
-    // Calculate date ranges
+
     const now = new Date()
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0)
-    
-    // Get range start date
+    const { year: currentYear, month: currentMonth } = getSgtYmd(now)
+    const year = parseInt(searchParams.get('year') || String(currentYear), 10)
+    const monthRaw = searchParams.get('month')
+    const selectedMonth =
+      monthRaw && monthRaw !== 'all' ? parseInt(monthRaw, 10) : null
+
     let rangeStart: Date
-    switch (range) {
-      case 'week':
-        rangeStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        break
-      case 'quarter':
-        rangeStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)
-        break
-      case 'year':
-        rangeStart = new Date(now.getFullYear(), 0, 1)
-        break
-      default: // month
-        rangeStart = startOfMonth
+    let rangeEnd: Date
+    let periodLabel: string
+
+    if (selectedMonth && selectedMonth >= 1 && selectedMonth <= 12) {
+      const bounds = getMonthBoundsSgt(year, selectedMonth)
+      rangeStart = bounds.rangeStart
+      rangeEnd = bounds.rangeEnd
+      periodLabel = `${bounds.monthName} ${year}`
+    } else {
+      const bounds = getYearBoundsSgt(year)
+      rangeStart = bounds.rangeStart
+      rangeEnd = bounds.rangeEnd
+      periodLabel = `${year}`
     }
 
-    // Staff roles to exclude from user counts (only count customers/members)
-    const staffRoles = ['super_admin', 'admin', 'instructor', 'staff', 'receptionist']
+    const periodLength = rangeEnd.getTime() - rangeStart.getTime()
+    const prevRangeStart = new Date(rangeStart.getTime() - periodLength)
+    const prevRangeEnd = rangeStart
+    const rangeStartIso = rangeStart.toISOString()
+    const rangeEndIso = rangeEnd.toISOString()
+    const prevRangeStartIso = prevRangeStart.toISOString()
+    const prevRangeEndIso = prevRangeEnd.toISOString()
 
-    // Fetch all required data in parallel
+    // Fetch all required data in parallel (deduplicated queries)
     const [
       usersResult,
       activeUsersResult,
@@ -49,11 +101,9 @@ export async function GET(request: NextRequest) {
       paymentsPreviousPeriod,
       classesThisMonth,
       bookingsResult,
-      attendanceResult,
       topInstructorsResult,
-      topClassesResult,
-      paymentsForRevenue,
-      instructorBookings,
+      periodBookingsResult,
+      tokensSoldResult,
       prevPeriodBookings,
       monthlyDataResult,
       recentActivityResult,
@@ -68,7 +118,9 @@ export async function GET(request: NextRequest) {
       supabase
         .from(TABLES.BOOKINGS)
         .select('user_id', { count: 'exact' })
-        .gte('booked_at', rangeStart.toISOString())
+        .gte('booked_at', rangeStartIso)
+        .lt('booked_at', rangeEndIso)
+        .in('status', [...BOOKING_COUNT_STATUSES])
         .not('user_id', 'is', null),
       
       // New users in range (only customers, exclude staff)
@@ -76,91 +128,87 @@ export async function GET(request: NextRequest) {
         .from(TABLES.USER_PROFILES)
         .select('id', { count: 'exact', head: true })
         .eq('role', 'user')
-        .gte('created_at', rangeStart.toISOString()),
+        .gte('created_at', rangeStartIso)
+        .lt('created_at', rangeEndIso),
       
       // New users in previous period (for comparison)
       supabase
         .from(TABLES.USER_PROFILES)
         .select('id', { count: 'exact', head: true })
         .eq('role', 'user')
-        .gte('created_at', new Date(rangeStart.getTime() - (range === 'week' ? 7 : range === 'month' ? 30 : range === 'quarter' ? 90 : 365) * 24 * 60 * 60 * 1000).toISOString())
-        .lt('created_at', rangeStart.toISOString()),
+        .gte('created_at', prevRangeStartIso)
+        .lt('created_at', prevRangeEndIso),
       
-      // Payments in range
+      // Payments in range (revenue = succeeded HitPay payments by payment date)
       supabase
         .from(TABLES.PAYMENTS)
-        .select('id, amount_cents, currency, created_at')
-        .gte('created_at', rangeStart.toISOString())
+        .select('id, amount_cents, currency, created_at, package_id, is_trial_booking, user_id, packages(token_count)')
+        .gte('created_at', rangeStartIso)
+        .lt('created_at', rangeEndIso)
         .eq('status', 'succeeded'),
       
       // Payments in previous period (for comparison)
       supabase
         .from(TABLES.PAYMENTS)
-        .select('id, amount_cents')
-        .gte('created_at', new Date(rangeStart.getTime() - (range === 'week' ? 7 : range === 'month' ? 30 : range === 'quarter' ? 90 : 365) * 24 * 60 * 60 * 1000).toISOString())
-        .lt('created_at', rangeStart.toISOString())
+        .select('id, amount_cents, package_id')
+        .gte('created_at', prevRangeStartIso)
+        .lt('created_at', prevRangeEndIso)
         .eq('status', 'succeeded'),
       
-      // Classes in range
+      // Classes in range (by scheduled date)
       supabase
         .from(TABLES.CLASSES)
         .select('id, scheduled_at', { count: 'exact' })
-        .gte('scheduled_at', rangeStart.toISOString())
+        .gte('scheduled_at', rangeStartIso)
+        .lt('scheduled_at', rangeEndIso)
         .in('status', ['scheduled', 'in-progress', 'completed']),
       
       // Bookings for attendance stats
       supabase
         .from(TABLES.BOOKINGS)
         .select('id, status')
-        .gte('booked_at', rangeStart.toISOString()),
-      
-      // Actual attendance
-      supabase
-        .from(TABLES.ATTENDANCES)
-        .select('id')
-        .gte('checked_in_at', rangeStart.toISOString()),
+        .gte('booked_at', rangeStartIso)
+        .lt('booked_at', rangeEndIso)
+        .in('status', [...BOOKING_COUNT_STATUSES]),
       
       // Top instructors by class count
       supabase
         .from(TABLES.CLASSES)
         .select('id, instructor_id, instructor_name')
-        .gte('scheduled_at', rangeStart.toISOString())
+        .gte('scheduled_at', rangeStartIso)
+        .lt('scheduled_at', rangeEndIso)
         .not('instructor_id', 'is', null),
       
-      // Get bookings for instructors to calculate students
+      // Bookings for top classes + instructor students (single query)
       supabase
         .from(TABLES.BOOKINGS)
         .select('class_id, user_id, status')
-        .gte('booked_at', rangeStart.toISOString())
+        .gte('booked_at', rangeStartIso)
+        .lt('booked_at', rangeEndIso)
+        .in('status', [...BOOKING_COUNT_STATUSES])
         .not('class_id', 'is', null),
       
-      // Top classes by bookings with payment data
+      // Token packages purchased in range (from user_packages, not token_transactions)
       supabase
-        .from(TABLES.BOOKINGS)
-        .select('class_id, user_id, status')
-        .gte('booked_at', rangeStart.toISOString())
-        .not('class_id', 'is', null),
+        .from(TABLES.USER_PACKAGES)
+        .select('tokens_remaining, packages(token_count)')
+        .gte('purchased_at', rangeStartIso)
+        .lt('purchased_at', rangeEndIso),
       
-      // Get payments for revenue calculation
-      supabase
-        .from(TABLES.PAYMENTS)
-        .select('id, amount_cents, user_id, created_at')
-        .gte('created_at', rangeStart.toISOString())
-        .eq('status', 'succeeded'),
-      
-      // Get previous period bookings for growth calculation
+      // Previous period bookings for growth calculation
       supabase
         .from(TABLES.BOOKINGS)
         .select('class_id')
-        .gte('booked_at', new Date(rangeStart.getTime() - (range === 'week' ? 7 : range === 'month' ? 30 : range === 'quarter' ? 90 : 365) * 24 * 60 * 60 * 1000).toISOString())
-        .lt('booked_at', rangeStart.toISOString())
+        .gte('booked_at', prevRangeStartIso)
+        .lt('booked_at', prevRangeEndIso)
+        .in('status', [...BOOKING_COUNT_STATUSES])
         .not('class_id', 'is', null),
       
-      // Monthly data for chart (based on range)
-      getMonthlyData(supabase, range),
-      
-      // Recent activity
-      getRecentActivity(supabase),
+      // Monthly data for chart (full selected year)
+      getMonthlyData(supabase, year),
+
+      // Recent activity in selected period
+      getRecentActivity(supabase, rangeStartIso, rangeEndIso),
     ])
 
     // Calculate stats
@@ -185,13 +233,27 @@ export async function GET(request: NextRequest) {
       userGrowth = 100
     }
 
-    // Revenue calculations
-    const payments = paymentsResult.data || []
-    const totalRevenue = payments.reduce((sum, p) => sum + (p.amount_cents || 0), 0) / 100
-    const totalTokensSold = payments.length * 10 // Estimate based on avg package size
-    
-    const previousPeriodPayments = paymentsPreviousPeriod.data || []
-    const previousPeriodRevenue = previousPeriodPayments.reduce((sum, p) => sum + (p.amount_cents || 0), 0) / 100
+    // Revenue from payments table (not bookings or token_transactions)
+    const payments = (paymentsResult.data || []) as PaymentRow[]
+    const {
+      totalRevenue,
+      packageRevenue,
+      trialRevenue,
+      paymentCount,
+      tokensSold: tokensFromPayments,
+    } = splitPaymentRevenue(payments)
+
+    const tokensFromPackages = (tokensSoldResult.data || []).reduce((sum, up) => {
+      const pkg = Array.isArray(up.packages) ? up.packages[0] : up.packages
+      return sum + (pkg?.token_count || up.tokens_remaining || 0)
+    }, 0)
+    const totalTokensSold = tokensFromPackages > 0 ? tokensFromPackages : tokensFromPayments
+
+    const previousPeriodPayments = (paymentsPreviousPeriod.data || []) as PaymentRow[]
+    const previousPeriodRevenue = previousPeriodPayments.reduce(
+      (sum, p) => sum + (p.amount_cents || 0),
+      0
+    ) / 100
     // Calculate revenue growth - cap at reasonable values
     let revenueGrowth = 0
     if (previousPeriodRevenue > 0) {
@@ -212,7 +274,7 @@ export async function GET(request: NextRequest) {
     const noShowRate = totalBookings > 0 ? Math.round((noShows / totalBookings) * 100) : 0
     const totalClasses = classesThisMonth.count || 0
     const avgClassSize = totalClasses > 0 
-      ? Math.round(attended / totalClasses)
+      ? Math.round(totalBookings / totalClasses)
       : 0
     
     // Calculate peak day and time from actual class data
@@ -255,27 +317,41 @@ export async function GET(request: NextRequest) {
       instructorCounts[id].classes++
     }
     
-    // Fetch classes for instructor bookings to get instructor_id
-    const instructorBookingClassIds = [...new Set((instructorBookings.data || []).map((b: any) => b.class_id).filter(Boolean))]
-    let instructorClassesMap: Record<string, { instructor_id: string }> = {}
-    
-    if (instructorBookingClassIds.length > 0) {
-      const { data: instructorClassesData } = await supabase
-        .from(TABLES.CLASSES)
-        .select('id, instructor_id')
-        .in('id', instructorBookingClassIds)
-      
-      if (instructorClassesData) {
-        for (const cls of instructorClassesData) {
-          instructorClassesMap[cls.id] = {
-            instructor_id: cls.instructor_id || '',
-          }
-        }
+    const periodBookings = periodBookingsResult.data || []
+
+    // Fetch class metadata for bookings + top classes in parallel
+    const bookingClassIds = [...new Set(periodBookings.map((b: { class_id: string }) => b.class_id).filter(Boolean))]
+    const [instructorClassesRows, topClassesRows] = await Promise.all([
+      bookingClassIds.length > 0
+        ? fetchInBatches(bookingClassIds, async (batch) => {
+            const { data } = await supabase.from(TABLES.CLASSES).select('id, instructor_id').in('id', batch)
+            return data || []
+          })
+        : Promise.resolve([]),
+      bookingClassIds.length > 0
+        ? fetchInBatches(bookingClassIds, async (batch) => {
+            const { data } = await supabase.from(TABLES.CLASSES).select('id, title, instructor_name').in('id', batch)
+            return data || []
+          })
+        : Promise.resolve([]),
+    ])
+
+    const instructorClassesMap: Record<string, { instructor_id: string }> = {}
+    for (const cls of instructorClassesRows) {
+      instructorClassesMap[cls.id] = { instructor_id: cls.instructor_id || '' }
+    }
+
+    const classesMap: Record<string, { id: string; title: string; instructor_name: string }> = {}
+    for (const cls of topClassesRows) {
+      classesMap[cls.id] = {
+        id: cls.id,
+        title: cls.title || 'Untitled Class',
+        instructor_name: cls.instructor_name || 'Unknown Instructor',
       }
     }
     
     // Count unique students per instructor from bookings
-    for (const booking of instructorBookings.data || []) {
+    for (const booking of periodBookings) {
       const classId = (booking as any).class_id
       const classData = classId ? instructorClassesMap[classId] : null
       const instructorId = classData?.instructor_id || null
@@ -288,27 +364,6 @@ export async function GET(request: NextRequest) {
     
     const topInstructor = Object.values(instructorCounts).sort((a, b) => b.classes - a.classes)[0]?.name || 'N/A'
 
-    // Fetch classes separately for top classes calculation
-    const uniqueClassIds = [...new Set((topClassesResult.data || []).map((b: any) => b.class_id).filter(Boolean))]
-    let classesMap: Record<string, { id: string; title: string; instructor_name: string }> = {}
-    
-    if (uniqueClassIds.length > 0) {
-      const { data: classesData } = await supabase
-        .from(TABLES.CLASSES)
-        .select('id, title, instructor_name')
-        .in('id', uniqueClassIds)
-      
-      if (classesData) {
-        for (const cls of classesData) {
-          classesMap[cls.id] = {
-            id: cls.id,
-            title: cls.title || 'Untitled Class',
-            instructor_name: cls.instructor_name || 'Unknown Instructor',
-          }
-        }
-      }
-    }
-    
     // Top classes with real stats
     const classBookings: Record<string, { 
       title: string; 
@@ -318,7 +373,7 @@ export async function GET(request: NextRequest) {
       userIds: Set<string>;
     }> = {}
     
-    for (const booking of topClassesResult.data || []) {
+    for (const booking of periodBookings) {
       const classId = (booking as any).class_id
       const classData = classId ? classesMap[classId] : null
       
@@ -355,9 +410,9 @@ export async function GET(request: NextRequest) {
       }
     }
     
-    // Calculate revenue per user (from payments)
+    // Calculate revenue per user (from payments — same rows as paymentsResult)
     const revenueByUser: Record<string, number> = {}
-    for (const payment of paymentsForRevenue.data || []) {
+    for (const payment of payments) {
       const paymentData = payment as { user_id?: string; amount_cents?: number }
       if (paymentData.user_id) {
         revenueByUser[paymentData.user_id] = (revenueByUser[paymentData.user_id] || 0) + (paymentData.amount_cents || 0) / 100
@@ -393,7 +448,7 @@ export async function GET(request: NextRequest) {
         return {
           name: data.title || 'Untitled Class',
           instructor: data.instructor || 'Unknown Instructor',
-          attendance: data.attended,
+          attendance: data.bookings,
           rating: null, // No rating system in database
           revenue: Math.round(revenue),
           growth: Math.min(growth, 1000), // Cap at 1000%
@@ -441,6 +496,10 @@ export async function GET(request: NextRequest) {
       userGrowth: Number(userGrowth.toFixed(1)),
       totalTokensSold,
       totalRevenue: Math.round(totalRevenue),
+      packageRevenue: Math.round(packageRevenue),
+      trialRevenue: Math.round(trialRevenue),
+      paymentCount,
+      totalBookings,
       revenueGrowth: Number(revenueGrowth.toFixed(1)),
       classesThisMonth: totalClasses,
       totalClasses: totalClasses,
@@ -455,6 +514,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
+        periodLabel,
+        year,
+        month: selectedMonth,
         stats,
         monthlyData: monthlyDataResult,
         topClasses,
@@ -471,122 +533,91 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Helper to get monthly data based on range
-async function getMonthlyData(supabase: ReturnType<typeof getSupabaseAdminClient>, range: string) {
-  const months = []
-  const now = new Date()
-  
-  // Calculate range start date (same logic as main function)
-  let rangeStart: Date
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-  switch (range) {
-    case 'week':
-      rangeStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      break
-    case 'quarter':
-      rangeStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)
-      break
-    case 'year':
-      rangeStart = new Date(now.getFullYear(), 0, 1)
-      break
-    default: // month
-      rangeStart = startOfMonth
-  }
-  
-  // Determine which months to show based on range
-  let monthsToShow: Array<{ month: number; year: number }> = []
-  
-  if (range === 'week') {
-    // For week, show just the current month
-    monthsToShow = [{ month: now.getMonth(), year: now.getFullYear() }]
-  } else if (range === 'quarter') {
-    // For quarter, show the 3 months in the quarter
-    const quarterStart = Math.floor(now.getMonth() / 3) * 3
-    for (let i = 0; i < 3; i++) {
-      monthsToShow.push({ month: quarterStart + i, year: now.getFullYear() })
-    }
-  } else if (range === 'year') {
-    // For year, show all 12 months
-    for (let i = 0; i < 12; i++) {
-      monthsToShow.push({ month: i, year: now.getFullYear() })
-    }
-  } else {
-    // For month, show last 7 months for context
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      monthsToShow.push({ month: date.getMonth(), year: date.getFullYear() })
-    }
-  }
-  
-  for (const { month, year } of monthsToShow) {
-    const date = new Date(year, month, 1)
-    const nextMonth = new Date(year, month + 1, 1)
-    const monthEnd = nextMonth > now ? now : nextMonth
-    
-    // Only include data if it's within the selected range
-    if (date < rangeStart && nextMonth <= rangeStart) {
-      // Skip months completely before the range
-      continue
-    }
-    
-    const monthName = date.toLocaleDateString('en-US', { month: 'short' })
-    
-    // Calculate the actual date range for this month within the selected range
-    const monthStartDate = date >= rangeStart ? date : rangeStart
-    const monthEndDate = monthEnd
-    
-    // Get payments for this month (within range)
-    const { data: payments } = await supabase
+// Monthly breakdown — 4 bulk queries for the year, aggregate in memory (not 48 sequential)
+async function getMonthlyData(supabase: ReturnType<typeof getSupabaseAdminClient>, year: number) {
+  const { rangeStart, rangeEnd } = getYearBoundsSgt(year)
+  const startIso = rangeStart.toISOString()
+  const endIso = rangeEnd.toISOString()
+
+  const [paymentsRes, bookingsRes, usersRes, classesRes] = await Promise.all([
+    supabase
       .from(TABLES.PAYMENTS)
-      .select('amount_cents')
-      .gte('created_at', monthStartDate.toISOString())
-      .lt('created_at', monthEndDate.toISOString())
-      .eq('status', 'succeeded')
-    
-    // Get bookings/attendance for this month (within range)
-    const { data: bookings } = await supabase
+      .select('amount_cents, package_id, is_trial_booking, created_at, packages(token_count)')
+      .gte('created_at', startIso)
+      .lt('created_at', endIso)
+      .eq('status', 'succeeded'),
+    supabase
       .from(TABLES.BOOKINGS)
-      .select('status')
-      .gte('booked_at', monthStartDate.toISOString())
-      .lt('booked_at', monthEndDate.toISOString())
-    
-    // Get new users for this month (within range, only customers, exclude staff)
-    const { count: newUsers } = await supabase
+      .select('booked_at')
+      .gte('booked_at', startIso)
+      .lt('booked_at', endIso)
+      .in('status', [...BOOKING_COUNT_STATUSES]),
+    supabase
       .from(TABLES.USER_PROFILES)
-      .select('id', { count: 'exact', head: true })
+      .select('created_at')
       .eq('role', 'user')
-      .gte('created_at', monthStartDate.toISOString())
-      .lt('created_at', monthEndDate.toISOString())
-    
-    // Get classes for this month (within range)
-    const { count: classes } = await supabase
+      .gte('created_at', startIso)
+      .lt('created_at', endIso),
+    supabase
       .from(TABLES.CLASSES)
-      .select('id', { count: 'exact', head: true })
-      .gte('scheduled_at', monthStartDate.toISOString())
-      .lt('scheduled_at', monthEndDate.toISOString())
-      .in('status', ['scheduled', 'in-progress', 'completed'])
-    
-    const revenue = (payments || []).reduce((sum, p) => sum + (p.amount_cents || 0), 0) / 100
-    const attendance = (bookings || []).filter(b => b.status === 'attended').length
-    
+      .select('scheduled_at')
+      .gte('scheduled_at', startIso)
+      .lt('scheduled_at', endIso)
+      .in('status', ['scheduled', 'in-progress', 'completed']),
+  ])
+
+  const monthPayments = initMonthBuckets(() => [] as PaymentRow[])
+  const monthBookings = initMonthBuckets(() => 0)
+  const monthUsers = initMonthBuckets(() => 0)
+  const monthClasses = initMonthBuckets(() => 0)
+
+  for (const p of paymentsRes.data || []) {
+    const idx = getSgtMonthNumber(p.created_at as string) - 1
+    if (idx >= 0 && idx < 12) monthPayments[idx].push(p as PaymentRow)
+  }
+  for (const b of bookingsRes.data || []) {
+    const idx = getSgtMonthNumber(b.booked_at as string) - 1
+    if (idx >= 0 && idx < 12) monthBookings[idx]++
+  }
+  for (const u of usersRes.data || []) {
+    const idx = getSgtMonthNumber(u.created_at as string) - 1
+    if (idx >= 0 && idx < 12) monthUsers[idx]++
+  }
+  for (const c of classesRes.data || []) {
+    const idx = getSgtMonthNumber(c.scheduled_at as string) - 1
+    if (idx >= 0 && idx < 12) monthClasses[idx]++
+  }
+
+  const months = []
+  for (let monthNumber = 1; monthNumber <= 12; monthNumber++) {
+    const { monthName } = getMonthBoundsSgt(year, monthNumber)
+    const idx = monthNumber - 1
+    const monthRevenue = splitPaymentRevenue(monthPayments[idx])
     months.push({
-      month: monthName,
-      year: year,
-      revenue: Math.round(revenue),
-      attendance,
-      newUsers: newUsers || 0,
-      classes: classes || 0,
+      month: monthName.slice(0, 3),
+      monthNumber,
+      year,
+      revenue: Math.round(monthRevenue.totalRevenue),
+      packageRevenue: Math.round(monthRevenue.packageRevenue),
+      trialRevenue: Math.round(monthRevenue.trialRevenue),
+      attendance: monthBookings[idx],
+      newUsers: monthUsers[idx],
+      classes: monthClasses[idx],
     })
   }
-  
+
   return months
 }
 
-// Helper to get recent activity
-async function getRecentActivity(supabase: ReturnType<typeof getSupabaseAdminClient>) {
+// Helper to get recent activity within the selected period
+async function getRecentActivity(
+  supabase: ReturnType<typeof getSupabaseAdminClient>,
+  rangeStartIso: string,
+  rangeEndIso: string
+) {
   const activities = []
   
-  // Recent payments
+  // Recent payments in period
   const { data: payments } = await supabase
     .from(TABLES.PAYMENTS)
     .select(`
@@ -601,6 +632,8 @@ async function getRecentActivity(supabase: ReturnType<typeof getSupabaseAdminCli
       )
     `)
     .eq('status', 'succeeded')
+    .gte('created_at', rangeStartIso)
+    .lt('created_at', rangeEndIso)
     .order('created_at', { ascending: false })
     .limit(3)
   
@@ -630,25 +663,28 @@ async function getRecentActivity(supabase: ReturnType<typeof getSupabaseAdminCli
       metadata.guest_name ||
       metadata.child_name ||
       null
+    const isTrial = payment.is_trial_booking
     const purchaseLabel =
       pkg?.name ||
       metadata.package_label ||
-      (metadata.flow_type === 'zumfamilia' ? 'ZumFamilia package' : 'package')
+      (metadata.flow_type === 'zumfamilia' ? 'ZumFamilia package' : isTrial ? 'trial class' : 'package')
 
     activities.push({
       type: 'purchase',
       user: (payment.user_id ? profileMap[payment.user_id] : null) || fallbackName || 'User',
-      detail: `Purchased ${purchaseLabel}`,
+      detail: isTrial ? `Paid for ${purchaseLabel}` : `Purchased ${purchaseLabel}`,
       time: getRelativeTime(new Date(payment.created_at)),
       amount: Math.round((payment.amount_cents || 0) / 100),
     })
   }
   
-  // Recent signups (only customers, not staff)
+  // Recent signups in period (only customers, not staff)
   const { data: newUsers } = await supabase
     .from(TABLES.USER_PROFILES)
     .select('id, name, created_at')
     .eq('role', 'user')
+    .gte('created_at', rangeStartIso)
+    .lt('created_at', rangeEndIso)
     .order('created_at', { ascending: false })
     .limit(2)
   

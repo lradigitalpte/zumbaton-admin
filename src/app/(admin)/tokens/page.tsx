@@ -1,10 +1,23 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import Input from "@/components/form/input/InputField";
 import { useTokenTransactions, TokenTransaction, TransactionType } from "@/hooks/useTokenTransactions";
+import { useTokenPackageExpiry, useTokenPackageExpiryCounts, PackageExpiryItem } from "@/hooks/useTokenPackageExpiry";
 import { usePendingPayments, useSyncPayment, useDeletePendingPayment, PendingPayment } from "@/hooks/usePendingPayments";
+import { useToast } from "@/components/ui/Toast";
+import { api } from "@/lib/api-client";
+import { useQueryClient } from "@tanstack/react-query";
+
+type PageTab = "transactions" | "expiring_soon" | "expired";
+
+const pageTabs: { value: PageTab; label: string }[] = [
+  { value: "transactions", label: "All Transactions" },
+  { value: "expiring_soon", label: "Expiring in 7 Days" },
+  { value: "expired", label: "Expired Tokens" },
+];
 
 // Map API transaction types to display types
 type DisplayTransactionType = "purchase" | "hold" | "consume" | "release" | "adjustment" | "expire" | "trial";
@@ -105,14 +118,21 @@ interface DisplayTransaction extends Omit<TokenTransaction, 'type'> {
 }
 
 export default function TokenTransactionsPage() {
+  const [activeTab, setActiveTab] = useState<PageTab>("transactions");
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [expiryPage, setExpiryPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [expiryItemsPerPage, setExpiryItemsPerPage] = useState(10);
   const [dateRange, setDateRange] = useState<"today" | "week" | "month" | "all">("all");
   const [selectedTransaction, setSelectedTransaction] = useState<DisplayTransaction | null>(null);
   const [pendingDeleteTarget, setPendingDeleteTarget] = useState<PendingPayment | null>(null);
   const [deletingFromModal, setDeletingFromModal] = useState(false);
+  const [isProcessingExpired, setIsProcessingExpired] = useState(false);
+
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
 
   // Pending payments
   const { data: pendingPayments = [], isLoading: pendingLoading, refetch: refetchPending } = usePendingPayments();
@@ -137,14 +157,32 @@ export default function TokenTransactionsPage() {
     return { startDate, endDate };
   }, [dateRange]);
 
+  const expiryFilter = activeTab === "expired" ? "expired" : "expiring_soon";
+
   // Fetch transactions from API
-  const { data, isLoading, error } = useTokenTransactions({
+  const { data, isLoading, error, isFetching: transactionsFetching } = useTokenTransactions({
     type: getApiTypeFilter(typeFilter),
     startDate: dateParams.startDate,
     endDate: dateParams.endDate,
     search: searchQuery || undefined,
     page: currentPage,
     pageSize: itemsPerPage,
+    enabled: activeTab === "transactions",
+  });
+
+  const { data: expiryCountsData, refetch: refetchExpiryCounts } = useTokenPackageExpiryCounts();
+
+  const {
+    data: expiryData,
+    isLoading: expiryLoading,
+    error: expiryError,
+    isFetching: expiryFetching,
+  } = useTokenPackageExpiry({
+    filter: expiryFilter,
+    search: searchQuery || undefined,
+    page: expiryPage,
+    pageSize: expiryItemsPerPage,
+    enabled: activeTab === "expiring_soon" || activeTab === "expired",
   });
 
   // Map transactions for display
@@ -203,38 +241,241 @@ export default function TokenTransactionsPage() {
     return colors[index];
   };
 
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <PageBreadCrumb pageTitle="Token Transactions" />
-        <div className="flex flex-col items-center justify-center py-12">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-          <p className="mt-4 text-gray-500 dark:text-gray-400">Loading transactions...</p>
-        </div>
-      </div>
-    );
-  }
+  const expiryItems = expiryData?.items ?? [];
+  const expiryTotalPages = expiryData?.totalPages ?? 0;
+  const expiryListTotal = expiryData?.total ?? 0;
 
-  // Error state
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <PageBreadCrumb pageTitle="Token Transactions" />
-        <div className="flex flex-col items-center justify-center py-12">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30 mb-4">
-            <svg className="h-8 w-8 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
+  // Tab badges: counts endpoint, but when viewing a tab use list total (handles search + stays in sync)
+  const expiryCounts = {
+    expiringSoon:
+      activeTab === "expiring_soon" && !searchQuery
+        ? expiryListTotal
+        : (expiryCountsData?.expiringSoon ?? 0),
+    expired:
+      activeTab === "expired" && !searchQuery
+        ? expiryListTotal
+        : (expiryCountsData?.expired ?? 0),
+  };
+
+  const switchTab = (tab: PageTab) => {
+    setActiveTab(tab);
+    setSearchQuery("");
+    setCurrentPage(1);
+    setExpiryPage(1);
+    refetchExpiryCounts();
+  };
+
+  const runExpiryCleanup = async () => {
+    setIsProcessingExpired(true);
+    try {
+      const response = await api.post<{
+        success: boolean;
+        message?: string;
+        data?: { expired: number; tokensLost: number };
+      }>("/api/tokens/process-expired", {});
+
+      if (response.error) {
+        showToast(response.error.message || "Failed to mark expired packages", "error");
+        return;
+      }
+
+      showToast(
+        response.data?.message || "Expired packages updated",
+        "success"
+      );
+
+      await queryClient.invalidateQueries({ queryKey: ["token-package-expiry"] });
+      await queryClient.invalidateQueries({ queryKey: ["token-package-expiry-counts"] });
+      await queryClient.invalidateQueries({ queryKey: ["token-transactions"] });
+      refetchExpiryCounts();
+    } catch {
+      showToast("Failed to mark expired packages", "error");
+    } finally {
+      setIsProcessingExpired(false);
+    }
+  };
+
+  const formatExpiryDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "Asia/Singapore",
+    });
+  };
+
+  const renderExpiryRow = (item: PackageExpiryItem) => (
+    <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          {item.userAvatar ? (
+            <img src={item.userAvatar} alt={item.userName} className="h-9 w-9 rounded-full object-cover" />
+          ) : (
+            <div className={`flex h-9 w-9 items-center justify-center rounded-full ${getAvatarColor(item.userName)} text-white text-sm font-semibold`}>
+              {getInitials(item.userName)}
+            </div>
+          )}
+          <div>
+            <p className="font-medium text-gray-900 dark:text-white text-sm">{item.userName}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{item.userEmail}</p>
           </div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Failed to load transactions</h3>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {error instanceof Error ? error.message : 'An error occurred'}
-          </p>
         </div>
+      </td>
+      <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{item.packageName}</td>
+      <td className="px-4 py-3 text-center">
+        <span className="inline-flex items-center gap-1 font-semibold text-gray-900 dark:text-white">
+          {item.availableTokens}
+          {item.tokensHeld > 0 && (
+            <span className="text-xs font-normal text-amber-600 dark:text-amber-400">({item.tokensHeld} held)</span>
+          )}
+        </span>
+      </td>
+      <td className="px-4 py-3">
+        <span className="text-sm text-gray-900 dark:text-white whitespace-nowrap">{formatExpiryDate(item.expiresAt)}</span>
+      </td>
+      <td className="px-4 py-3">
+        {activeTab === "expiring_soon" ? (
+          <span className={`inline-flex rounded-lg px-2.5 py-1 text-xs font-semibold ${
+            item.daysUntilExpiry <= 1
+              ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+              : item.daysUntilExpiry <= 4
+                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                : "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+          }`}>
+            {item.daysUntilExpiry <= 0
+              ? "Expires today"
+              : item.daysUntilExpiry === 1
+                ? "Expires tomorrow"
+                : `${item.daysUntilExpiry} days left`}
+          </span>
+        ) : (
+          <span className="inline-flex flex-col items-start gap-1">
+            <span className={`inline-flex rounded-lg px-2.5 py-1 text-xs font-semibold ${
+              item.isProcessed
+                ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+            }`}>
+              {item.isProcessed
+                ? "Expired (cleared)"
+                : item.daysSinceExpiry === 0
+                  ? "Expired yesterday"
+                  : `${item.daysSinceExpiry} day${item.daysSinceExpiry === 1 ? "" : "s"} ago`}
+            </span>
+            {!item.isProcessed && item.stillHasTokens && (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                Still active in DB — cron not run yet
+              </span>
+            )}
+          </span>
+        )}
+      </td>
+      <td className="px-4 py-3 text-center">
+        <Link
+          href={`/users/${item.userId}`}
+          className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20 transition-colors"
+        >
+          View user
+        </Link>
+      </td>
+    </tr>
+  );
+
+  const renderPagination = (
+    page: number,
+    totalPages: number,
+    total: number,
+    perPage: number,
+    onPageChange: (p: number) => void,
+    onPerPageChange: (n: number) => void,
+    label: string
+  ) => (
+    <div className="flex flex-col gap-4 border-t border-gray-200 px-4 py-3 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+        <span>Show</span>
+        <select
+          value={perPage}
+          onChange={(e) => {
+            onPerPageChange(Number(e.target.value));
+            onPageChange(1);
+          }}
+          className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+        >
+          {[5, 10, 20, 50].map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+        <span>of {total} {label}</span>
       </div>
-    );
-  }
+
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onPageChange(1)}
+          disabled={page === 1}
+          className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed dark:hover:bg-gray-700"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+          </svg>
+        </button>
+        <button
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+          disabled={page === 1}
+          className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed dark:hover:bg-gray-700"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+
+        <div className="flex items-center gap-1 px-2">
+          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+            let pageNum;
+            if (totalPages <= 5) {
+              pageNum = i + 1;
+            } else if (page <= 3) {
+              pageNum = i + 1;
+            } else if (page >= totalPages - 2) {
+              pageNum = totalPages - 4 + i;
+            } else {
+              pageNum = page - 2 + i;
+            }
+            return (
+              <button
+                key={pageNum}
+                onClick={() => onPageChange(pageNum)}
+                className={`min-w-8 rounded-lg px-3 py-1 text-sm font-medium transition-colors ${
+                  page === pageNum
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                }`}
+              >
+                {pageNum}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+          disabled={page === totalPages || totalPages === 0}
+          className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed dark:hover:bg-gray-700"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+        <button
+          onClick={() => onPageChange(totalPages)}
+          disabled={page === totalPages || totalPages === 0}
+          className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed dark:hover:bg-gray-700"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -446,7 +687,38 @@ export default function TokenTransactionsPage() {
         </div>
       )}
 
+      {/* Main view tabs */}
+      <div className="flex flex-wrap gap-2">
+        {pageTabs.map((tab) => {
+          const count =
+            tab.value === "transactions"
+              ? data?.total ?? 0
+              : tab.value === "expiring_soon"
+                ? expiryCounts.expiringSoon
+                : expiryCounts.expired;
+          return (
+            <button
+              key={tab.value}
+              onClick={() => switchTab(tab.value)}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
+                activeTab === tab.value
+                  ? "bg-blue-600 text-white shadow-md"
+                  : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-700"
+              }`}
+            >
+              {tab.label}
+              <span className={`rounded-full px-2 py-0.5 text-xs ${
+                activeTab === tab.value ? "bg-white/20" : "bg-gray-100 dark:bg-gray-700"
+              }`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Stats Cards */}
+      {activeTab === "transactions" && (
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
         <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center gap-3">
@@ -534,11 +806,13 @@ export default function TokenTransactionsPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Filters & Search */}
       <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          {/* Type Filter Tabs */}
+          {/* Type Filter Tabs (transactions only) */}
+          {activeTab === "transactions" && (
           <div className="flex flex-wrap gap-2">
             {typeFilters.map((filter) => {
               const count = filter.value === "all" 
@@ -569,9 +843,31 @@ export default function TokenTransactionsPage() {
               );
             })}
           </div>
+          )}
+
+          {activeTab !== "transactions" && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {activeTab === "expiring_soon"
+                  ? "Active packages expiring within 7 days (Singapore date — valid through expiry day)"
+                  : "Packages past expiry date. Users cannot book with these — run cleanup to mark them expired in the system."}
+              </p>
+              {activeTab === "expired" && (
+                <button
+                  type="button"
+                  onClick={runExpiryCleanup}
+                  disabled={isProcessingExpired}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isProcessingExpired ? "Processing…" : "Mark expired in system"}
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Date Range & Search */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center ml-auto">
+            {activeTab === "transactions" && (
             <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
               {(["today", "week", "month", "all"] as const).map((range) => (
                 <button
@@ -590,15 +886,17 @@ export default function TokenTransactionsPage() {
                 </button>
               ))}
             </div>
+            )}
 
             <div className="relative">
               <Input
                 type="text"
-                placeholder="Search transactions..."
+                placeholder={activeTab === "transactions" ? "Search transactions..." : "Search by name or email..."}
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
                   setCurrentPage(1);
+                  setExpiryPage(1);
                 }}
               />
               {searchQuery && (
@@ -616,8 +914,79 @@ export default function TokenTransactionsPage() {
         </div>
       </div>
 
-      {/* Transactions Table */}
+      {/* Transactions / Expiry Table */}
       <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
+        {(activeTab === "transactions" && (isLoading || transactionsFetching)) ||
+        (activeTab !== "transactions" && (expiryLoading || expiryFetching)) ? (
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+            <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading...</p>
+          </div>
+        ) : activeTab === "transactions" && error ? (
+          <div className="flex flex-col items-center justify-center py-16">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Failed to load transactions</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {error instanceof Error ? error.message : "An error occurred"}
+            </p>
+          </div>
+        ) : activeTab !== "transactions" && expiryError ? (
+          <div className="flex flex-col items-center justify-center py-16">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Failed to load expiry data</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {expiryError instanceof Error ? expiryError.message : "An error occurred"}
+            </p>
+          </div>
+        ) : activeTab !== "transactions" ? (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">User</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Package</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Available</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Expires</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      {activeTab === "expiring_soon" ? "Time left" : "Expired"}
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {expiryItems.map(renderExpiryRow)}
+                </tbody>
+              </table>
+            </div>
+
+            {expiryItems.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 mb-4">
+                  <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  {activeTab === "expiring_soon" ? "No tokens expiring soon" : "No expired packages found"}
+                </h3>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  {searchQuery ? "Try adjusting your search" : "You're all caught up"}
+                </p>
+              </div>
+            )}
+
+            {expiryItems.length > 0 &&
+              renderPagination(
+                expiryPage,
+                expiryTotalPages,
+                expiryData?.total ?? 0,
+                expiryItemsPerPage,
+                setExpiryPage,
+                setExpiryItemsPerPage,
+                activeTab === "expiring_soon" ? "packages" : "expired packages"
+              )}
+          </>
+        ) : (
+        <>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -783,93 +1152,17 @@ export default function TokenTransactionsPage() {
         )}
 
         {/* Pagination */}
-        {filteredTransactions.length > 0 && (
-          <div className="flex flex-col gap-4 border-t border-gray-200 px-4 py-3 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-              <span>Show</span>
-              <select
-                value={itemsPerPage}
-                onChange={(e) => {
-                  setItemsPerPage(Number(e.target.value));
-                  setCurrentPage(1);
-                }}
-                className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-              >
-                {[5, 10, 20, 50].map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-              <span>of {filteredTransactions.length} transactions</span>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setCurrentPage(1)}
-                disabled={currentPage === 1}
-                className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed dark:hover:bg-gray-700"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-                </svg>
-              </button>
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed dark:hover:bg-gray-700"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-
-              <div className="flex items-center gap-1 px-2">
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum;
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (currentPage <= 3) {
-                    pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
-                  } else {
-                    pageNum = currentPage - 2 + i;
-                  }
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`min-w-8 rounded-lg px-3 py-1 text-sm font-medium transition-colors ${
-                        currentPage === pageNum
-                          ? "bg-blue-600 text-white"
-                          : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed dark:hover:bg-gray-700"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-              <button
-                onClick={() => setCurrentPage(totalPages)}
-                disabled={currentPage === totalPages}
-                className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed dark:hover:bg-gray-700"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
-          </div>
+        {filteredTransactions.length > 0 &&
+          renderPagination(
+            currentPage,
+            totalPages,
+            data?.total ?? 0,
+            itemsPerPage,
+            setCurrentPage,
+            setItemsPerPage,
+            "transactions"
+          )}
+        </>
         )}
       </div>
 

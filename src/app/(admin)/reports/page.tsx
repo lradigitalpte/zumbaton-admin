@@ -1,9 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import { useReportsOverview } from "@/hooks/useReports";
+
+const MONTHS = [
+  { value: 1, label: "January" },
+  { value: 2, label: "February" },
+  { value: 3, label: "March" },
+  { value: 4, label: "April" },
+  { value: 5, label: "May" },
+  { value: 6, label: "June" },
+  { value: 7, label: "July" },
+  { value: 8, label: "August" },
+  { value: 9, label: "September" },
+  { value: 10, label: "October" },
+  { value: 11, label: "November" },
+  { value: 12, label: "December" },
+];
+
+function getCurrentSgtYearMonth() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Singapore",
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(now);
+  return {
+    year: parseInt(parts.find((p) => p.type === "year")?.value || "2026", 10),
+    month: parseInt(parts.find((p) => p.type === "month")?.value || "1", 10),
+  };
+}
 
 // Skeleton components
 const MetricCardSkeleton = () => (
@@ -93,6 +121,10 @@ const defaultStats = {
   userGrowth: 0,
   totalTokensSold: 0,
   totalRevenue: 0,
+  packageRevenue: 0,
+  trialRevenue: 0,
+  paymentCount: 0,
+  totalBookings: 0,
   revenueGrowth: 0,
   classesThisMonth: 0,
   totalClasses: 0,
@@ -105,22 +137,42 @@ const defaultStats = {
 };
 
 export default function ReportsPage() {
-  const [dateRange, setDateRange] = useState<"week" | "month" | "quarter" | "year">("month");
-  
-  // Fetch real data from API
-  const { data, isLoading, isFetching, error } = useReportsOverview(dateRange);
-  
-  // Use API data or defaults
+  const current = getCurrentSgtYearMonth();
+  const [selectedYear, setSelectedYear] = useState(current.year);
+  const [selectedMonth, setSelectedMonth] = useState<number | "all">("all");
+
+  const { data, isLoading, isFetching, isError, error } = useReportsOverview({
+    year: selectedYear,
+    month: selectedMonth === "all" ? null : selectedMonth,
+  });
+
   const stats = data?.stats || defaultStats;
   const monthlyData = data?.monthlyData || [];
   const topClasses = data?.topClasses || [];
   const topInstructors = data?.topInstructors || [];
   const recentActivity = data?.recentActivity || [];
-  
-  // Show loading when fetching (even if we have cached data)
-  const showLoading = isLoading || isFetching;
 
-  const maxRevenue = monthlyData.length > 0 ? Math.max(...monthlyData.map(d => d.revenue)) : 1;
+  const showInitialLoading = isLoading && !data;
+  const isRefetching = isFetching && !isLoading;
+
+  const periodLabel =
+    data?.periodLabel ||
+    (selectedMonth === "all"
+      ? `${selectedYear}`
+      : `${MONTHS.find((m) => m.value === selectedMonth)?.label} ${selectedYear}`);
+
+  const yearOptions = useMemo(() => {
+    const years: number[] = [];
+    for (let y = current.year + 1; y >= current.year - 2; y--) years.push(y);
+    return years;
+  }, [current.year]);
+
+  const maxRevenue = Math.max(...monthlyData.map((d) => d.revenue), 1);
+  const maxBookings = Math.max(...monthlyData.map((d) => d.attendance), 1);
+
+  const openMonth = (monthNumber: number) => {
+    setSelectedMonth(monthNumber);
+  };
 
   // Export to CSV function
   const handleExportReport = () => {
@@ -135,7 +187,7 @@ export default function ReportsPage() {
     // Add header section
     csvRows.push('Reports Overview Export');
     csvRows.push(`Generated: ${new Date().toLocaleString()}`);
-    csvRows.push(`Date Range: ${dateRange.charAt(0).toUpperCase() + dateRange.slice(1)}`);
+    csvRows.push(`Period: ${periodLabel}`);
     csvRows.push('');
 
     // Key Metrics Section
@@ -203,9 +255,8 @@ export default function ReportsPage() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     
-    const rangeLabel = dateRange.charAt(0).toUpperCase() + dateRange.slice(1);
     link.setAttribute('href', url);
-    link.setAttribute('download', `reports-overview-${rangeLabel.toLowerCase()}-${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `reports-overview-${selectedYear}${selectedMonth !== "all" ? `-${String(selectedMonth).padStart(2, "0")}` : ""}.csv`);
     link.style.visibility = 'hidden';
     
     document.body.appendChild(link);
@@ -263,19 +314,6 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6 relative">
-      {/* Loading Overlay */}
-      {showLoading && data && (
-        <div className="absolute inset-0 bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm z-50 flex items-center justify-center rounded-2xl">
-          <div className="flex flex-col items-center gap-3 bg-white dark:bg-gray-800 rounded-xl shadow-lg px-6 py-4 border border-gray-200 dark:border-gray-700">
-            <svg className="h-6 w-6 animate-spin text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Loading data...</p>
-          </div>
-        </div>
-      )}
-      
       <PageBreadCrumb pageTitle="Reports Overview" />
 
       {/* Header */}
@@ -289,47 +327,47 @@ export default function ReportsPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Reports Overview</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Business insights and performance metrics
-              {showLoading && (
-                <span className="ml-2 inline-flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
-                  <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Loading...
-                </span>
+              {showInitialLoading ? "Loading..." : periodLabel}
+              {isRefetching && (
+                <span className="ml-2 text-indigo-600 dark:text-indigo-400">Updating...</span>
               )}
+            </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+              Pick a month below or click a row in the breakdown table
+            </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-xl">
+              Revenue = succeeded payments by payment date. Bookings = confirmed/attended/no-show by booked date. Not token transactions.
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden relative">
-            {showLoading && (
-              <div className="absolute inset-0 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
-                <svg className="h-4 w-4 animate-spin text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              </div>
-            )}
-            {(["week", "month", "quarter", "year"] as const).map((range) => (
-              <button
-                key={range}
-                onClick={() => setDateRange(range)}
-                disabled={showLoading}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors relative ${
-                  dateRange === range
-                    ? "bg-indigo-600 text-white"
-                    : "bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                } ${showLoading ? "opacity-50 cursor-not-allowed" : ""}`}
-              >
-                {range.charAt(0).toUpperCase() + range.slice(1)}
-              </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedMonth}
+            disabled={showInitialLoading}
+            onChange={(e) => {
+              const v = e.target.value;
+              setSelectedMonth(v === "all" ? "all" : parseInt(v, 10));
+            }}
+            className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+          >
+            <option value="all">All months</option>
+            {MONTHS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
             ))}
-          </div>
+          </select>
+          <select
+            value={selectedYear}
+            disabled={showInitialLoading}
+            onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
+            className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+          >
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
           <button 
             onClick={handleExportReport}
-            disabled={showLoading || !data}
+            disabled={showInitialLoading || !data}
             className="inline-flex items-center gap-2 rounded-xl bg-linear-to-r from-indigo-500 to-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -340,8 +378,14 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {isError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {(error as Error)?.message || "Failed to load reports"}
+        </div>
+      )}
+
       {/* Key Metrics - Row 1 */}
-      {showLoading && !data ? (
+      {showInitialLoading ? (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <MetricCardSkeleton />
           <MetricCardSkeleton />
@@ -370,7 +414,12 @@ export default function ReportsPage() {
           <div className="mt-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white">${stats.totalRevenue.toLocaleString()}</p>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{stats.totalTokensSold.toLocaleString()} tokens sold</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {stats.paymentCount ?? 0} payments · ${(stats.packageRevenue ?? 0).toLocaleString()} packages · ${(stats.trialRevenue ?? 0).toLocaleString()} trials/guest
+            </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              {stats.totalTokensSold.toLocaleString()} tokens from package purchases
+            </p>
           </div>
         </div>
 
@@ -392,9 +441,11 @@ export default function ReportsPage() {
             )}
           </div>
           <div className="mt-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Total Users</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Total Members</p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.totalUsers.toLocaleString()}</p>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{stats.activeUsers} active this month</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {stats.activeUsers} booked in period · +{stats.newUsersThisMonth} new
+            </p>
           </div>
         </div>
 
@@ -413,7 +464,9 @@ export default function ReportsPage() {
           <div className="mt-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">Attendance Rate</p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.averageAttendance}%</p>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Avg {stats.avgClassSize} per class</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {stats.totalBookings ?? 0} bookings · avg {stats.avgClassSize} per class
+            </p>
           </div>
         </div>
 
@@ -425,12 +478,7 @@ export default function ReportsPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              {dateRange === 'week' ? 'This week' : 
-               dateRange === 'quarter' ? 'This quarter' : 
-               dateRange === 'year' ? 'This year' : 
-               'This month'}
-            </span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{periodLabel}</span>
           </div>
           <div className="mt-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">Classes Held</p>
@@ -442,7 +490,7 @@ export default function ReportsPage() {
       )}
 
       {/* Revenue Chart & Activity Feed */}
-      {showLoading && !data ? (
+      {showInitialLoading ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <ChartSkeleton />
           <ActivitySkeleton />
@@ -454,7 +502,7 @@ export default function ReportsPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Revenue Trend</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Monthly revenue over time</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{selectedYear} · click a month to filter</p>
             </div>
             <div className="flex items-center gap-4 text-sm">
               <div className="flex items-center gap-2">
@@ -463,33 +511,45 @@ export default function ReportsPage() {
               </div>
               <div className="flex items-center gap-2">
                 <div className="h-3 w-3 rounded-full bg-emerald-500"></div>
-                <span className="text-gray-500 dark:text-gray-400">Attendance</span>
+                <span className="text-gray-500 dark:text-gray-400">Bookings</span>
               </div>
             </div>
           </div>
           
           {/* Simple Bar Chart */}
           <div className="space-y-4">
-            {monthlyData.map((data) => (
-              <div key={data.month} className="flex items-center gap-4">
-                <div className="w-10 text-sm font-medium text-gray-600 dark:text-gray-400">{data.month}</div>
+            {monthlyData.map((row) => {
+              const isSelected = selectedMonth !== "all" && row.monthNumber === selectedMonth;
+              return (
+              <button
+                key={`${row.month}-${row.year}`}
+                type="button"
+                onClick={() => row.monthNumber && openMonth(row.monthNumber)}
+                className={`flex w-full items-center gap-4 rounded-lg px-2 py-1 text-left transition-colors ${
+                  isSelected ? "bg-indigo-50 dark:bg-indigo-900/30 ring-1 ring-indigo-300 dark:ring-indigo-700" : "hover:bg-gray-50 dark:hover:bg-gray-700/40"
+                }`}
+              >
+                <div className="w-10 text-sm font-medium text-gray-600 dark:text-gray-400">{row.month}</div>
                 <div className="flex-1 flex items-center gap-2">
                   <div className="flex-1 h-8 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden relative">
                     <div 
                       className="absolute inset-y-0 left-0 bg-linear-to-r from-indigo-500 to-purple-500 rounded-lg transition-all duration-500"
-                      style={{ width: `${(data.revenue / maxRevenue) * 100}%` }}
+                      style={{ width: `${maxRevenue > 0 ? (row.revenue / maxRevenue) * 100 : 0}%` }}
                     ></div>
                     <div 
-                      className="absolute inset-y-0 left-0 h-2 top-3 bg-emerald-400/50 rounded-full"
-                      style={{ width: `${(data.attendance / 800) * 100}%` }}
+                      className="absolute inset-y-0 left-0 top-3 h-2 bg-emerald-400 rounded-full"
+                      style={{ width: `${maxBookings > 0 ? (row.attendance / maxBookings) * 100 : 0}%` }}
                     ></div>
                   </div>
-                  <div className="w-20 text-right">
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white">${(data.revenue / 1000).toFixed(1)}k</span>
+                  <div className="w-24 text-right text-xs">
+                    <span className="block font-semibold text-gray-900 dark:text-white">
+                      {row.revenue > 0 ? `$${row.revenue.toLocaleString()}` : "$0"}
+                    </span>
+                    <span className="text-gray-500">{row.attendance} booked</span>
                   </div>
                 </div>
-              </div>
-            ))}
+              </button>
+            )})}
           </div>
 
           {/* Summary Row */}
@@ -507,7 +567,7 @@ export default function ReportsPage() {
               </p>
             </div>
             <div className="text-center">
-              <p className="text-xs text-gray-500 dark:text-gray-400">Total Attendance</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Total Bookings</p>
               <p className="text-lg font-bold text-gray-900 dark:text-white">
                 {monthlyData.reduce((sum, d) => sum + d.attendance, 0).toLocaleString()}
               </p>
@@ -549,7 +609,7 @@ export default function ReportsPage() {
       )}
 
       {/* Top Classes & Top Instructors */}
-      {showLoading && !data ? (
+      {showInitialLoading ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800 animate-pulse">
             <div className="h-6 w-24 rounded bg-gray-200 dark:bg-gray-700 mb-4" />
@@ -668,7 +728,7 @@ export default function ReportsPage() {
       )}
 
       {/* Monthly Breakdown Table */}
-      {showLoading && !data ? (
+      {showInitialLoading ? (
         <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden animate-pulse">
           <div className="p-6 border-b border-gray-200 dark:border-gray-700">
             <div className="h-6 w-40 rounded bg-gray-200 dark:bg-gray-700" />
@@ -694,7 +754,7 @@ export default function ReportsPage() {
       <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Monthly Breakdown</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Detailed performance by month</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Click a month to filter all stats above</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -702,7 +762,7 @@ export default function ReportsPage() {
               <tr className="bg-gray-50 dark:bg-gray-800/50">
                 <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Month</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Revenue</th>
-                <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Attendance</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Bookings</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Classes</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">New Users</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Avg/Class</th>
@@ -715,11 +775,23 @@ export default function ReportsPage() {
                   ? (((row.revenue - prevRevenue) / prevRevenue) * 100).toFixed(1)
                   : null
                 const avgPerClass = row.classes > 0 ? (row.attendance / row.classes).toFixed(1) : '0'
+                const isSelected = selectedMonth !== "all" && row.monthNumber === selectedMonth
                 
                 return (
-                <tr key={row.month} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <tr
+                  key={`${row.month}-${row.year}`}
+                  onClick={() => row.monthNumber && openMonth(row.monthNumber)}
+                  className={`cursor-pointer transition-colors ${
+                    isSelected
+                      ? "bg-indigo-50 dark:bg-indigo-900/30 border-l-2 border-l-indigo-500"
+                      : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  }`}
+                >
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="font-medium text-gray-900 dark:text-white">{row.month} {row.year || new Date().getFullYear()}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {row.month} {row.year || selectedYear}
+                      {isSelected && <span className="ml-2 text-xs text-indigo-600">(viewing)</span>}
+                    </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <span className="font-semibold text-emerald-600 dark:text-emerald-400">${row.revenue.toLocaleString()}</span>
