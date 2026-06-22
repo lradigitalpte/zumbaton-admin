@@ -8,6 +8,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { withAuthentication, AuthenticatedUser, hasRequiredRole } from '@/middleware/rbac'
 import { getSupabaseAdminClient } from '@/lib/supabase'
 
+export type DuoBookingMode = 'pay_online' | 'reserve_only' | 'both'
+export type DuoPaymentTerms = 'full' | 'deposit' | 'none'
+
 export interface PromotionsSettings {
   early_bird_enabled: boolean
   early_bird_limit: number
@@ -15,6 +18,17 @@ export interface PromotionsSettings {
   early_bird_validity_months: number
   referral_enabled: boolean
   referral_discount_percent: number
+  // Duo Trial (1-for-1) promo — read by the public site at /api/promos/config
+  duo_promo_active: boolean
+  duo_indoor_price_cents: number
+  duo_outdoor_price_cents: number
+  duo_booking_mode: DuoBookingMode
+  /** Online payment terms: full price, a deposit, or nothing (pay at studio). */
+  duo_payment_terms: DuoPaymentTerms
+  /** Deposit % charged online when terms = 'deposit' (1–100). */
+  duo_deposit_percent: number
+  /** Optional promo end date (YYYY-MM-DD). Empty string = no expiry. */
+  duo_end_date: string
 }
 
 function getDefaultPromotionsSettings(): PromotionsSettings {
@@ -25,6 +39,13 @@ function getDefaultPromotionsSettings(): PromotionsSettings {
     early_bird_validity_months: 2,
     referral_enabled: true,
     referral_discount_percent: 8,
+    duo_promo_active: true,
+    duo_indoor_price_cents: 2300,
+    duo_outdoor_price_cents: 3500,
+    duo_booking_mode: 'pay_online',
+    duo_payment_terms: 'full',
+    duo_deposit_percent: 50,
+    duo_end_date: '',
   }
 }
 
@@ -64,9 +85,11 @@ async function handleGetPromotionsSettings(
       })
     }
 
+    // Merge stored values over defaults so newly-added fields (e.g. duo_*)
+    // are always present even for records saved before they existed.
     return NextResponse.json({
       success: true,
-      data: data?.value || getDefaultPromotionsSettings(),
+      data: { ...getDefaultPromotionsSettings(), ...(data?.value || {}) },
     })
   } catch (error) {
     console.error('Error getting promotions settings:', error)
@@ -103,6 +126,8 @@ async function handleUpdatePromotionsSettings(
     const adminClient = getSupabaseAdminClient()
 
     // Validate input
+    const validModes: DuoBookingMode[] = ['pay_online', 'reserve_only', 'both']
+    const validTerms: DuoPaymentTerms[] = ['full', 'deposit', 'none']
     const settings: PromotionsSettings = {
       early_bird_enabled: typeof body.early_bird_enabled === 'boolean' ? body.early_bird_enabled : true,
       early_bird_limit: typeof body.early_bird_limit === 'number' ? body.early_bird_limit : 40,
@@ -110,6 +135,13 @@ async function handleUpdatePromotionsSettings(
       early_bird_validity_months: typeof body.early_bird_validity_months === 'number' ? body.early_bird_validity_months : 2,
       referral_enabled: typeof body.referral_enabled === 'boolean' ? body.referral_enabled : true,
       referral_discount_percent: typeof body.referral_discount_percent === 'number' ? body.referral_discount_percent : 8,
+      duo_promo_active: typeof body.duo_promo_active === 'boolean' ? body.duo_promo_active : true,
+      duo_indoor_price_cents: typeof body.duo_indoor_price_cents === 'number' ? Math.round(body.duo_indoor_price_cents) : 2300,
+      duo_outdoor_price_cents: typeof body.duo_outdoor_price_cents === 'number' ? Math.round(body.duo_outdoor_price_cents) : 3500,
+      duo_booking_mode: validModes.includes(body.duo_booking_mode) ? body.duo_booking_mode : 'pay_online',
+      duo_payment_terms: validTerms.includes(body.duo_payment_terms) ? body.duo_payment_terms : 'full',
+      duo_deposit_percent: typeof body.duo_deposit_percent === 'number' ? Math.round(body.duo_deposit_percent) : 50,
+      duo_end_date: typeof body.duo_end_date === 'string' ? body.duo_end_date.trim() : '',
     }
 
     // Validate ranges
@@ -117,6 +149,10 @@ async function handleUpdatePromotionsSettings(
     if (settings.early_bird_discount_percent < 0 || settings.early_bird_discount_percent > 100) settings.early_bird_discount_percent = 10
     if (settings.early_bird_validity_months < 1) settings.early_bird_validity_months = 1
     if (settings.referral_discount_percent < 0 || settings.referral_discount_percent > 100) settings.referral_discount_percent = 8
+    // Duo prices are in cents; clamp to a sane range ($1–$10,000)
+    if (settings.duo_indoor_price_cents < 100 || settings.duo_indoor_price_cents > 1_000_000) settings.duo_indoor_price_cents = 2300
+    if (settings.duo_outdoor_price_cents < 100 || settings.duo_outdoor_price_cents > 1_000_000) settings.duo_outdoor_price_cents = 3500
+    if (settings.duo_deposit_percent < 1 || settings.duo_deposit_percent > 100) settings.duo_deposit_percent = 50
 
     // Try to upsert settings - if table doesn't exist, create it first
     let { error } = await adminClient

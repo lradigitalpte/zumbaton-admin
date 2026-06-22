@@ -46,6 +46,13 @@ export default function GeneralSettingsPage() {
     early_bird_validity_months: 2,
     referral_enabled: true,
     referral_discount_percent: 8,
+    duo_promo_active: true,
+    duo_indoor_price_cents: 2300,
+    duo_outdoor_price_cents: 3500,
+    duo_booking_mode: "pay_online",
+    duo_payment_terms: "full",
+    duo_deposit_percent: 50,
+    duo_end_date: "",
   });
 
   // Load settings from API
@@ -504,6 +511,117 @@ export default function GeneralSettingsPage() {
                             <span className="text-sm text-gray-500">%</span>
                           </div>
                           <p className="mt-1 text-xs text-gray-500">Discount amount for referred users</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Duo Trial (1-for-1) Section */}
+                  <div className="rounded-xl bg-gradient-to-br from-lime-50 to-emerald-50 dark:from-lime-900/20 dark:to-emerald-900/20 border border-lime-200 dark:border-lime-800 p-6">
+                    <div className="flex items-start justify-between mb-6">
+                      <div>
+                        <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-1">Duo Trial (1-for-1)</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">The studio &amp; outdoor 1-for-1 promo shown on the public /promos page</p>
+                      </div>
+                      <button
+                        onClick={() => setPromotionSettings({ ...promotionSettings, duo_promo_active: !promotionSettings.duo_promo_active })}
+                        className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors ${
+                          promotionSettings.duo_promo_active ? "bg-lime-600 dark:bg-lime-700" : "bg-gray-300 dark:bg-gray-600"
+                        }`}
+                      >
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          promotionSettings.duo_promo_active ? "translate-x-6" : "translate-x-1"
+                        }`} />
+                      </button>
+                    </div>
+
+                    {promotionSettings.duo_promo_active && (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <div>
+                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Studio (indoor) price</label>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-gray-500">$</span>
+                              <Input
+                                type="number"
+                                min="1"
+                                step="0.01"
+                                value={promotionSettings.duo_indoor_price_cents / 100}
+                                onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_indoor_price_cents: Math.round((Number(e.target.value) || 0) * 100) })}
+                              />
+                            </div>
+                            <p className="mt-1 text-xs text-gray-500">Total price for two people (1-for-1)</p>
+                          </div>
+
+                          <div>
+                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Outdoor price</label>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-gray-500">$</span>
+                              <Input
+                                type="number"
+                                min="1"
+                                step="0.01"
+                                value={promotionSettings.duo_outdoor_price_cents / 100}
+                                onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_outdoor_price_cents: Math.round((Number(e.target.value) || 0) * 100) })}
+                              />
+                            </div>
+                            <p className="mt-1 text-xs text-gray-500">e.g. OCBC Arena, Kallang</p>
+                          </div>
+
+                          <div>
+                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Booking mode</label>
+                            <select
+                              value={promotionSettings.duo_booking_mode}
+                              onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_booking_mode: e.target.value as PromotionsSettings["duo_booking_mode"] })}
+                              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                            >
+                              <option value="pay_online">Pay online only</option>
+                              <option value="reserve_only">Reserve &amp; pay at studio only</option>
+                              <option value="both">Both (pay online or reserve)</option>
+                            </select>
+                            <p className="mt-1 text-xs text-gray-500">How visitors confirm their spot</p>
+                          </div>
+
+                          <div>
+                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Payment terms</label>
+                            <select
+                              value={promotionSettings.duo_payment_terms}
+                              onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_payment_terms: e.target.value as PromotionsSettings["duo_payment_terms"] })}
+                              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                            >
+                              <option value="full">Pay full online</option>
+                              <option value="deposit">Pay a deposit online</option>
+                              <option value="none">No payment (pay at studio)</option>
+                            </select>
+                            <p className="mt-1 text-xs text-gray-500">How much they pay online now</p>
+                          </div>
+
+                          {promotionSettings.duo_payment_terms === "deposit" && (
+                            <div>
+                              <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Deposit %</label>
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  max="100"
+                                  value={promotionSettings.duo_deposit_percent}
+                                  onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_deposit_percent: Number(e.target.value) })}
+                                />
+                                <span className="text-sm text-gray-500">%</span>
+                              </div>
+                              <p className="mt-1 text-xs text-gray-500">50% = half now, half at studio</p>
+                            </div>
+                          )}
+
+                          <div>
+                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Promo end date</label>
+                            <Input
+                              type="date"
+                              value={promotionSettings.duo_end_date}
+                              onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_end_date: e.target.value })}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">Leave blank for no expiry</p>
+                          </div>
                         </div>
                       </div>
                     )}

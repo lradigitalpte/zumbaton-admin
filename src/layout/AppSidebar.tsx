@@ -52,6 +52,7 @@ const getNavItems = (user: { role: string } | null): NavItem[] => [
       { name: "Staff", path: "/users/staff", pro: false },
       { name: "Flagged Users", path: "/users/flagged", pro: false },
       { name: "Trial Bookings", path: "/trial-bookings", pro: false },
+      { name: "Leads", path: "/leads", pro: false, new: true },
     ],
   },
   {
