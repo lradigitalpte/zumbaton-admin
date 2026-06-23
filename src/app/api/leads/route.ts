@@ -1,11 +1,10 @@
 /**
  * Leads API (pay-first / quick-join leads)
- * GET  /api/leads        - list leads captured from the /start page
- * PUT  /api/leads        - update a lead's status (new/contacted/scheduled/done)
+ * GET    /api/leads  - list leads captured from the /start page
+ * PUT    /api/leads  - update a lead's status and/or editable details
+ * DELETE /api/leads  - delete a lead (and any booking created from it)
  *
  * Leads are stored as `payments` rows with metadata.flow_type = 'quick_join'.
- * A lead may be paid (status succeeded), awaiting payment (pending), or a
- * no-payment reservation (provider pay_at_studio).
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -40,18 +39,24 @@ function mapLead(p: Record<string, any>) {
     provider: (p.provider as string) || '',
     paymentStatus: (p.status as string) || 'pending',
     leadStatus: (m.lead_status as LeadStatus) || 'new',
+    bookedClassTitle: (m.booked_class_title as string) || '',
+    bookedClassAt: (m.booked_class_at as string) || '',
   }
+}
+
+async function requireAdmin(request: NextRequest) {
+  const user = await getAuthenticatedUser(request)
+  if (!user) return { error: NextResponse.json({ success: false, error: { message: 'Unauthorized' } }, { status: 401 }) }
+  if (!['super_admin', 'admin'].includes(user.role)) {
+    return { error: NextResponse.json({ success: false, error: { message: 'Forbidden' } }, { status: 403 }) }
+  }
+  return { user }
 }
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ success: false, error: { message: 'Unauthorized' } }, { status: 401 })
-    }
-    if (!['super_admin', 'admin'].includes(user.role)) {
-      return NextResponse.json({ success: false, error: { message: 'Forbidden' } }, { status: 403 })
-    }
+    const gate = await requireAdmin(request)
+    if (gate.error) return gate.error
 
     const supabase = getSupabaseAdminClient()
     const { data, error } = await supabase
@@ -75,19 +80,13 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const user = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ success: false, error: { message: 'Unauthorized' } }, { status: 401 })
-    }
-    if (!['super_admin', 'admin'].includes(user.role)) {
-      return NextResponse.json({ success: false, error: { message: 'Forbidden' } }, { status: 403 })
-    }
+    const gate = await requireAdmin(request)
+    if (gate.error) return gate.error
 
     const body = await request.json()
     const id = body?.id as string | undefined
-    const leadStatus = body?.leadStatus as string | undefined
-    if (!id || !leadStatus || !LEAD_STATUSES.includes(leadStatus as LeadStatus)) {
-      return NextResponse.json({ success: false, error: { message: 'Invalid request' } }, { status: 400 })
+    if (!id) {
+      return NextResponse.json({ success: false, error: { message: 'Missing lead id' } }, { status: 400 })
     }
 
     const supabase = getSupabaseAdminClient()
@@ -101,10 +100,25 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: { message: 'Lead not found' } }, { status: 404 })
     }
 
-    const mergedMetadata = { ...((existing.metadata as Record<string, any>) || {}), lead_status: leadStatus }
+    const metadata: Record<string, any> = { ...((existing.metadata as Record<string, any>) || {}) }
+
+    // Status change
+    if (typeof body.leadStatus === 'string') {
+      if (!LEAD_STATUSES.includes(body.leadStatus as LeadStatus)) {
+        return NextResponse.json({ success: false, error: { message: 'Invalid status' } }, { status: 400 })
+      }
+      metadata.lead_status = body.leadStatus
+    }
+
+    // Editable detail fields
+    if (typeof body.name === 'string') metadata.guest_name = body.name.trim()
+    if (typeof body.phone === 'string') metadata.guest_phone = body.phone.trim()
+    if (typeof body.email === 'string') metadata.guest_email = body.email.trim().toLowerCase()
+    if (typeof body.preferredNote === 'string') metadata.preferred_note = body.preferredNote.trim()
+
     const { error: updateErr } = await supabase
       .from('payments')
-      .update({ metadata: mergedMetadata, updated_at: new Date().toISOString() })
+      .update({ metadata, updated_at: new Date().toISOString() })
       .eq('id', id)
 
     if (updateErr) {
@@ -112,9 +126,36 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: { message: 'Failed to update lead' } }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, data: { id, leadStatus } })
+    return NextResponse.json({ success: true, data: { id } })
   } catch (error) {
     console.error('[API /leads PUT]', error)
+    return NextResponse.json({ success: false, error: { message: 'Server error' } }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const gate = await requireAdmin(request)
+    if (gate.error) return gate.error
+
+    const id = new URL(request.url).searchParams.get('id')
+    if (!id) {
+      return NextResponse.json({ success: false, error: { message: 'Missing lead id' } }, { status: 400 })
+    }
+
+    const supabase = getSupabaseAdminClient()
+    // Remove any booking created from this lead first (FK payment_id set null on delete otherwise)
+    await supabase.from('bookings').delete().eq('payment_id', id)
+    const { error } = await supabase.from('payments').delete().eq('id', id)
+
+    if (error) {
+      console.error('[API /leads DELETE] Supabase error:', error)
+      return NextResponse.json({ success: false, error: { message: 'Failed to delete lead' } }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, data: { id } })
+  } catch (error) {
+    console.error('[API /leads DELETE]', error)
     return NextResponse.json({ success: false, error: { message: 'Server error' } }, { status: 500 })
   }
 }
