@@ -19,6 +19,8 @@ export interface User {
   noShows: number
   joinedDate: string
   lastActive: string
+  // How the account was created
+  signupSource?: 'public' | 'admin' | string | null
   // Computed status
   status: "active" | "flagged" | "inactive"
 }
@@ -120,6 +122,7 @@ async function fetchUsers(filters: UseUsersQueryParams = {}, cacheBuster?: numbe
       joinedDate: user.createdAt, // Map createdAt to joinedDate for UI
       lastActive: user.updatedAt || user.createdAt,
       avatar: user.avatarUrl || undefined, // Map avatarUrl to avatar for compatibility
+      signupSource: user.signupSource ?? user.signup_source ?? null,
       status, // Computed status
     }
   })

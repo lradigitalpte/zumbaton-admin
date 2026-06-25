@@ -35,6 +35,7 @@ function toUserProfile(row: Record<string, unknown>): UserProfile {
     dateOfBirth: row.date_of_birth as string | null,
     gender: row.gender as string | null,
     bloodGroup: row.blood_group as string | null,
+    signupSource: (row.signup_source as string | null) ?? null,
     physicalFormUrl: row.physical_form_url as string | null,
     registrationFormId: row.registration_form_id as string | null,
     registrationFormSentAt: row.registration_form_sent_at as string | null,
@@ -517,6 +518,7 @@ export async function createUser(
     role: data.role,
     date_of_birth: data.dateOfBirth || null,
     blood_group: data.bloodGroup || null,
+    signup_source: 'admin',
     physical_form_url: data.physicalFormUrl || null,
     username: data.username ? data.username.trim().toLowerCase() : null,
     guardian_email: data.guardianEmail ? data.guardianEmail.trim().toLowerCase() : null,
@@ -531,6 +533,7 @@ export async function createUser(
     user_metadata: {
       name: data.name,
       role: data.role,
+      signup_source: 'admin',
     },
   })
 
@@ -555,6 +558,7 @@ export async function createUser(
             user_metadata: {
               name: data.name,
               role: data.role,
+              signup_source: 'admin',
             },
           })
 

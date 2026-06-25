@@ -69,7 +69,7 @@ const TableSkeleton = () => (
   </div>
 );
 
-type FilterType = "all" | "active" | "flagged" | "inactive";
+type FilterType = "all" | "active" | "flagged" | "inactive" | "public";
 type SortField = "name" | "tokenBalance" | "totalClasses" | "noShows" | "lastActive" | "joinedDate";
 type SortDirection = "asc" | "desc";
 type TokenFilter = "all" | "zero" | "low" | "normal" | "high";
@@ -199,8 +199,13 @@ export default function UsersPage() {
   // Filtering logic
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
-      // Status filter
-      const matchesStatus = filter === "all" || user.status === filter;
+      // Status filter ("public" filters by signup source instead of status)
+      const matchesStatus =
+        filter === "all"
+          ? true
+          : filter === "public"
+            ? user.signupSource === "public"
+            : user.status === filter;
       
       // Search filter
       const matchesSearch = searchQuery === "" ||
@@ -620,6 +625,7 @@ export default function UsersPage() {
     { key: "active", label: "Active" },
     { key: "flagged", label: "Flagged" },
     { key: "inactive", label: "Inactive" },
+    { key: "public", label: "Self-signup" },
   ];
 
   // Memoize filter counts to avoid re-computing on every render
@@ -629,6 +635,7 @@ export default function UsersPage() {
       active: users.filter((u) => u.status === "active").length,
       flagged: users.filter((u) => u.status === "flagged").length,
       inactive: users.filter((u) => u.status === "inactive").length,
+      public: users.filter((u) => u.signupSource === "public").length,
     };
   }, [users]);
   
@@ -1017,8 +1024,15 @@ export default function UsersPage() {
                         </div>
                       )}
                       <div className="min-w-0">
-                        <div className="truncate font-medium text-gray-900 dark:text-white">
-                          {user.name}
+                        <div className="flex items-center gap-2">
+                          <span className="truncate font-medium text-gray-900 dark:text-white">
+                            {user.name}
+                          </span>
+                          {user.signupSource === "public" && (
+                            <span className="shrink-0 rounded-full bg-lime-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-lime-700 dark:bg-lime-900/40 dark:text-lime-300">
+                              Self-signup
+                            </span>
+                          )}
                         </div>
                         <div className="truncate text-sm text-gray-500 dark:text-gray-400">
                           {user.email}

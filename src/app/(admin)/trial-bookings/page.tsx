@@ -770,8 +770,24 @@ export default function TrialBookingsPage() {
               </div>
               {selectedBooking.cancellationReason && (
                 <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-800/50">
-                  <div className="font-medium mb-2">Waiver (stored on this booking)</div>
+                  <div className="font-medium mb-2 flex items-center gap-2">
+                    <span>Waiver (stored on this booking)</span>
+                    {/PENDING/.test(selectedBooking.cancellationReason) ? (
+                      <span className="rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                        Not signed yet
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                        Signed
+                      </span>
+                    )}
+                  </div>
                   <p className="text-gray-700 dark:text-gray-300 break-words">{selectedBooking.cancellationReason}</p>
+                  {/PENDING/.test(selectedBooking.cancellationReason) && (
+                    <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                      Guest agreed to the waiver before paying but hasn&apos;t completed NRIC + signature. Collect this at check-in.
+                    </p>
+                  )}
                 </div>
               )}
               {isDuoTrialBooking(selectedBooking) && selectedBooking.payment?.metadata && (

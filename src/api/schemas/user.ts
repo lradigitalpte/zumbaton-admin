@@ -27,6 +27,7 @@ export const UserProfileSchema = z.object({
   dateOfBirth: z.string().nullable().optional(),
   gender: z.string().nullable().optional(),
   bloodGroup: z.string().nullable().optional(),
+  signupSource: z.string().nullable().optional(),
   physicalFormUrl: z.string().url().nullable().optional(),
   registrationFormId: z.string().uuid().nullable().optional(),
   registrationFormSentAt: z.string().datetime().nullable().optional(),
