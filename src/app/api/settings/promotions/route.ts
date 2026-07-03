@@ -10,6 +10,8 @@ import { getSupabaseAdminClient } from '@/lib/supabase'
 
 export type DuoBookingMode = 'pay_online' | 'reserve_only' | 'both'
 export type DuoPaymentTerms = 'full' | 'deposit' | 'none'
+export type OutdoorQuickJoinMode = 'auto' | 'on' | 'off'
+export type StartPageMode = 'quick_join' | 'trial'
 
 export interface PromotionsSettings {
   early_bird_enabled: boolean
@@ -29,6 +31,9 @@ export interface PromotionsSettings {
   duo_deposit_percent: number
   /** Optional promo end date (YYYY-MM-DD). Empty string = no expiry. */
   duo_end_date: string
+  /** Outdoor option on /start quick-join. */
+  duo_outdoor_quick_join_mode: OutdoorQuickJoinMode
+  duo_start_page_mode: StartPageMode
 }
 
 function getDefaultPromotionsSettings(): PromotionsSettings {
@@ -46,6 +51,8 @@ function getDefaultPromotionsSettings(): PromotionsSettings {
     duo_payment_terms: 'full',
     duo_deposit_percent: 50,
     duo_end_date: '',
+    duo_outdoor_quick_join_mode: 'auto',
+    duo_start_page_mode: 'quick_join',
   }
 }
 
@@ -128,6 +135,8 @@ async function handleUpdatePromotionsSettings(
     // Validate input
     const validModes: DuoBookingMode[] = ['pay_online', 'reserve_only', 'both']
     const validTerms: DuoPaymentTerms[] = ['full', 'deposit', 'none']
+    const validOutdoorModes: OutdoorQuickJoinMode[] = ['auto', 'on', 'off']
+    const validStartPageModes: StartPageMode[] = ['quick_join', 'trial']
     const settings: PromotionsSettings = {
       early_bird_enabled: typeof body.early_bird_enabled === 'boolean' ? body.early_bird_enabled : true,
       early_bird_limit: typeof body.early_bird_limit === 'number' ? body.early_bird_limit : 40,
@@ -142,6 +151,12 @@ async function handleUpdatePromotionsSettings(
       duo_payment_terms: validTerms.includes(body.duo_payment_terms) ? body.duo_payment_terms : 'full',
       duo_deposit_percent: typeof body.duo_deposit_percent === 'number' ? Math.round(body.duo_deposit_percent) : 50,
       duo_end_date: typeof body.duo_end_date === 'string' ? body.duo_end_date.trim() : '',
+      duo_outdoor_quick_join_mode: validOutdoorModes.includes(body.duo_outdoor_quick_join_mode)
+        ? body.duo_outdoor_quick_join_mode
+        : 'auto',
+      duo_start_page_mode: validStartPageModes.includes(body.duo_start_page_mode)
+        ? body.duo_start_page_mode
+        : 'quick_join',
     }
 
     // Validate ranges

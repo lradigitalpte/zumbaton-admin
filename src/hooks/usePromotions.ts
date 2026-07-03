@@ -4,6 +4,8 @@ import { useToast as useAdminToast } from '@/components/ui/Toast'
 
 export type DuoBookingMode = 'pay_online' | 'reserve_only' | 'both'
 export type DuoPaymentTerms = 'full' | 'deposit' | 'none'
+export type OutdoorQuickJoinMode = 'auto' | 'on' | 'off'
+export type StartPageMode = 'quick_join' | 'trial'
 
 export interface PromotionsSettings {
   early_bird_enabled: boolean
@@ -20,6 +22,9 @@ export interface PromotionsSettings {
   duo_payment_terms: DuoPaymentTerms
   duo_deposit_percent: number
   duo_end_date: string
+  /** Outdoor option on /start: auto = when outdoor classes are scheduled. */
+  duo_outdoor_quick_join_mode: OutdoorQuickJoinMode
+  duo_start_page_mode: StartPageMode
 }
 
 async function fetchPromotionsSettings(): Promise<PromotionsSettings> {
@@ -57,6 +62,8 @@ function getDefaultSettings(): PromotionsSettings {
     duo_payment_terms: 'full',
     duo_deposit_percent: 50,
     duo_end_date: '',
+    duo_outdoor_quick_join_mode: 'auto',
+    duo_start_page_mode: 'quick_join',
   }
 }
 

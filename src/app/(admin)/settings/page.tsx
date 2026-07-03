@@ -53,6 +53,8 @@ export default function GeneralSettingsPage() {
     duo_payment_terms: "full",
     duo_deposit_percent: 50,
     duo_end_date: "",
+    duo_outdoor_quick_join_mode: "auto",
+    duo_start_page_mode: "quick_join",
   });
 
   // Load settings from API
@@ -518,6 +520,21 @@ export default function GeneralSettingsPage() {
 
                   {/* Duo Trial (1-for-1) Section */}
                   <div className="rounded-xl bg-gradient-to-br from-lime-50 to-emerald-50 dark:from-lime-900/20 dark:to-emerald-900/20 border border-lime-200 dark:border-lime-800 p-6">
+                    <div className="mb-6 pb-6 border-b border-lime-200 dark:border-lime-800">
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">/start sales page booking</label>
+                      <select
+                        value={promotionSettings.duo_start_page_mode}
+                        onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_start_page_mode: e.target.value as PromotionsSettings["duo_start_page_mode"] })}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                      >
+                        <option value="quick_join">1-for-1 quick book (pay first, we schedule)</option>
+                        <option value="trial">Fast trial (same quick form, solo trial price)</option>
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Controls the /start page. Fast trial uses the short pay-first form; visitors who want to pick a class themselves can use full trial booking at /trial-booking.
+                      </p>
+                    </div>
+
                     <div className="flex items-start justify-between mb-6">
                       <div>
                         <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-1">Duo Trial (1-for-1)</h4>
@@ -566,6 +583,20 @@ export default function GeneralSettingsPage() {
                               />
                             </div>
                             <p className="mt-1 text-xs text-gray-500">e.g. OCBC Arena, Kallang</p>
+                          </div>
+
+                          <div>
+                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Outdoor on /start page</label>
+                            <select
+                              value={promotionSettings.duo_outdoor_quick_join_mode}
+                              onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_outdoor_quick_join_mode: e.target.value as PromotionsSettings["duo_outdoor_quick_join_mode"] })}
+                              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                            >
+                              <option value="auto">Auto (when outdoor classes are scheduled)</option>
+                              <option value="on">Always show</option>
+                              <option value="off">Never show</option>
+                            </select>
+                            <p className="mt-1 text-xs text-gray-500">Controls the outdoor option on the quick sales /start page</p>
                           </div>
 
                           <div>
