@@ -12,6 +12,7 @@ import type {
   TokenTransaction,
   TransactionType,
 } from '@/api/schemas'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 // Token selection strategy
 export type TokenSelectionStrategy = 'oldest-first' | 'expiring-first'
@@ -48,6 +49,7 @@ interface ReleaseTokensParams {
   bookingId: string
   tokensToRelease: number
   description?: string
+  adminClient?: SupabaseClient
 }
 
 // Get user's available token balance
@@ -326,10 +328,11 @@ export async function consumeTokens(params: ConsumeTokensParams): Promise<TokenO
 
 // Release held tokens (for cancellations)
 export async function releaseTokens(params: ReleaseTokensParams): Promise<TokenOperationResult> {
-  const { userId, userPackageId, bookingId, tokensToRelease, description } = params
+  const { userId, userPackageId, bookingId, tokensToRelease, description, adminClient } = params
+  const db = adminClient || supabase
 
   // Get current package state
-  const { data: pkg, error: fetchError } = await supabase
+  const { data: pkg, error: fetchError } = await db
     .from(TABLES.USER_PACKAGES)
     .select('*')
     .eq('id', userPackageId)
@@ -342,7 +345,7 @@ export async function releaseTokens(params: ReleaseTokensParams): Promise<TokenO
   const newHeld = Math.max(0, pkg.tokens_held - tokensToRelease)
 
   // Update package
-  const { error: updateError } = await supabase
+  const { error: updateError } = await db
     .from(TABLES.USER_PACKAGES)
     .update({
       tokens_held: newHeld,
@@ -367,7 +370,7 @@ export async function releaseTokens(params: ReleaseTokensParams): Promise<TokenO
   })
 
   // Get new balance
-  const balance = await getUserTokenBalance(userId)
+  const balance = await getUserTokenBalance(userId, adminClient)
 
   return {
     success: true,

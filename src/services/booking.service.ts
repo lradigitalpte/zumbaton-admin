@@ -459,9 +459,11 @@ async function createCourseBooking(
 // Cancel a booking (release or consume tokens based on timing)
 export async function cancelBooking(params: CancelBookingParams): Promise<CancelBookingResponse> {
   const { userId, bookingId, reason, forceRefund = false } = params
+  const adminClient = forceRefund ? getSupabaseAdminClient() : undefined
+  const db = adminClient || supabase
 
   // 1. Get booking
-  const { data: booking, error: fetchError } = await supabase
+  const { data: booking, error: fetchError } = await db
     .from(TABLES.BOOKINGS)
     .select(`
       *,
@@ -511,6 +513,7 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
       description: forceRefund
         ? `Admin cancellation with refund: ${reason || 'booking exception'}`
         : `Cancelled within ${CANCELLATION_WINDOW_HOURS}h window`,
+      adminClient,
     })
   } else if (isPenalty) {
     // Late cancellation - consume tokens as penalty
@@ -531,7 +534,7 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
   }
 
   // 3. Update booking
-  const { data: updatedBooking, error: updateError } = await supabase
+  const { data: updatedBooking, error: updateError } = await db
     .from(TABLES.BOOKINGS)
     .update({
       status: newStatus,
@@ -550,7 +553,7 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
   // 4. Send cancellation notification (in-app and email)
   try {
     const { sendNotification } = await import('./notification.service')
-    const { data: userProfile } = await supabase
+    const { data: userProfile } = await db
       .from('user_profiles')
       .select('name, email')
       .eq('id', userId)
@@ -651,7 +654,7 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
       day: 'numeric' 
     })
 
-    const { data: admins } = await supabase
+    const { data: admins } = await db
       .from('user_profiles')
       .select('id')
       .in('role', ['admin', 'super_admin'])

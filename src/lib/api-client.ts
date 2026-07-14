@@ -131,7 +131,13 @@ export async function apiRequest<T = unknown>(
 
     // Prepare body
     let body: string | undefined
-    if (data && (fetchOptions.method === 'POST' || fetchOptions.method === 'PUT' || fetchOptions.method === 'PATCH' || fetchOptions.method === undefined)) {
+    if (data && (
+      fetchOptions.method === 'POST' ||
+      fetchOptions.method === 'PUT' ||
+      fetchOptions.method === 'PATCH' ||
+      fetchOptions.method === 'DELETE' ||
+      fetchOptions.method === undefined
+    )) {
       body = JSON.stringify(data)
     }
 

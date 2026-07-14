@@ -129,7 +129,7 @@ function handleApiError(error: unknown) {
     success: false,
     error: {
       code: 'SERVER_ERROR',
-      message: 'An unexpected error occurred',
+      message: error instanceof Error ? error.message : 'An unexpected error occurred',
     },
   }, { status: 500 })
 }
