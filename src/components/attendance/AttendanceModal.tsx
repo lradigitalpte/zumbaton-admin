@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { api } from "@/lib/api-client";
 
 interface AttendeeRow {
   id: string;
+  userId: string | null;
+  isGuest: boolean;
   name: string;
   avatar: string;
   checkedInAt: string;
@@ -27,6 +30,7 @@ interface AttendanceModalProps {
 export default function AttendanceModal({ isOpen, onClose, classData }: AttendanceModalProps) {
   const [list, setList] = useState<AttendeeRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const isCompleted = classData.status === "completed";
 
   const fetchList = useCallback(() => {
@@ -38,8 +42,10 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
         if (data.success && data.data?.attendees) {
           const completed = classData.status === "completed";
           setList(
-            data.data.attendees.map((a: { id: string; name: string; avatar?: string; checkedInAt?: string }) => ({
+            data.data.attendees.map((a: { id: string; userId?: string | null; isGuest?: boolean; name: string; avatar?: string; checkedInAt?: string }) => ({
               id: a.id,
+              userId: a.userId ?? null,
+              isGuest: a.isGuest ?? !a.userId,
               name: a.name,
               avatar: a.avatar ?? (a.name ? a.name.split(/\s+/).map((n: string) => n[0]).filter(Boolean).join("").toUpperCase().slice(0, 2) : "?"),
               checkedInAt: a.checkedInAt || "",
@@ -79,6 +85,27 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
+
+  const cancelAndRefund = async (row: AttendeeRow) => {
+    if (!row.userId) return;
+    if (!window.confirm(`Cancel ${row.name}'s booking, refund their token(s), and email them?`)) return;
+
+    setCancellingId(row.id);
+    const response = await api.delete(`/api/bookings/${row.id}`, {
+      userId: row.userId,
+      forceRefund: true,
+      reason: 'Same-day booking is not allowed. Your booking has been cancelled and your token has been fully refunded. We apologize for the inconvenience.',
+    });
+    setCancellingId(null);
+
+    if (response.error) {
+      window.alert(response.error.message || 'Failed to cancel the booking');
+      return;
+    }
+
+    setList((current) => current.filter((item) => item.id !== row.id));
+    window.alert('Booking cancelled, token(s) refunded, and cancellation email sent.');
+  };
 
   const attendedCount = list.filter((r) => r.status === "attended").length;
 
@@ -181,6 +208,16 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
                   >
                     {row.status === "attended" ? "Attended" : row.status === "no-show" ? "No-show" : "Pending"}
                   </span>
+                  {row.status === "pending" && !row.isGuest && row.userId && (
+                    <button
+                      type="button"
+                      onClick={() => cancelAndRefund(row)}
+                      disabled={cancellingId === row.id}
+                      className="shrink-0 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {cancellingId === row.id ? "Cancelling…" : "Cancel & refund"}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
