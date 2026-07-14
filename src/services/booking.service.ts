@@ -22,6 +22,8 @@ interface CancelBookingParams {
   userId: string
   bookingId: string
   reason?: string
+  /** Admin exception: cancel the individual booking and release its held tokens. */
+  forceRefund?: boolean
 }
 
 // Create a booking (hold tokens)
@@ -456,7 +458,7 @@ async function createCourseBooking(
 
 // Cancel a booking (release or consume tokens based on timing)
 export async function cancelBooking(params: CancelBookingParams): Promise<CancelBookingResponse> {
-  const { userId, bookingId, reason } = params
+  const { userId, bookingId, reason, forceRefund = false } = params
 
   // 1. Get booking
   const { data: booking, error: fetchError } = await supabase
@@ -482,7 +484,7 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
   const isCourseSession = classData.parent_class_id && classData.recurrence_type === 'course'
 
   // For course sessions, cancel all remaining sessions in the course
-  if (isCourseSession) {
+  if (isCourseSession && !forceRefund) {
     return await cancelCourseBooking(userId, bookingId, booking, classData.parent_class_id as string, reason)
   }
 
@@ -490,8 +492,8 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
   const classTime = new Date(classData.scheduled_at as string)
   const now = new Date()
   const hoursUntilClass = (classTime.getTime() - now.getTime()) / (1000 * 60 * 60)
-  const isWithinWindow = hoursUntilClass >= CANCELLATION_WINDOW_HOURS
-  const isPenalty = !isWithinWindow && hoursUntilClass > 0 // only penalty if class hasn't started
+  const isWithinWindow = forceRefund || hoursUntilClass >= CANCELLATION_WINDOW_HOURS
+  const isPenalty = !forceRefund && !isWithinWindow && hoursUntilClass > 0 // only penalty if class hasn't started
 
   let newStatus: 'cancelled' | 'cancelled-late'
   let tokensRefunded = 0
@@ -506,7 +508,9 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
       userPackageId: booking.user_package_id,
       bookingId,
       tokensToRelease: booking.tokens_used,
-      description: `Cancelled within ${CANCELLATION_WINDOW_HOURS}h window`,
+      description: forceRefund
+        ? `Admin cancellation with refund: ${reason || 'booking exception'}`
+        : `Cancelled within ${CANCELLATION_WINDOW_HOURS}h window`,
     })
   } else if (isPenalty) {
     // Late cancellation - consume tokens as penalty

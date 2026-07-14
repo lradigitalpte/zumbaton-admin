@@ -343,6 +343,7 @@ export default function ClassesPage() {
     parentClass: null,
     bookings: [],
   });
+  const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
 
   // Cancel/Delete class mutation
   const cancelClassMutation = useCancelClass();
@@ -719,6 +720,32 @@ export default function ClassesPage() {
       parentClass: null,
       bookings: [],
     });
+  };
+
+  const handleAdminCancelAndRefund = async (booking: typeof bookingsPanel.bookings[number]) => {
+    const confirmed = window.confirm(
+      `Cancel ${booking.userName}'s booking, refund the held token(s), and email them?`
+    );
+    if (!confirmed) return;
+
+    setCancellingBookingId(booking.id);
+    const response = await api.delete(`/api/bookings/${booking.id}`, {
+      userId: booking.userId,
+      forceRefund: true,
+      reason: 'Same-day booking is not allowed. Your booking has been cancelled and your token has been fully refunded. We apologize for the inconvenience.',
+    });
+    setCancellingBookingId(null);
+
+    if (response.error) {
+      window.alert(response.error.message || 'Failed to cancel the booking');
+      return;
+    }
+
+    setBookingsPanel((current) => ({
+      ...current,
+      bookings: current.bookings.filter((item) => item.id !== booking.id),
+    }));
+    window.alert('Booking cancelled, token(s) refunded, and cancellation email queued.');
   };
 
   // Combine single and recurring parent classes for display
@@ -2161,6 +2188,16 @@ export default function ClassesPage() {
                                   )}
                                 </p>
                               </div>
+                              {booking.status === 'confirmed' && booking.userId && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdminCancelAndRefund(booking)}
+                                  disabled={cancellingBookingId === booking.id}
+                                  className="shrink-0 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {cancellingBookingId === booking.id ? 'Cancelling…' : 'Cancel & refund'}
+                                </button>
+                              )}
                             </div>
                           ))}
                         </div>

@@ -200,7 +200,7 @@ export const api = {
   patch: <T = unknown>(endpoint: string, data?: unknown, options?: Omit<ApiFetchOptions, 'method' | 'data'>) =>
     apiRequest<T>(endpoint, { ...options, method: 'PATCH', data }),
 
-  delete: <T = unknown>(endpoint: string, options?: Omit<ApiFetchOptions, 'method' | 'data'>) =>
-    apiRequest<T>(endpoint, { ...options, method: 'DELETE' }),
+  delete: <T = unknown>(endpoint: string, data?: unknown, options?: Omit<ApiFetchOptions, 'method' | 'data'>) =>
+    apiRequest<T>(endpoint, { ...options, method: 'DELETE', data }),
 }
 
