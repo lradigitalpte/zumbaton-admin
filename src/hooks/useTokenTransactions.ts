@@ -24,6 +24,7 @@ export interface TokenTransaction {
   userAvatar: string | null
   userPackageId: string | null
   bookingId: string | null
+  bookedAt: string | null
   type: TransactionType
   amount: number
   balance: number

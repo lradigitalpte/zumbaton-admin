@@ -90,23 +90,23 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Get booking IDs for transactions without user_id (trial bookings)
+    // Fetch booking details for every booking-linked transaction so the admin
+    // can see when the booking was originally placed, not only the token event.
     const bookingIds = [...new Set((transactions || [])
-      .filter((t: { user_id: string | null; booking_id: string | null }) => !t.user_id && t.booking_id)
       .map((t: { booking_id: string | null }) => t.booking_id)
       .filter(Boolean) as string[])]
     
     // Fetch guest names from bookings
-    const guestBookingsMap: Record<string, { guest_name: string | null; guest_email: string | null }> = {}
+    const guestBookingsMap: Record<string, { guest_name: string | null; guest_email: string | null; booked_at: string | null }> = {}
     if (bookingIds.length > 0) {
       const { data: bookings } = await adminClient
         .from(TABLES.BOOKINGS)
-        .select('id, guest_name, guest_email')
+        .select('id, guest_name, guest_email, booked_at')
         .in('id', bookingIds)
       
       if (bookings) {
         for (const b of bookings) {
-          guestBookingsMap[b.id] = { guest_name: b.guest_name, guest_email: b.guest_email }
+          guestBookingsMap[b.id] = { guest_name: b.guest_name, guest_email: b.guest_email, booked_at: b.booked_at }
         }
       }
     }
@@ -229,6 +229,7 @@ export async function GET(request: NextRequest) {
         userAvatar: profile.avatar_url ?? null,
         userPackageId: t.user_package_id,
         bookingId: t.booking_id,
+        bookedAt: t.booking_id ? guestBookingsMap[t.booking_id]?.booked_at ?? null : null,
         type: t.transaction_type,
         amount: Math.abs(t.tokens_change),
         balance: t.tokens_after,

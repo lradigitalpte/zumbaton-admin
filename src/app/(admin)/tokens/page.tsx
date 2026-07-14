@@ -9,12 +9,13 @@ import { useTokenPackageExpiry, useTokenPackageExpiryCounts, PackageExpiryItem }
 import { usePendingPayments, useSyncPayment, useDeletePendingPayment, PendingPayment } from "@/hooks/usePendingPayments";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/api-client";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-type PageTab = "transactions" | "expiring_soon" | "expired";
+type PageTab = "transactions" | "active_bookings" | "expiring_soon" | "expired";
 
 const pageTabs: { value: PageTab; label: string }[] = [
   { value: "transactions", label: "All Transactions" },
+  { value: "active_bookings", label: "Bookings" },
   { value: "expiring_soon", label: "Expiring in 7 Days" },
   { value: "expired", label: "Expired Tokens" },
 ];
@@ -117,6 +118,19 @@ interface DisplayTransaction extends Omit<TokenTransaction, 'type'> {
   displayType: DisplayTransactionType;
 }
 
+interface ActiveBooking {
+  id: string;
+  userName: string;
+  userEmail: string;
+  userAvatar: string | null;
+  classTitle: string;
+  classStartsAt: string | null;
+  location: string | null;
+  status: string;
+  tokensUsed: number;
+  bookedAt: string;
+}
+
 export default function TokenTransactionsPage() {
   const [activeTab, setActiveTab] = useState<PageTab>("transactions");
   const [searchQuery, setSearchQuery] = useState("");
@@ -134,6 +148,26 @@ export default function TokenTransactionsPage() {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
+  const { data: activeBookingsData, isLoading: activeBookingsLoading, error: activeBookingsError } = useQuery({
+    queryKey: ["bookings", searchQuery, dateRange, currentPage, itemsPerPage],
+    queryFn: async () => {
+      const params = new URLSearchParams({ page: String(currentPage), pageSize: String(itemsPerPage) });
+      if (searchQuery) params.set("search", searchQuery);
+      if (dateRange !== "all") {
+        const now = new Date();
+        const start = dateRange === "today"
+          ? new Date(`${now.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" })}T00:00:00+08:00`)
+          : new Date(now.getTime() - (dateRange === "week" ? 7 : 30) * 24 * 60 * 60 * 1000);
+        params.set("startDate", start.toISOString());
+        params.set("endDate", now.toISOString());
+      }
+      const response = await api.get<{ success: boolean; data: { bookings: ActiveBooking[]; total: number } }>(`/api/bookings/active?${params}`);
+      if (response.error) throw new Error(response.error.message || "Failed to load active bookings");
+      return response.data?.data;
+    },
+    enabled: activeTab === "active_bookings",
+  });
+
   // Pending payments
   const { data: pendingPayments = [], isLoading: pendingLoading, refetch: refetchPending } = usePendingPayments();
   const { syncPayment, syncingIds, syncResults } = useSyncPayment();
@@ -147,7 +181,8 @@ export default function TokenTransactionsPage() {
     let startDate: string;
     
     if (dateRange === "today") {
-      startDate = new Date(now.setHours(0, 0, 0, 0)).toISOString();
+      const singaporeDate = now.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+      startDate = new Date(`${singaporeDate}T00:00:00+08:00`).toISOString();
     } else if (dateRange === "week") {
       startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     } else {
@@ -217,6 +252,7 @@ export default function TokenTransactionsPage() {
 
   // Pagination info
   const totalPages = Math.ceil((data?.total || 0) / itemsPerPage);
+  const activeBookingTotalPages = Math.ceil((activeBookingsData?.total || 0) / itemsPerPage);
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -225,8 +261,20 @@ export default function TokenTransactionsPage() {
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Asia/Singapore",
     });
   };
+
+  const formatSgtDateTime = (dateStr: string) => new Date(dateStr).toLocaleString("en-SG", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Singapore",
+  });
 
   const getInitials = (name: string) => {
     return name.split(" ").map(n => n[0]).join("").toUpperCase();
@@ -693,6 +741,8 @@ export default function TokenTransactionsPage() {
           const count =
             tab.value === "transactions"
               ? data?.total ?? 0
+              : tab.value === "active_bookings"
+                ? activeBookingsData?.total ?? 0
               : tab.value === "expiring_soon"
                 ? expiryCounts.expiringSoon
                 : expiryCounts.expired;
@@ -848,7 +898,9 @@ export default function TokenTransactionsPage() {
           {activeTab !== "transactions" && (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                {activeTab === "expiring_soon"
+                {activeTab === "active_bookings"
+                  ? "Every booking, including confirmed, attended, waitlisted, and cancelled records, ordered by submission time."
+                  : activeTab === "expiring_soon"
                   ? "Active packages expiring within 7 days (Singapore date — valid through expiry day)"
                   : "Packages past expiry date. Users cannot book with these — run cleanup to mark them expired in the system."}
               </p>
@@ -867,7 +919,7 @@ export default function TokenTransactionsPage() {
 
           {/* Date Range & Search */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center ml-auto">
-            {activeTab === "transactions" && (
+            {(activeTab === "transactions" || activeTab === "active_bookings") && (
             <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
               {(["today", "week", "month", "all"] as const).map((range) => (
                 <button
@@ -891,7 +943,7 @@ export default function TokenTransactionsPage() {
             <div className="relative">
               <Input
                 type="text"
-                placeholder={activeTab === "transactions" ? "Search transactions..." : "Search by name or email..."}
+                placeholder={activeTab === "transactions" ? "Search transactions..." : activeTab === "active_bookings" ? "Search by name, email, or class..." : "Search by name or email..."}
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -917,7 +969,8 @@ export default function TokenTransactionsPage() {
       {/* Transactions / Expiry Table */}
       <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
         {(activeTab === "transactions" && (isLoading || transactionsFetching)) ||
-        (activeTab !== "transactions" && (expiryLoading || expiryFetching)) ? (
+        (activeTab === "active_bookings" && activeBookingsLoading) ||
+        ((activeTab === "expiring_soon" || activeTab === "expired") && (expiryLoading || expiryFetching)) ? (
           <div className="flex flex-col items-center justify-center py-16">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
             <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading...</p>
@@ -929,7 +982,78 @@ export default function TokenTransactionsPage() {
               {error instanceof Error ? error.message : "An error occurred"}
             </p>
           </div>
-        ) : activeTab !== "transactions" && expiryError ? (
+        ) : activeTab === "active_bookings" && activeBookingsError ? (
+          <div className="flex flex-col items-center justify-center py-16">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Failed to load active bookings</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {activeBookingsError instanceof Error ? activeBookingsError.message : "An error occurred"}
+            </p>
+          </div>
+        ) : activeTab === "active_bookings" ? (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Booking</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">User</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Class</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Class Time</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Submitted At</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {(activeBookingsData?.bookings || []).map(booking => (
+                    <tr key={booking.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                      <td className="px-4 py-3 font-mono text-sm text-gray-600 dark:text-gray-300">{booking.id.slice(0, 8)}...</td>
+                      <td className="px-4 py-3">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">{booking.userName}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{booking.userEmail}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">{booking.classTitle}</p>
+                        {booking.location && <p className="text-xs text-gray-500 dark:text-gray-400">{booking.location}</p>}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                        {booking.classStartsAt ? `${formatSgtDateTime(booking.classStartsAt)} SGT` : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          booking.status === "confirmed"
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                            : booking.status === "attended"
+                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                              : booking.status === "cancelled"
+                                ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                        }`}>
+                          {booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replaceAll("_", " ")}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">{formatSgtDateTime(booking.bookedAt)} SGT</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Booking submitted</p>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {(activeBookingsData?.bookings.length || 0) === 0 && (
+              <div className="py-12 text-center text-sm text-gray-500 dark:text-gray-400">No active bookings found.</div>
+            )}
+            {(activeBookingsData?.bookings.length || 0) > 0 && renderPagination(
+              currentPage,
+              activeBookingTotalPages,
+              activeBookingsData?.total || 0,
+              itemsPerPage,
+              setCurrentPage,
+              setItemsPerPage,
+              "bookings"
+            )}
+          </>
+        ) : (activeTab === "expiring_soon" || activeTab === "expired") && expiryError ? (
           <div className="flex flex-col items-center justify-center py-16">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Failed to load expiry data</h3>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -1102,9 +1226,12 @@ export default function TokenTransactionsPage() {
                           {tx.description || '-'}
                         </p>
                         {tx.bookingId && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
                             <span className="text-blue-600 dark:text-blue-400">🎯 Booking: {tx.bookingId.slice(0, 8)}...</span>
-                          </p>
+                            {tx.bookedAt && (
+                              <p className="mt-0.5 whitespace-nowrap">Booked: {formatDate(tx.bookedAt)}</p>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
@@ -1242,7 +1369,14 @@ export default function TokenTransactionsPage() {
                   <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">📦 Package: {selectedTransaction.userPackageId.slice(0, 8)}...</p>
                 )}
                 {selectedTransaction.bookingId && (
-                  <p className="mt-2 text-xs text-blue-600 dark:text-blue-400">🎯 Booking: {selectedTransaction.bookingId.slice(0, 8)}...</p>
+                  <div className="mt-2 text-xs">
+                    <p className="text-blue-600 dark:text-blue-400">🎯 Booking: {selectedTransaction.bookingId.slice(0, 8)}...</p>
+                    {selectedTransaction.bookedAt && (
+                      <p className="mt-1 text-gray-500 dark:text-gray-400">
+                        Booked: {formatSgtDateTime(selectedTransaction.bookedAt)} SGT
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -1250,7 +1384,7 @@ export default function TokenTransactionsPage() {
               <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
                 <span className="text-sm text-gray-500 dark:text-gray-400">Transaction Date</span>
                 <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {new Date(selectedTransaction.createdAt).toLocaleString()}
+                  {formatSgtDateTime(selectedTransaction.createdAt)} SGT
                 </span>
               </div>
             </div>
