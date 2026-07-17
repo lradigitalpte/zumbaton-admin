@@ -167,6 +167,63 @@
   --z-index-999999: 999999;
 }
 
+/* Leads CRM dark-mode contrast. Scoped so other dashboard pages keep their own palette. */
+.dark .lead-crm-page {
+  color: #e5e7eb;
+}
+
+.dark .lead-crm-page input,
+.dark .lead-crm-page select,
+.dark .lead-crm-page textarea {
+  border-color: #475569;
+  background-color: #1f2937;
+  color: #f8fafc;
+  color-scheme: dark;
+}
+
+.dark .lead-crm-page input::placeholder,
+.dark .lead-crm-page textarea::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
+.dark .lead-crm-page .text-gray-400 {
+  color: #94a3b8;
+}
+
+.dark .lead-crm-page .text-gray-500,
+.dark .lead-crm-page .text-gray-600 {
+  color: #cbd5e1;
+}
+
+.dark .lead-crm-page .border-gray-200,
+.dark .lead-crm-page .border-gray-100 {
+  border-color: #374151;
+}
+
+.dark .lead-crm-page table thead {
+  background-color: #0f172a;
+  color: #cbd5e1;
+}
+
+.dark .lead-crm-page table tbody {
+  color: #e5e7eb;
+}
+
+.dark .lead-crm-page table tbody tr {
+  border-color: #374151;
+}
+
+.dark .lead-crm-page table tbody tr:hover {
+  background-color: rgba(51, 65, 85, 0.55);
+}
+
+.dark .lead-crm-page button.border,
+.dark .lead-crm-page a.border {
+  border-color: #475569;
+  color: #e2e8f0;
+}
+
 /*
   The default border color has changed to `currentColor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still

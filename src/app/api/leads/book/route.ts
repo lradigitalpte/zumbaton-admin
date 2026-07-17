@@ -31,16 +31,21 @@ export async function POST(request: NextRequest) {
 
     const supabase = getSupabaseAdminClient()
 
-    // Lead (payment) + class
-    const { data: lead, error: leadErr } = await supabase
+    // Support both paid quick-join leads and imported marketing leads.
+    const { data: paymentLead } = await supabase
       .from('payments')
       .select('id, metadata')
       .eq('id', leadId)
       .single()
-    if (leadErr || !lead) {
+    const { data: marketingLead } = paymentLead ? { data: null } : await supabase
+      .from('marketing_leads')
+      .select('id, name, email, phone, status')
+      .eq('id', leadId)
+      .single()
+    if (!paymentLead && !marketingLead) {
       return NextResponse.json({ success: false, error: { message: 'Lead not found' } }, { status: 404 })
     }
-    const metadata = (lead.metadata as Record<string, any>) || {}
+    const metadata = (paymentLead?.metadata as Record<string, any>) || {}
 
     const { data: classData, error: classErr } = await supabase
       .from('classes')
@@ -57,7 +62,7 @@ export async function POST(request: NextRequest) {
     // Capacity check
     const { data: existing } = await supabase
       .from('bookings')
-      .select('id, payment_id')
+      .select('id, payment_id, marketing_lead_id')
       .eq('class_id', classId)
       .in('status', ['confirmed', 'attended'])
 
@@ -66,13 +71,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: { message: 'This class is full' } }, { status: 400 })
     }
     // Avoid duplicate booking for the same lead + class
-    if ((existing || []).some((b) => b.payment_id === leadId)) {
+    if ((existing || []).some((b) => b.payment_id === leadId || b.marketing_lead_id === leadId)) {
       return NextResponse.json({ success: false, error: { message: 'This lead is already booked in this class' } }, { status: 400 })
     }
 
-    const guestName = (metadata.guest_name as string) || 'Guest'
-    const guestEmail = (metadata.guest_email as string) || ''
-    const guestPhone = (metadata.guest_phone as string) || ''
+    const guestName = marketingLead?.name || (metadata.guest_name as string) || 'Guest'
+    const guestEmail = marketingLead?.email || (metadata.guest_email as string) || ''
+    const guestPhone = marketingLead?.phone || (metadata.guest_phone as string) || ''
+    if (!guestEmail) {
+      return NextResponse.json({ success: false, error: { message: 'Add an email address before booking this lead' } }, { status: 400 })
+    }
 
     const { data: booking, error: bookingErr } = await supabase
       .from('bookings')
@@ -82,7 +90,8 @@ export async function POST(request: NextRequest) {
         guest_email: guestEmail,
         guest_phone: guestPhone,
         is_trial_booking: true,
-        payment_id: leadId,
+        payment_id: paymentLead ? leadId : null,
+        marketing_lead_id: marketingLead ? leadId : null,
         status: 'confirmed',
         tokens_used: 0,
         booked_at: new Date().toISOString(),
@@ -96,9 +105,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Mark lead scheduled + record the class on the lead
-    await supabase
-      .from('payments')
-      .update({
+    if (paymentLead) await supabase.from('payments').update({
         metadata: {
           ...metadata,
           lead_status: 'scheduled',
@@ -110,6 +117,10 @@ export async function POST(request: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', leadId)
+    if (marketingLead) {
+      await supabase.from('marketing_leads').update({ status: 'trial_scheduled', updated_at: new Date().toISOString() }).eq('id', leadId)
+      await supabase.from('lead_activities').insert({ lead_id: leadId, actor_id: user.id, activity_type: 'status_changed', note: `Booked into ${classData.title}`, new_values: { status: 'trial_scheduled', class_id: classId, booking_id: booking.id } })
+    }
 
     // Send a booking-confirmation email to the client (best-effort).
     let emailSent = false
