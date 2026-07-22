@@ -54,6 +54,46 @@ export async function sendAdminEmail(
 /**
  * Send a custom email to a user (for future use - when we add custom email templates)
  */
+export async function sendLeadFollowUpEmail(
+  leadEmail: string,
+  leadName: string,
+  subject: string,
+  bodyText: string
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    const { getWebAppUrl } = await import('./email-url')
+    const webAppUrl = getWebAppUrl()
+    const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+
+    const response = await fetch(`${webAppUrl}/api/email/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'lead-follow-up',
+        secret: emailApiSecret,
+        data: { leadEmail, leadName, subject, bodyText },
+      }),
+    })
+
+    const result = await response.json()
+
+    if (!response.ok || !result.success) {
+      return { success: false, error: result.error || 'Failed to send email' }
+    }
+
+    return { success: true, messageId: result.messageId }
+  } catch (error) {
+    console.error('[AdminEmail] Lead follow-up error:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}
+
+/**
+ * Send a custom email to a user (for future use - when we add custom email templates)
+ */
 export async function sendCustomEmailToUser(
   userEmail: string,
   userName: string,

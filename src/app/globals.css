@@ -201,6 +201,24 @@
   border-color: #374151;
 }
 
+.dark .lead-crm-page .bg-white {
+  background-color: #111827;
+}
+
+.dark .lead-crm-page .bg-gray-50,
+.dark .lead-crm-page .bg-gray-100 {
+  background-color: #273449;
+}
+
+.dark .lead-crm-page .bg-gray-200 {
+  background-color: #374151;
+}
+
+.dark .lead-crm-page select option {
+  background-color: #1f2937;
+  color: #f8fafc;
+}
+
 .dark .lead-crm-page table thead {
   background-color: #0f172a;
   color: #cbd5e1;
@@ -218,10 +236,28 @@
   background-color: rgba(51, 65, 85, 0.55);
 }
 
+.dark .lead-crm-page table td {
+  color: #e5e7eb;
+}
+
+.dark .lead-crm-page table td .text-xs {
+  color: #cbd5e1;
+}
+
 .dark .lead-crm-page button.border,
 .dark .lead-crm-page a.border {
   border-color: #475569;
   color: #e2e8f0;
+}
+
+.dark .lead-crm-page button.border:hover,
+.dark .lead-crm-page a.border:hover {
+  border-color: #818cf8;
+  background-color: #273449;
+}
+
+.dark .lead-crm-page [class*="shadow"] {
+  --tw-shadow-color: rgba(0, 0, 0, 0.55);
 }
 
 /*

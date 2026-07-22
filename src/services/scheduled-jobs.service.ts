@@ -125,6 +125,13 @@ export async function runSyncPendingPaymentsJob(): Promise<JobResult> {
   return runJob('syncPendingHitPayPayments', syncPendingHitPayPayments)
 }
 
+export async function runProcessLeadOutreachJob(): Promise<JobResult> {
+  return runJob('processLeadOutreachQueue', async () => {
+    const { processLeadOutreachQueue } = await import('@/services/lead-outreach.service')
+    return await processLeadOutreachQueue()
+  })
+}
+
 // Mark past classes as completed (daily job)
 // This applies to ALL class types (single, recurring, course) - any class whose date has passed
 export async function markCompletedClasses(): Promise<JobResult> {
@@ -895,6 +902,12 @@ export function getJobSchedule() {
         description: 'Polls HitPay for pending payments and auto-issues tokens when confirmed',
         frequency: 'Every 15 minutes',
         cron: '*/15 * * * *',
+      },
+      {
+        name: 'processLeadOutreachQueue',
+        description: 'Sends queued lead follow-up emails and WhatsApp messages in batches',
+        frequency: 'Every 2 minutes',
+        cron: '*/2 * * * *',
       },
     ],
   }

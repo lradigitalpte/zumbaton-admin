@@ -13,8 +13,10 @@ import {
   markCompletedClasses,
   runAutoGenerateClassesJob,
   runSyncPendingPaymentsJob,
+  runProcessLeadOutreachJob,
   getJobSchedule,
 } from '@/services/scheduled-jobs.service'
+import { processLeadOutreachQueue } from '@/services/lead-outreach.service'
 import { ApiError } from '@/lib/api-error'
 import { getAuthenticatedUser, hasRequiredRole } from '@/middleware/rbac'
 
@@ -92,6 +94,9 @@ export async function POST(request: NextRequest) {
         break
       case 'sync-pending-payments':
         results = [await runSyncPendingPaymentsJob()]
+        break
+      case 'process-lead-outreach':
+        results = [await runProcessLeadOutreachJob()]
         break
       case 'all':
       default:
