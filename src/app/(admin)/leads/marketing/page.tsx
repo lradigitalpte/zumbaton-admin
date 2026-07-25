@@ -20,6 +20,7 @@ type Campaign = {
   sent_count: number;
   failed_count: number;
   skipped_count: number;
+  opened_count?: number;
   created_at: string;
   completed_at: string | null;
 };
@@ -33,6 +34,8 @@ type CampaignMessage = {
   error_message: string | null;
   sent_at: string | null;
   delivered_at: string | null;
+  opened_at: string | null;
+  clicked_at: string | null;
 };
 
 type PreviewLead = {
@@ -67,6 +70,8 @@ const statusClass: Record<string, string> = {
   pending: "bg-gray-100 text-gray-600",
   sent: "bg-emerald-100 text-emerald-700",
   delivered: "bg-teal-100 text-teal-700",
+  opened: "bg-purple-100 text-purple-700",
+  clicked: "bg-indigo-100 text-indigo-700",
   skipped: "bg-slate-100 text-slate-600",
   new: "bg-blue-100 text-blue-700",
   attempted_contact: "bg-orange-100 text-orange-700",
@@ -581,6 +586,7 @@ export default function LeadMarketingPage() {
                   <th className="py-2">Channels</th>
                   <th className="py-2">Status</th>
                   <th className="py-2">Sent</th>
+                  <th className="py-2">Opened</th>
                   <th className="py-2">Failed</th>
                   <th className="py-2">Skipped</th>
                   <th className="py-2">Created</th>
@@ -594,6 +600,11 @@ export default function LeadMarketingPage() {
                     <td className="py-3">{c.channels?.join(", ") || "—"}</td>
                     <td className="py-3"><span className={`rounded px-2 py-0.5 text-xs font-semibold capitalize ${statusClass[c.status] || ""}`}>{c.status}</span></td>
                     <td className="py-3">{c.sent_count}/{c.total_count}</td>
+                    <td className="py-3">
+                      {c.channels?.includes("email")
+                        ? `${c.opened_count ?? 0}/${c.sent_count}`
+                        : "—"}
+                    </td>
                     <td className="py-3">{c.failed_count}</td>
                     <td className="py-3">{c.skipped_count}</td>
                     <td className="py-3 text-xs text-gray-500">{fmt(c.created_at)}</td>
@@ -635,7 +646,7 @@ export default function LeadMarketingPage() {
       {activeCampaign && (
         <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
           <button aria-label="Close" className="fixed inset-0 bg-gray-950/55" onClick={() => setActiveCampaign(null)} />
-          <section className="relative max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800">
+          <section className="relative max-h-[85vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800">
             <header className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-bold">Delivery log</h3>
               <button onClick={() => setActiveCampaign(null)} className="text-2xl text-gray-400">×</button>
@@ -650,6 +661,8 @@ export default function LeadMarketingPage() {
                     <th className="py-2">Status</th>
                     <th className="py-2">Sent</th>
                     <th className="py-2">Delivered</th>
+                    <th className="py-2">Opened</th>
+                    <th className="py-2">Clicked</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -664,6 +677,8 @@ export default function LeadMarketingPage() {
                       </td>
                       <td className="py-2 text-xs">{fmt(m.sent_at)}</td>
                       <td className="py-2 text-xs">{fmt(m.delivered_at)}</td>
+                      <td className="py-2 text-xs">{fmt(m.opened_at)}</td>
+                      <td className="py-2 text-xs">{fmt(m.clicked_at)}</td>
                     </tr>
                   ))}
                 </tbody>

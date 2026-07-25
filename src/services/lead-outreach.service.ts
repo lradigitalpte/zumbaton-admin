@@ -211,18 +211,47 @@ export async function processLeadOutreachQueue(): Promise<{
   return { processed: pending.length, sent, failed, skipped }
 }
 
+export type OutreachWebhookEvent = 'delivered' | 'opened' | 'clicked' | 'failed'
+
 export async function updateOutreachMessageFromWebhook(
   providerMessageId: string,
-  status: 'delivered' | 'failed',
+  event: OutreachWebhookEvent,
   errorMessage?: string
 ) {
   const supabase = getSupabaseAdminClient()
-  const update: Record<string, unknown> = { status }
-  if (status === 'delivered') update.delivered_at = new Date().toISOString()
-  if (errorMessage) update.error_message = errorMessage
+  const now = new Date().toISOString()
 
-  await supabase
+  const { data: existing } = await supabase
     .from('lead_outreach_messages')
-    .update(update)
+    .select('id, status, delivered_at, opened_at, clicked_at')
     .eq('provider_message_id', providerMessageId)
+    .maybeSingle()
+
+  if (!existing) return
+
+  const update: Record<string, unknown> = {}
+
+  if (event === 'failed') {
+    update.status = 'failed'
+    if (errorMessage) update.error_message = errorMessage
+  } else if (event === 'delivered') {
+    if (!existing.delivered_at) update.delivered_at = now
+    if (!['opened', 'clicked', 'failed'].includes(existing.status)) {
+      update.status = 'delivered'
+    }
+  } else if (event === 'opened') {
+    if (!existing.opened_at) update.opened_at = now
+    if (existing.status !== 'clicked' && existing.status !== 'failed') {
+      update.status = 'opened'
+    }
+  } else if (event === 'clicked') {
+    if (!existing.clicked_at) update.clicked_at = now
+    if (existing.status !== 'failed') {
+      update.status = 'clicked'
+    }
+  }
+
+  if (Object.keys(update).length === 0) return
+
+  await supabase.from('lead_outreach_messages').update(update).eq('id', existing.id)
 }

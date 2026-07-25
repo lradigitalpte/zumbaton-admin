@@ -33,10 +33,33 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error
 
+    const campaignIds = (campaigns || []).map((c) => c.id)
+    let openCounts: Record<string, number> = {}
+
+    if (campaignIds.length) {
+      const { data: messageStats } = await supabase
+        .from('lead_outreach_messages')
+        .select('campaign_id, opened_at')
+        .in('campaign_id', campaignIds)
+        .eq('channel', 'email')
+
+      openCounts = (messageStats || []).reduce<Record<string, number>>((acc, row) => {
+        if (row.opened_at) {
+          acc[row.campaign_id] = (acc[row.campaign_id] || 0) + 1
+        }
+        return acc
+      }, {})
+    }
+
+    const campaignsWithStats = (campaigns || []).map((campaign) => ({
+      ...campaign,
+      opened_count: openCounts[campaign.id] || 0,
+    }))
+
     return NextResponse.json({
       success: true,
       data: {
-        campaigns: campaigns || [],
+        campaigns: campaignsWithStats,
         email: getEmailOutreachStatus(),
         whatsapp: getWhatsAppConfigStatus(),
         defaults: {

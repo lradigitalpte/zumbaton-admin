@@ -30,7 +30,7 @@ export async function GET(
 
     const { data: messages } = await supabase
       .from('lead_outreach_messages')
-      .select('id, lead_id, channel, recipient, lead_name, status, error_message, provider_message_id, sent_at, delivered_at, created_at')
+      .select('id, lead_id, channel, recipient, lead_name, status, error_message, provider_message_id, sent_at, delivered_at, opened_at, clicked_at, created_at')
       .eq('campaign_id', id)
       .order('created_at', { ascending: true })
       .limit(500)

@@ -48,6 +48,7 @@
     "react-dropzone": "^14.3.8",
     "react-hook-form": "^7.51.0",
     "stripe": "^20.0.0",
+    "svix": "^1.99.1",
     "swiper": "^11.2.10",
     "tailwind-merge": "^2.6.0",
     "zod": "^3.22.4"
