@@ -119,6 +119,7 @@ export default function LeadMarketingPage() {
   const [activeCampaign, setActiveCampaign] = useState<string | null>(null);
   const [messages, setMessages] = useState<CampaignMessage[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [retryLoading, setRetryLoading] = useState<"failed" | "pending" | null>(null);
 
   const [channel, setChannel] = useState("all");
   const [status, setStatus] = useState("all");
@@ -318,6 +319,34 @@ export default function LeadMarketingPage() {
     setMessages(res.data?.data.messages || []);
     setDetailLoading(false);
   };
+
+  const refreshActiveCampaign = async () => {
+    if (!activeCampaign) return;
+    const res = await api.get<{ success: boolean; data: { messages: CampaignMessage[] } }>(`/api/leads/outreach/${activeCampaign}`);
+    setMessages(res.data?.data.messages || []);
+    await loadCampaigns();
+  };
+
+  const retryCampaign = async (action: "failed" | "pending") => {
+    if (!activeCampaign) return;
+    setRetryLoading(action);
+    const res = await api.post<{ success: boolean; data: { sent: number; processed: number; resetCount?: number }; error?: { message: string } }>(
+      `/api/leads/outreach/${activeCampaign}/retry`,
+      { action }
+    );
+    setRetryLoading(null);
+    if (res.error) return showToast(res.error.message, "error");
+    const data = res.data?.data;
+    if (action === "failed") {
+      showToast(`Retried ${data?.resetCount || 0} failed — sent ${data?.sent || 0} this batch`, "success");
+    } else {
+      showToast(`Processed ${data?.processed || 0} pending — sent ${data?.sent || 0}`, "success");
+    }
+    await refreshActiveCampaign();
+  };
+
+  const failedCount = messages.filter((m) => m.status === "failed").length;
+  const pendingCount = messages.filter((m) => m.status === "pending" || m.status === "sending").length;
 
   const pageAllSelected = previewLeads.length > 0 && previewLeads.every((l) => selected.has(l.id));
 
@@ -570,7 +599,10 @@ export default function LeadMarketingPage() {
       {activeTab === "campaigns" && (
       <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Follow-up campaigns</h2>
+          <div>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Follow-up campaigns</h2>
+            <p className="mt-1 text-xs text-gray-500">Large sends go out slowly (~10 emails/batch). Use View delivery → Retry failed or Send pending now.</p>
+          </div>
           <button onClick={loadCampaigns} className="text-sm text-indigo-600">Refresh</button>
         </div>
         {loading ? (
@@ -647,9 +679,36 @@ export default function LeadMarketingPage() {
         <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
           <button aria-label="Close" className="fixed inset-0 bg-gray-950/55" onClick={() => setActiveCampaign(null)} />
           <section className="relative max-h-[85vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800">
-            <header className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-bold">Delivery log</h3>
-              <button onClick={() => setActiveCampaign(null)} className="text-2xl text-gray-400">×</button>
+            <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold">Delivery log</h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Sends ~10 per batch, ~1.5s apart. Cron processes pending every 2 minutes.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {pendingCount > 0 && (
+                  <button
+                    type="button"
+                    disabled={!!retryLoading}
+                    onClick={() => retryCampaign("pending")}
+                    className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 disabled:opacity-50"
+                  >
+                    {retryLoading === "pending" ? "Sending…" : `Send pending now (${pendingCount})`}
+                  </button>
+                )}
+                {failedCount > 0 && (
+                  <button
+                    type="button"
+                    disabled={!!retryLoading}
+                    onClick={() => retryCampaign("failed")}
+                    className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-50"
+                  >
+                    {retryLoading === "failed" ? "Retrying…" : `Retry failed (${failedCount})`}
+                  </button>
+                )}
+                <button onClick={() => setActiveCampaign(null)} className="text-2xl text-gray-400">×</button>
+              </div>
             </header>
             {detailLoading ? <p className="text-sm text-gray-500">Loading…</p> : (
               <table className="w-full text-left text-sm">

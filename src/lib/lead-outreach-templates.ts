@@ -4,11 +4,13 @@ export const DEFAULT_EMAIL_SUBJECT = 'Thanks for your interest in One Step Fitne
 
 export const DEFAULT_EMAIL_BODY = `Hi {{name}},
 
-Thank you for reaching out to One Step Fitness! We'd love to help you get started with Zumba and fitness classes.
+Thank you for reaching out to One Step Fitness! We would love to welcome you to our Zumba and dance fitness community.
 
-Reply to this email or WhatsApp us to book your trial class.
+Whether you are brand new to fitness or looking for a fun way to stay active, our classes are designed for all levels. Our friendly instructors will make sure you feel right at home from your very first session.
 
-See you on the dance floor!
+We would love to see you on the dance floor soon!
+
+Warm regards,
 One Step Fitness Team`
 
 export const DEFAULT_WHATSAPP_BODY = `Hi {{name}}, thanks for your interest in One Step Fitness! We'd love to help you book a trial class. Reply here anytime.`

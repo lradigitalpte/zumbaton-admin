@@ -4,8 +4,32 @@ import { renderTemplate } from '@/lib/lead-outreach-templates'
 import { isWhatsAppConfigured, sendWhatsAppTemplateMessage } from '@/lib/whatsapp'
 import { getSupabaseAdminClient } from '@/lib/supabase'
 
-const BATCH_SIZE = 25
 const MAX_ATTEMPTS = 3
+
+function getBatchSize(): number {
+  const value = Number(process.env.LEAD_OUTREACH_BATCH_SIZE || 10)
+  return Number.isFinite(value) && value > 0 ? Math.min(value, 50) : 10
+}
+
+function getEmailDelayMs(): number {
+  const value = Number(process.env.LEAD_OUTREACH_EMAIL_DELAY_MS || 1500)
+  return Number.isFinite(value) && value >= 0 ? value : 1500
+}
+
+function getWhatsAppDelayMs(): number {
+  const value = Number(process.env.LEAD_OUTREACH_WHATSAPP_DELAY_MS || 500)
+  return Number.isFinite(value) && value >= 0 ? value : 500
+}
+
+export function getOutreachQueueConfig() {
+  return {
+    batchSize: getBatchSize(),
+    emailDelayMs: getEmailDelayMs(),
+    whatsappDelayMs: getWhatsAppDelayMs(),
+    maxAttempts: MAX_ATTEMPTS,
+    cronFrequency: 'Every 2 minutes',
+  }
+}
 
 type OutreachMessage = {
   id: string
@@ -154,21 +178,28 @@ async function refreshCampaignStats(supabase: SupabaseClient, campaignId: string
   }).eq('id', campaignId)
 }
 
-export async function processLeadOutreachQueue(): Promise<{
+export async function processLeadOutreachQueue(campaignId?: string): Promise<{
   processed: number
   sent: number
   failed: number
   skipped: number
 }> {
   const supabase = getSupabaseAdminClient()
+  const batchSize = getBatchSize()
 
-  const { data: pending, error } = await supabase
+  let query = supabase
     .from('lead_outreach_messages')
     .select('id, campaign_id, lead_id, channel, recipient, lead_name, status, attempts, metadata')
     .eq('status', 'pending')
     .lt('attempts', MAX_ATTEMPTS)
     .order('created_at', { ascending: true })
-    .limit(BATCH_SIZE)
+    .limit(batchSize)
+
+  if (campaignId) {
+    query = query.eq('campaign_id', campaignId)
+  }
+
+  const { data: pending, error } = await query
 
   if (error) throw error
   if (!pending?.length) return { processed: 0, sent: 0, failed: 0, skipped: 0 }
@@ -198,9 +229,9 @@ export async function processLeadOutreachQueue(): Promise<{
     if (result.failed) failed++
     if (result.skipped) skipped++
 
-    // Small delay between WhatsApp sends to reduce rate-limit risk
-    if (message.channel === 'whatsapp') {
-      await new Promise((resolve) => setTimeout(resolve, 500))
+    const delayMs = message.channel === 'whatsapp' ? getWhatsAppDelayMs() : getEmailDelayMs()
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
     }
   }
 
@@ -209,6 +240,58 @@ export async function processLeadOutreachQueue(): Promise<{
   }
 
   return { processed: pending.length, sent, failed, skipped }
+}
+
+/** Reset failed (and stuck sending) messages, then process the queue for one campaign. */
+export async function retryFailedCampaignMessages(campaignId: string) {
+  const supabase = getSupabaseAdminClient()
+
+  await supabase
+    .from('lead_outreach_messages')
+    .update({ status: 'pending', error_message: null })
+    .eq('campaign_id', campaignId)
+    .eq('status', 'sending')
+    .lt('attempts', MAX_ATTEMPTS)
+
+  const { data: resetRows, error } = await supabase
+    .from('lead_outreach_messages')
+    .update({ status: 'pending', attempts: 0, error_message: null })
+    .eq('campaign_id', campaignId)
+    .eq('status', 'failed')
+    .select('id')
+
+  if (error) throw error
+
+  await supabase.from('lead_outreach_campaigns').update({
+    status: 'processing',
+    completed_at: null,
+  }).eq('id', campaignId)
+
+  const queueResult = await processLeadOutreachQueue(campaignId)
+
+  return {
+    resetCount: resetRows?.length || 0,
+    ...queueResult,
+  }
+}
+
+/** Process pending messages for one campaign immediately (does not reset failed). */
+export async function processCampaignQueueNow(campaignId: string) {
+  const supabase = getSupabaseAdminClient()
+
+  await supabase
+    .from('lead_outreach_messages')
+    .update({ status: 'pending', error_message: null })
+    .eq('campaign_id', campaignId)
+    .eq('status', 'sending')
+    .lt('attempts', MAX_ATTEMPTS)
+
+  await supabase.from('lead_outreach_campaigns').update({
+    status: 'processing',
+    completed_at: null,
+  }).eq('id', campaignId)
+
+  return processLeadOutreachQueue(campaignId)
 }
 
 export type OutreachWebhookEvent = 'delivered' | 'opened' | 'clicked' | 'failed'

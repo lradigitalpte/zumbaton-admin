@@ -208,6 +208,9 @@ export default function LeadSendComposer({
                   <div className="text-xs text-gray-500">Subject</div>
                   <div className="font-semibold text-gray-900 dark:text-white">{previewSubject}</div>
                   <div className="mt-3 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-200">{previewBody}</div>
+                  <p className="mt-3 text-xs text-indigo-700/80 dark:text-indigo-300/80">
+                    Recipients receive this message inside a branded One Step Fitness email with your logo, trial booking button, phone, and WhatsApp contact details.
+                  </p>
                 </div>
 
                 <label className="flex items-center gap-2 text-sm">
