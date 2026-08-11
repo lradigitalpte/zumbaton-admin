@@ -26,6 +26,72 @@ interface CancelBookingParams {
   forceRefund?: boolean
 }
 
+async function sendMemberBookingStaffEmailNotifications(params: {
+  userId: string
+  classData: Record<string, unknown>
+  tokensUsed: number
+  bookingId?: string
+  bookingNote?: string
+}) {
+  try {
+    const { sendMemberBookingStaffEmailsViaApi, formatBookingDateTime } = await import('@/lib/member-booking-emails')
+    const {
+      isUserBookingConfirmationEmailEnabled,
+    } = await import('@/lib/notification-preference-utils')
+    const { getStaffAlertRecipients } = await import('@/lib/alert-email-recipients')
+
+    const adminClient = getSupabaseAdminClient()
+
+    const { data: userProfile } = await adminClient
+      .from('user_profiles')
+      .select('name, email, phone')
+      .eq('id', params.userId)
+      .single()
+
+    const adminEmails = await getStaffAlertRecipients(adminClient)
+
+    let instructorName = params.classData.instructor_name as string | undefined
+    let tutorEmail: string | undefined
+
+    if (params.classData.instructor_id) {
+      const { data: instructor } = await adminClient
+        .from('user_profiles')
+        .select('name, email')
+        .eq('id', params.classData.instructor_id as string)
+        .single()
+
+      instructorName = instructor?.name || instructorName
+      tutorEmail = instructor?.email || undefined
+    }
+
+    if (tutorEmail) {
+      const tutorWantsEmail = await isUserBookingConfirmationEmailEnabled(adminClient, tutorEmail)
+      if (!tutorWantsEmail) {
+        tutorEmail = undefined
+      }
+    }
+
+    const { formattedDate, formattedTime } = formatBookingDateTime(params.classData.scheduled_at as string)
+
+    await sendMemberBookingStaffEmailsViaApi(adminEmails, {
+      memberName: userProfile?.name || 'Member',
+      memberEmail: userProfile?.email || '',
+      memberPhone: userProfile?.phone || undefined,
+      className: params.classData.title as string,
+      classDate: formattedDate,
+      classTime: formattedTime,
+      classLocation: (params.classData.location as string) || 'TBA',
+      instructorName,
+      tokensUsed: params.tokensUsed,
+      bookingId: params.bookingId,
+      bookingNote: params.bookingNote,
+      tutorEmail,
+    })
+  } catch (error) {
+    console.error('[Booking] Failed to send member booking staff emails:', error)
+  }
+}
+
 // Create a booking (hold tokens)
 export async function createBooking(params: CreateBookingParams): Promise<BookingResponse> {
   const { userId, classId } = params
@@ -276,6 +342,13 @@ export async function createBooking(params: CreateBookingParams): Promise<Bookin
         })
       }
     }
+
+    await sendMemberBookingStaffEmailNotifications({
+      userId,
+      classData,
+      tokensUsed: classData.token_cost,
+      bookingId: booking.id as string,
+    })
   } catch (notificationError) {
     // Log but don't fail the booking if notification fails
     console.error('[Booking] Error sending confirmation notification:', notificationError)
@@ -446,6 +519,18 @@ async function createCourseBooking(
   const firstBooking = createdBookings?.[0]
   if (!firstBooking) {
     throw new ApiError('SERVER_ERROR', 'Failed to create course bookings', 500)
+  }
+
+  try {
+    await sendMemberBookingStaffEmailNotifications({
+      userId,
+      classData: parentClassData,
+      tokensUsed: totalTokensNeeded,
+      bookingId: firstBooking.id as string,
+      bookingNote: `${futureSessions.length} session${futureSessions.length !== 1 ? 's' : ''} booked`,
+    })
+  } catch (notificationError) {
+    console.error('[Booking] Error sending course booking staff emails:', notificationError)
   }
 
   return {
@@ -1129,6 +1214,16 @@ export async function createBatchBooking(params: BatchBookingParams): Promise<Ba
             },
           })
         }
+      }
+
+      for (const classData of classes) {
+        const bookingRecord = createdBookings.find((booking) => booking.class_id === classData.id)
+        await sendMemberBookingStaffEmailNotifications({
+          userId,
+          classData,
+          tokensUsed: classData.token_cost,
+          bookingId: bookingRecord?.id,
+        })
       }
     } catch (notificationError) {
       console.error('Error sending notifications:', notificationError)

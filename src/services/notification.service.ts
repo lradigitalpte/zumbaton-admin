@@ -118,6 +118,25 @@ export async function sendNotification(
     return { notificationId: '', status: 'failed', sentAt: null }
   }
 
+  const granularPrefs = await getGranularPreferences(userId)
+  const granularPref = granularPrefs[type as string]
+  if (granularPref) {
+    if (channel === 'email' && granularPref.email === false) {
+      console.log(`[Notification] Skipped: ${type} email disabled for user ${userId}`)
+      return { notificationId: '', status: 'failed', sentAt: null }
+    }
+
+    if ((channel === 'in_app' || channel === 'push') && granularPref.push === false) {
+      console.log(`[Notification] Skipped: ${type} in-app disabled for user ${userId}`)
+      return { notificationId: '', status: 'failed', sentAt: null }
+    }
+
+    if (channel === 'sms' && granularPref.sms === false) {
+      console.log(`[Notification] Skipped: ${type} SMS disabled for user ${userId}`)
+      return { notificationId: '', status: 'failed', sentAt: null }
+    }
+  }
+
   // Get template
   const template = await getTemplate(type)
   
@@ -531,6 +550,18 @@ async function getTemplateId(type: NotificationType): Promise<string | null> {
     .single()
 
   return data?.id || null
+}
+
+async function getGranularPreferences(
+  userId: string
+): Promise<Record<string, { email?: boolean; push?: boolean; sms?: boolean }>> {
+  const { data } = await getSupabaseAdminClient()
+    .from('user_notification_preferences')
+    .select('granular_preferences')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  return (data?.granular_preferences as Record<string, { email?: boolean; push?: boolean; sms?: boolean }>) || {}
 }
 
 // =====================================================
