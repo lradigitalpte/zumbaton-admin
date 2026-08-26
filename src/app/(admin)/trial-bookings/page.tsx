@@ -5,7 +5,7 @@ import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/components/ui/Toast";
-import { RefreshCw, Mail, Phone, User, Search, Trash2, CheckCircle, XCircle, Eye, Loader2 } from "lucide-react";
+import { RefreshCw, Mail, Phone, User, Search, Trash2, CheckCircle, XCircle, Eye, Loader2, UserPlus } from "lucide-react";
 import Pagination from "@/components/tables/Pagination";
 import { Modal } from "@/components/ui/modal";
 import Button from "@/components/ui/button/Button";
@@ -70,6 +70,63 @@ export default function TrialBookingsPage() {
   const [selectedBooking, setSelectedBooking] = useState<TrialBooking | null>(null);
   const [syncingPaymentId, setSyncingPaymentId] = useState<string | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+
+  // Companion (2nd Guest) Modal State
+  const [companionModalOpen, setCompanionModalOpen] = useState(false);
+  const [companionBooking, setCompanionBooking] = useState<TrialBooking | null>(null);
+  const [companionForm, setCompanionForm] = useState({
+    guestName: "",
+    guestPhone: "",
+    guestDateOfBirth: "",
+    guestEmail: "",
+    gender: "female",
+  });
+  const [submittingCompanion, setSubmittingCompanion] = useState(false);
+
+  const handleOpenCompanionModal = (booking: TrialBooking) => {
+    setCompanionBooking(booking);
+    const p2 = getParticipant2(booking);
+    setCompanionForm({
+      guestName: p2?.name || "",
+      guestPhone: p2?.phone || "",
+      guestDateOfBirth: p2?.dateOfBirth || "",
+      guestEmail: p2?.email || "",
+      gender: p2?.gender || "female",
+    });
+    setCompanionModalOpen(true);
+  };
+
+  const handleAddCompanionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!companionBooking) return;
+    if (!companionForm.guestName.trim()) {
+      showToast("Companion name is required", "error");
+      return;
+    }
+    if (!companionForm.guestPhone.trim()) {
+      showToast("Companion phone number is required", "error");
+      return;
+    }
+
+    try {
+      setSubmittingCompanion(true);
+      const response = await api.post(`/api/trial-bookings/${companionBooking.id}/companion`, companionForm);
+      if (response.error) {
+        showToast(response.error?.message || "Failed to add 2nd guest", "error");
+        return;
+      }
+      showToast("2nd guest (companion) added successfully!", "success");
+      setCompanionModalOpen(false);
+      setCompanionBooking(null);
+      await fetchBookings();
+      await fetchStats();
+    } catch (error: any) {
+      console.error("Error adding companion:", error);
+      showToast(error.message || "Failed to add 2nd guest", "error");
+    } finally {
+      setSubmittingCompanion(false);
+    }
+  };
 
   // All-time bookings fetched once for monthly stats (not affected by filters)
   const [allBookingsForStats, setAllBookingsForStats] = useState<TrialBooking[]>([]);
@@ -139,6 +196,12 @@ export default function TrialBookingsPage() {
       setBookings(list);
       setTotalPages(payload?.pagination?.totalPages ?? 1);
       setTotal(payload?.pagination?.total ?? 0);
+
+      // Keep selectedBooking updated with fresh data if modal is open
+      setSelectedBooking((prev) => {
+        if (!prev) return null;
+        return list.find((b) => b.id === prev.id) || prev;
+      });
     } catch (error: any) {
       console.error("Error fetching trial bookings:", error);
       showToast(error.message || "Failed to fetch trial bookings", "error");
@@ -238,17 +301,49 @@ export default function TrialBookingsPage() {
     return age !== null && age < 13;
   };
 
+  const getParticipant2 = (booking: TrialBooking) => {
+    if (booking.payment?.metadata?.participant2) {
+      const p2 = booking.payment.metadata.participant2;
+      return {
+        name: p2.name || "",
+        phone: p2.phone || "",
+        email: p2.email || "",
+        dateOfBirth: p2.dateOfBirth || p2.guestDateOfBirth || null,
+        gender: p2.gender || null,
+      };
+    }
+    if (booking.cancellationReason && booking.cancellationReason.includes("Companion:")) {
+      const namePhoneMatch = booking.cancellationReason.match(/Companion:\s*([^(|]+)(?:\(([^)]+)\))?/);
+      const dobMatch = booking.cancellationReason.match(/DOB:\s*([^|]+)/);
+      const genderMatch = booking.cancellationReason.match(/Gender:\s*([^|]+)/);
+      if (namePhoneMatch) {
+        const dobVal = dobMatch ? dobMatch[1].trim() : "";
+        const genderVal = genderMatch ? genderMatch[1].trim() : "";
+        return {
+          name: namePhoneMatch[1].trim(),
+          phone: namePhoneMatch[2]?.trim() || "",
+          email: "",
+          dateOfBirth: dobVal && dobVal !== "N/A" ? dobVal : null,
+          gender: genderVal && genderVal !== "N/A" ? genderVal : null,
+        };
+      }
+    }
+    return null;
+  };
+
   const isZumFamiliaBooking = (booking: TrialBooking): boolean =>
     booking.payment?.metadata?.flow_type === "zumfamilia";
 
   const isDuoTrialBooking = (booking: TrialBooking): boolean =>
-    booking.payment?.metadata?.flow_type === "duo_trial";
+    booking.payment?.metadata?.flow_type === "duo_trial" ||
+    Boolean(getParticipant2(booking)) ||
+    Boolean(booking.cancellationReason?.includes("DUO COMPANION"));
 
   type BookingType = 'trial' | 'duo-trial' | 'zumfamilia' | 'zumfiesta';
   const getBookingType = (booking: TrialBooking): BookingType => {
     const flow = booking.payment?.metadata?.flow_type;
     if (flow === 'zumfamilia') return 'zumfamilia';
-    if (flow === 'duo_trial') return 'duo-trial';
+    if (flow === 'duo_trial' || getParticipant2(booking) || booking.cancellationReason?.includes("DUO COMPANION")) return 'duo-trial';
     if (flow === 'zt_fiesta') return 'zumfiesta';
     return 'trial';
   };
@@ -562,7 +657,7 @@ export default function TrialBookingsPage() {
                       const primaryName = getPrimaryContactName(booking);
                       const primaryEmail = getPrimaryContactEmail(booking);
                       const primaryPhone = getPrimaryContactPhone(booking);
-                      const p2 = isDuo ? booking.payment?.metadata?.participant2 : null;
+                      const p2 = getParticipant2(booking);
                       const isBusy = updatingStatus === booking.id || deletingId === booking.id || syncingPaymentId === booking.id;
 
                       return (
@@ -584,7 +679,13 @@ export default function TrialBookingsPage() {
                               {booking.guestDateOfBirth && <span className="ml-1.5">· Age {calculateAge(booking.guestDateOfBirth)}</span>}
                             </p>
                             {isZumFamilia && <p className="text-emerald-600 dark:text-emerald-400 font-medium mt-0.5 text-[10px]">Child: {booking.guestName}{booking.guestDateOfBirth ? ` (${calculateAge(booking.guestDateOfBirth)} yrs)` : ""}</p>}
-                            {isDuo && p2 && <p className="text-lime-600 dark:text-lime-400 font-medium mt-0.5 text-[10px]">P2: {p2.name || "—"}{p2.phone ? ` · ${p2.phone}` : ""}</p>}
+                            {p2 && (
+                              <p className="text-lime-600 dark:text-lime-400 font-bold mt-0.5 text-[10px]">
+                                P2 (2nd Guest): {p2.name || "—"}{p2.phone ? ` · ${p2.phone}` : ""}
+                                {p2.dateOfBirth ? ` · Age ${calculateAge(p2.dateOfBirth)}` : ""}
+                                {p2.gender ? ` · ${p2.gender.charAt(0).toUpperCase() + p2.gender.slice(1)}` : ""}
+                              </p>
+                            )}
                             <p className="text-[10px] text-gray-300 dark:text-gray-600 mt-0.5">Booked {formatDate(booking.bookedAt)}</p>
                           </td>
 
@@ -639,6 +740,12 @@ export default function TrialBookingsPage() {
                                     <button onClick={() => { setSelectedBooking(booking); setDetailsModalOpen(true); setOpenDropdownId(null); }}
                                       className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                                       <Eye className="w-3.5 h-3.5 text-gray-500" /> View Details
+                                    </button>
+
+                                    {/* Add 2nd Guest / Companion */}
+                                    <button onClick={() => { handleOpenCompanionModal(booking); setOpenDropdownId(null); }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-lime-700 dark:text-lime-400 hover:bg-lime-50 dark:hover:bg-lime-900/20 transition-colors font-semibold border-t border-b border-gray-100 dark:border-gray-800">
+                                      <UserPlus className="w-3.5 h-3.5" /> + Add 2nd Guest
                                     </button>
 
                                     {isDraft && (
@@ -754,7 +861,7 @@ export default function TrialBookingsPage() {
                 <div><span className="font-medium">Primary Contact:</span> {getPrimaryContactName(selectedBooking)}</div>
                 <div><span className="font-medium">Primary Email:</span> {getPrimaryContactEmail(selectedBooking)}</div>
                 <div><span className="font-medium">Primary Phone:</span> {getPrimaryContactPhone(selectedBooking) || "N/A"}</div>
-                <div><span className="font-medium">Child Name:</span> {selectedBooking.guestName}</div>
+                <div><span className="font-medium">{isKidBooking(selectedBooking) ? "Child Name:" : "Guest Name:"}</span> {selectedBooking.guestName}</div>
                 <div><span className="font-medium">Date of Birth:</span> {selectedBooking.guestDateOfBirth || "N/A"}</div>
                 <div><span className="font-medium">Class:</span> {selectedBooking.class?.title || "N/A"}</div>
                 <div>
@@ -765,13 +872,51 @@ export default function TrialBookingsPage() {
                     {getDisplayScheduleTime(selectedBooking)}
                   </span>
                 </div>
+                <div>
+                  <span className="font-medium">Booked On:</span>{" "}
+                  <span className="text-gray-900 dark:text-white font-medium">
+                    {selectedBooking.bookedAt ? formatDateTime(selectedBooking.bookedAt) : "N/A"}
+                  </span>
+                </div>
                 <div><span className="font-medium">Payment:</span> {selectedBooking.payment ? `${(selectedBooking.payment.amountCents / 100).toFixed(2)} ${selectedBooking.payment.currency}` : "No payment"}</div>
                 <div><span className="font-medium">Payment Status:</span> {selectedBooking.payment?.status || "N/A"}</div>
               </div>
+
+              {/* 2nd Guest (Companion) Box */}
+              {(() => {
+                const bookingP2 = selectedBooking ? getParticipant2(selectedBooking) : null;
+                if (bookingP2) {
+                  return (
+                    <div className="rounded-lg border border-lime-300 dark:border-lime-700 p-3.5 bg-lime-50 dark:bg-lime-950/40 space-y-2">
+                      <div className="font-bold text-lime-900 dark:text-lime-300 flex items-center justify-between text-xs uppercase tracking-wide">
+                        <span className="flex items-center gap-1.5"><UserPlus className="w-4 h-4" /> 2nd Guest (1-for-1 Companion) Details</span>
+                        <span className="rounded bg-lime-200 dark:bg-lime-900/60 text-lime-900 dark:text-lime-200 px-2 py-0.5 text-[10px]">Attached</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div><span className="font-semibold text-gray-900 dark:text-white">Companion Name:</span> {bookingP2.name}</div>
+                        <div><span className="font-semibold text-gray-900 dark:text-white">Companion Phone:</span> {bookingP2.phone || "N/A"}</div>
+                        <div>
+                          <span className="font-semibold text-gray-900 dark:text-white">Age:</span>{" "}
+                          {bookingP2.dateOfBirth && bookingP2.dateOfBirth !== "N/A" ? `${calculateAge(bookingP2.dateOfBirth)} yrs (${bookingP2.dateOfBirth})` : "N/A"}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-gray-900 dark:text-white">Gender:</span>{" "}
+                          {bookingP2.gender && bookingP2.gender !== "N/A" ? bookingP2.gender.charAt(0).toUpperCase() + bookingP2.gender.slice(1).replace('_', ' ') : "N/A"}
+                        </div>
+                        <div className="col-span-1 sm:col-span-2">
+                          <span className="font-semibold text-gray-900 dark:text-white">Companion Email:</span> {bookingP2.email || "N/A"}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               {selectedBooking.cancellationReason && (
                 <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-800/50">
                   <div className="font-medium mb-2 flex items-center gap-2">
-                    <span>Waiver (stored on this booking)</span>
+                    <span>Waiver / Booking Notes</span>
                     {/PENDING/.test(selectedBooking.cancellationReason) ? (
                       <span className="rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
                         Not signed yet
@@ -782,7 +927,7 @@ export default function TrialBookingsPage() {
                       </span>
                     )}
                   </div>
-                  <p className="text-gray-700 dark:text-gray-300 break-words">{selectedBooking.cancellationReason}</p>
+                  <p className="text-gray-700 dark:text-gray-300 break-words text-xs">{selectedBooking.cancellationReason}</p>
                   {/PENDING/.test(selectedBooking.cancellationReason) && (
                     <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
                       Guest agreed to the waiver before paying but hasn&apos;t completed NRIC + signature. Collect this at check-in.
@@ -790,37 +935,7 @@ export default function TrialBookingsPage() {
                   )}
                 </div>
               )}
-              {isDuoTrialBooking(selectedBooking) && selectedBooking.payment?.metadata && (
-                <div className="rounded-lg border border-lime-300 dark:border-lime-700 p-3 bg-lime-50 dark:bg-lime-950/30">
-                  <div className="font-medium mb-2">Duo Trial — both participants (payment metadata)</div>
-                  <div className="space-y-2">
-                    <div>
-                      <span className="font-medium">Participant 1 (payer):</span>{" "}
-                      {selectedBooking.payment.metadata.participant1?.name || "N/A"}
-                      {selectedBooking.payment.metadata.participant1?.email
-                        ? ` · ${selectedBooking.payment.metadata.participant1.email}`
-                        : ""}
-                      {selectedBooking.payment.metadata.participant1?.phone
-                        ? ` · ${selectedBooking.payment.metadata.participant1.phone}`
-                        : ""}
-                      {selectedBooking.payment.metadata.participant1?.nricLast4
-                        ? ` · NRIC …${selectedBooking.payment.metadata.participant1.nricLast4}`
-                        : ""}
-                    </div>
-                    <div>
-                      <span className="font-medium">Participant 2:</span>{" "}
-                      {selectedBooking.payment.metadata.participant2?.name || "N/A"}
-                      {selectedBooking.payment.metadata.participant2?.phone
-                        ? ` · ${selectedBooking.payment.metadata.participant2.phone}`
-                        : ""}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      Full waiver fields (NRIC, signature) are on each guest row under “Waiver” above, and in Supabase{" "}
-                      <code className="text-xs">payments.metadata</code> for the shared payment.
-                    </div>
-                  </div>
-                </div>
-              )}
+
               {isZumFamiliaBooking(selectedBooking) && (
                 <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-800/50">
                   <div className="font-medium mb-2">ZumFamilia Extras</div>
@@ -831,7 +946,18 @@ export default function TrialBookingsPage() {
               )}
             </div>
           )}
-          <div className="flex justify-end mt-6">
+          <div className="flex justify-between items-center mt-6">
+            <Button
+              size="sm"
+              className="bg-lime-600 hover:bg-lime-700 text-white flex items-center gap-1.5 border-0 font-medium"
+              onClick={() => {
+                setDetailsModalOpen(false);
+                if (selectedBooking) handleOpenCompanionModal(selectedBooking);
+              }}
+            >
+              <UserPlus className="w-4 h-4" />
+              + Add / Edit 2nd Guest
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -952,6 +1078,126 @@ export default function TrialBookingsPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Companion (2nd Guest) Modal */}
+      <Modal
+        isOpen={companionModalOpen}
+        onClose={() => {
+          setCompanionModalOpen(false);
+          setCompanionBooking(null);
+        }}
+        className="max-w-[500px] w-full"
+      >
+        <form onSubmit={handleAddCompanionSubmit} className="p-6">
+          <div className="flex items-center gap-2 mb-2 text-lime-700 dark:text-lime-400">
+            <UserPlus className="w-5 h-5" />
+            <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Add 2nd Guest (1-for-1 Companion)
+            </h4>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mb-4">
+            Attaching a 2nd participant for <strong>{companionBooking?.guestName}</strong>&apos;s booking on{" "}
+            <strong>{companionBooking?.class?.title || "Class"}</strong>.
+          </p>
+
+          <div className="space-y-4 text-sm">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Companion Full Name *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Sarah Tan"
+                value={companionForm.guestName}
+                onChange={(e) => setCompanionForm({ ...companionForm, guestName: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-lime-500 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Companion Phone Number *
+              </label>
+              <input
+                type="tel"
+                required
+                placeholder="e.g. 91234567"
+                value={companionForm.guestPhone}
+                onChange={(e) => setCompanionForm({ ...companionForm, guestPhone: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-lime-500 text-sm"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Date of Birth
+                </label>
+                <input
+                  type="date"
+                  value={companionForm.guestDateOfBirth}
+                  onChange={(e) => setCompanionForm({ ...companionForm, guestDateOfBirth: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-lime-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Gender
+                </label>
+                <select
+                  value={companionForm.gender}
+                  onChange={(e) => setCompanionForm({ ...companionForm, gender: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-lime-500 text-sm"
+                >
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                  <option value="other">Other</option>
+                  <option value="prefer_not_to_say">Prefer not to say</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Companion Email (Optional)
+              </label>
+              <input
+                type="email"
+                placeholder="e.g. companion@email.com (optional)"
+                value={companionForm.guestEmail}
+                onChange={(e) => setCompanionForm({ ...companionForm, guestEmail: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-lime-500 text-sm"
+              />
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                If left blank, a guest placeholder email will be auto-generated.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-100 dark:border-gray-800 mt-6">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setCompanionModalOpen(false);
+                setCompanionBooking(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={submittingCompanion}
+              className="bg-lime-600 hover:bg-lime-700 text-white border-0 font-medium"
+            >
+              {submittingCompanion ? "Saving..." : "Add Companion Booking"}
+            </Button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

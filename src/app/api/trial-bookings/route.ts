@@ -56,6 +56,7 @@ export async function GET(request: NextRequest) {
         )
       `, { count: 'exact' })
       .eq('is_trial_booking', true)
+      .or('cancellation_reason.is.null,cancellation_reason.not.ilike.%DUO COMPANION%')
       .order('booked_at', { ascending: false })
 
     // Apply status filter
