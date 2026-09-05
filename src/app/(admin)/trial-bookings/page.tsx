@@ -143,23 +143,23 @@ export default function TrialBookingsPage() {
 
   // Monthly breakdown computed from all bookings
   const monthlyStats = useMemo(() => {
-    const byMonth: Record<string, { key: string; label: string; total: number; paid: number; draft: number; attended: number }> = {};
+    const byMonth: Record<string, { key: string; label: string; total: number; paid: number; draft: number; attended: number; needsScheduling: number }> = {};
     allBookingsForStats.forEach((b) => {
       const d = new Date(b.bookedAt);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       const label = d.toLocaleDateString("en-SG", { month: "short", year: "numeric" });
-      if (!byMonth[key]) byMonth[key] = { key, label, total: 0, paid: 0, draft: 0, attended: 0 };
+      if (!byMonth[key]) byMonth[key] = { key, label, total: 0, paid: 0, draft: 0, attended: 0, needsScheduling: 0 };
       byMonth[key].total++;
-      if (b.status === "confirmed") byMonth[key].paid++;
-      if (b.status === "attended") { byMonth[key].paid++; byMonth[key].attended++; }
+      if (["succeeded", "completed"].includes(b.payment?.status || "") || ["confirmed", "attended", "needs_scheduling"].includes(b.status)) byMonth[key].paid++;
+      if (b.status === "attended") byMonth[key].attended++;
       if (b.status === "draft") byMonth[key].draft++;
+      if (b.status === "needs_scheduling") byMonth[key].needsScheduling++;
     });
     return Object.values(byMonth).sort((a, b) => a.key.localeCompare(b.key));
   }, [allBookingsForStats]);
 
   const currentMonthKey = useMemo(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" }).slice(0, 7);
   }, []);
 
   const fetchBookings = async () => {
@@ -179,10 +179,10 @@ export default function TrialBookingsPage() {
       }
 
       if (dateFrom) {
-        params.set("startDate", new Date(dateFrom + "T00:00:00.000Z").toISOString());
+        params.set("startDate", new Date(dateFrom + "T00:00:00+08:00").toISOString());
       }
       if (dateTo) {
-        params.set("endDate", new Date(dateTo + "T23:59:59.999Z").toISOString());
+        params.set("endDate", new Date(dateTo + "T23:59:59.999+08:00").toISOString());
       }
 
       const response = await api.get<{ success: boolean; data: TrialBooking[]; pagination: { totalPages: number; total: number } }>(`/api/trial-bookings?${params.toString()}`);
@@ -453,7 +453,7 @@ export default function TrialBookingsPage() {
             Guest Bookings
           </h1>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Trials · Duo Trials · ZumFamilia · ZumFiesta — all guest bookings in one place
+            Paid trials, customers awaiting a class, and confirmed guest bookings in one place
           </p>
         </div>
         <button
@@ -541,11 +541,16 @@ export default function TrialBookingsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
           <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">Total</div>
           <div className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{total}</div>
         </div>
+        <button type="button" onClick={() => { setStatusFilter("needs_scheduling"); setCurrentPage(1); }} className="text-left bg-amber-50 dark:bg-amber-900/20 rounded-xl border-2 border-amber-300 dark:border-amber-700 p-4 transition hover:border-amber-500">
+          <div className="text-xs text-amber-700 dark:text-amber-300 uppercase tracking-wide font-bold">Paid · Needs class</div>
+          <div className="text-2xl font-bold text-amber-700 dark:text-amber-300 mt-1">{bookings.filter((b) => b.status === "needs_scheduling").length}</div>
+          <div className="text-[10px] text-amber-600 mt-0.5">Click to follow up</div>
+        </button>
         <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-800 p-4">
           <div className="text-xs text-yellow-600 dark:text-yellow-400 uppercase tracking-wide font-medium">Draft ⚠️</div>
           <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">
@@ -605,6 +610,7 @@ export default function TrialBookingsPage() {
                       {m.attended > 0 && <span className="text-[9px] text-blue-500 font-semibold">{m.attended} att.</span>}
                     </div>
                     {m.draft > 0 && <span className="text-[9px] text-yellow-600 dark:text-yellow-400 font-semibold">⚠ {m.draft} draft</span>}
+                    {m.needsScheduling > 0 && <span className="text-[9px] text-amber-700 dark:text-amber-300 font-bold">! {m.needsScheduling} needs class</span>}
                   </div>
                 </div>
               );
@@ -666,7 +672,7 @@ export default function TrialBookingsPage() {
                       return (
                         <tr
                           key={booking.id}
-                          className={`hover:bg-gray-50 dark:hover:bg-gray-800/60 align-top ${config.rowBorder} ${isDraft ? "bg-yellow-50/40 dark:bg-yellow-900/10" : ""}`}
+                          className={`hover:bg-gray-50 dark:hover:bg-gray-800/60 align-top ${config.rowBorder} ${isDraft ? "bg-yellow-50/40 dark:bg-yellow-900/10" : ""} ${isUnscheduled ? "bg-amber-50 dark:bg-amber-950/30 ring-1 ring-inset ring-amber-200 dark:ring-amber-800" : ""}`}
                         >
                           {/* Guest — name, badges, contact, secondary info */}
                           <td className="px-4 py-3">
