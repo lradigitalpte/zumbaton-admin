@@ -266,6 +266,7 @@ export default function TrialBookingsPage() {
       cancelled: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
       "cancelled-late": "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
       "no-show": "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400",
+      needs_scheduling: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-300",
     };
 
     return (
@@ -274,7 +275,7 @@ export default function TrialBookingsPage() {
           styles[status as keyof typeof styles] || styles.confirmed
         }`}
       >
-        {status === "draft" ? "⚠ Draft" : status.charAt(0).toUpperCase() + status.slice(1).replace("-", " ")}
+        {status === "draft" ? "⚠ Draft" : status === "needs_scheduling" ? "Paid · Needs class" : status.charAt(0).toUpperCase() + status.slice(1).replace("-", " ")}
       </span>
     );
   };
@@ -488,6 +489,7 @@ export default function TrialBookingsPage() {
           >
             <option value="all">All Statuses</option>
             <option value="draft">Draft</option>
+            <option value="needs_scheduling">Paid · Needs class</option>
             <option value="confirmed">Confirmed</option>
             <option value="attended">Attended</option>
             <option value="cancelled">Cancelled</option>
@@ -651,6 +653,7 @@ export default function TrialBookingsPage() {
                       const type = getBookingType(booking);
                       const config = BOOKING_TYPE_CONFIG[type];
                       const isDraft = booking.status === "draft";
+                      const isUnscheduled = booking.status === "needs_scheduling";
                       const isKid = isKidBooking(booking);
                       const isZumFamilia = type === "zumfamilia";
                       const isDuo = type === "duo-trial";
@@ -701,7 +704,9 @@ export default function TrialBookingsPage() {
                                 <p className="text-gray-600 dark:text-gray-300 mt-0.5">{getDisplayScheduleTime(booking)}</p>
                               </>
                             ) : (
-                              <span className="text-gray-400 italic">—</span>
+                              isUnscheduled ? (
+                                <div><p className="font-bold text-amber-700 dark:text-amber-300">Class not selected</p><p className="text-xs text-amber-600">Staff follow-up required</p></div>
+                              ) : <span className="text-gray-400 italic">—</span>
                             )}
                           </td>
 
@@ -720,10 +725,15 @@ export default function TrialBookingsPage() {
                           {/* Actions — dropdown */}
                           <td className="px-4 py-3">
                             <div className="relative">
+                              {isUnscheduled && (
+                                <a href={`/leads?search=${encodeURIComponent(primaryEmail || primaryPhone || primaryName)}`} className="inline-flex rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-700">
+                                  Schedule in Leads
+                                </a>
+                              )}
                               <button
                                 onClick={() => setOpenDropdownId(openDropdownId === booking.id ? null : booking.id)}
-                                disabled={isBusy}
-                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50"
+                                disabled={isBusy || isUnscheduled}
+                                className={`${isUnscheduled ? "hidden" : "flex"} items-center gap-1.5 px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50`}
                               >
                                 {isBusy
                                   ? <Loader2 className="w-3 h-3 animate-spin" />

@@ -77,9 +77,9 @@ export async function GET(request: NextRequest) {
       query = query.lte('booked_at', endDate)
     }
 
-    // Get total count and paginated results
+    // Fetch matching bookings, then merge paid trial payments that do not yet
+    // have a class/booking so Guest Bookings is also an operational follow-up list.
     const { data: bookings, error, count } = await query
-      .range(offset, offset + pageSize - 1)
 
     // Debug: confirm we're reading from DB (admin and web must use same Supabase project)
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
@@ -153,14 +153,58 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    let unscheduledQuery = supabase
+      .from('payments')
+      .select('id, amount_cents, currency, status, created_at, hitpay_payment_request_id, metadata')
+      .eq('is_trial_booking', true)
+      .in('status', ['succeeded', 'completed'])
+      .is('class_id', null)
+      .eq('metadata->>flow_type', 'quick_trial')
+      .eq('metadata->>needs_scheduling', 'true')
+    if (startDate) unscheduledQuery = unscheduledQuery.gte('created_at', startDate)
+    if (endDate) unscheduledQuery = unscheduledQuery.lte('created_at', endDate)
+    const { data: unscheduledPayments, error: unscheduledError } = await unscheduledQuery
+    if (unscheduledError) console.error('[Trial Bookings API] Unscheduled payments error:', unscheduledError)
+
+    const bookingPaymentIds = new Set((bookings || []).map((booking: any) => booking.payment_id).filter(Boolean))
+    const virtualBookings = (unscheduledPayments || [])
+      .filter((payment: any) => !bookingPaymentIds.has(payment.id))
+      .map((payment: any) => {
+        const metadata = payment.metadata || {}
+        return {
+          id: `payment:${payment.id}`,
+          guestName: metadata.guest_name || 'Guest',
+          guestEmail: metadata.guest_email || '',
+          guestPhone: metadata.guest_phone || '',
+          guestDateOfBirth: null,
+          status: 'needs_scheduling',
+          bookedAt: payment.created_at,
+          cancelledAt: null,
+          cancellationReason: null,
+          paymentId: payment.id,
+          class: null,
+          payment: {
+            id: payment.id, amountCents: payment.amount_cents, currency: payment.currency,
+            status: payment.status, createdAt: payment.created_at,
+            hitpayPaymentRequestId: payment.hitpay_payment_request_id, metadata,
+          },
+        }
+      })
+      .filter((booking: any) => !search || [booking.guestName, booking.guestEmail, booking.guestPhone].some((value) => String(value).toLowerCase().includes(search.toLowerCase())))
+
+    const includeVirtual = !status || status === 'needs_scheduling'
+    const combined = [...(status === 'needs_scheduling' ? [] : formattedBookings), ...(includeVirtual ? virtualBookings : [])]
+      .sort((a, b) => new Date(b.bookedAt).getTime() - new Date(a.bookedAt).getTime())
+    const paginated = combined.slice(offset, offset + pageSize)
+
     return NextResponse.json({
       success: true,
-      data: formattedBookings,
+      data: paginated,
       pagination: {
         page,
         pageSize,
-        total: count || 0,
-        totalPages: Math.ceil((count || 0) / pageSize),
+        total: combined.length,
+        totalPages: Math.ceil(combined.length / pageSize),
       },
     })
   } catch (error) {
