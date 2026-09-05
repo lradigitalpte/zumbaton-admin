@@ -59,7 +59,9 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseAdminClient()
     const [marketing, quickJoin, staff] = await Promise.all([
       supabase.from('marketing_leads').select('*, assignee:user_profiles!marketing_leads_assigned_to_fkey(name)').order('created_at', { ascending: false }).limit(1000),
-      supabase.from('payments').select('id, created_at, updated_at, amount_cents, status, provider, metadata').eq('metadata->>flow_type', 'quick_join').order('created_at', { ascending: false }).limit(500),
+      supabase.from('payments').select('id, created_at, updated_at, amount_cents, status, provider, metadata')
+        .or('metadata->>flow_type.eq.quick_join,and(metadata->>flow_type.eq.quick_trial,metadata->>needs_scheduling.eq.true)')
+        .order('created_at', { ascending: false }).limit(500),
       supabase.from('user_profiles').select('id, name, role').in('role', ['super_admin', 'admin', 'staff', 'receptionist']).eq('is_active', true).order('name'),
     ])
     if (marketing.error) throw marketing.error
