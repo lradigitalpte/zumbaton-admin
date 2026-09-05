@@ -70,7 +70,7 @@ const getNavItems = (user: { role: string } | null): NavItem[] => [
     icon: <TableIcon />,
     subItems: [
       { name: "Packages", path: "/packages", pro: false },
-      { name: "Transactions", path: "/tokens", pro: false },
+      { name: "Payments & Activity", path: "/tokens", pro: false },
       { name: "Adjustments", path: "/tokens/adjustments", pro: false },
     ],
   },

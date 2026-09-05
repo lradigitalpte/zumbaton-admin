@@ -11,10 +11,11 @@ import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/api-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-type PageTab = "transactions" | "active_bookings" | "expiring_soon" | "expired";
+type PageTab = "payments" | "transactions" | "active_bookings" | "expiring_soon" | "expired";
 
 const pageTabs: { value: PageTab; label: string }[] = [
-  { value: "transactions", label: "All Transactions" },
+  { value: "payments", label: "Payments" },
+  { value: "transactions", label: "Token Activity" },
   { value: "active_bookings", label: "Bookings" },
   { value: "expiring_soon", label: "Expiring in 7 Days" },
   { value: "expired", label: "Expired Tokens" },
@@ -131,8 +132,14 @@ interface ActiveBooking {
   bookedAt: string;
 }
 
+interface PaymentLedgerItem {
+  id: string; createdAt: string; status: string; amount: number; currency: string; provider: string;
+  customerName: string; customerEmail: string; flowType: string; needsScheduling: boolean;
+  className: string; classAt: string | null; bookingStatus: string;
+}
+
 export default function TokenTransactionsPage() {
-  const [activeTab, setActiveTab] = useState<PageTab>("transactions");
+  const [activeTab, setActiveTab] = useState<PageTab>("payments");
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -166,6 +173,19 @@ export default function TokenTransactionsPage() {
       return response.data?.data;
     },
     enabled: activeTab === "active_bookings",
+  });
+
+  const { data: paymentsData, isLoading: paymentsLoading, error: paymentsError } = useQuery({
+    queryKey: ["payment-ledger", dateRange, currentPage, itemsPerPage],
+    queryFn: async () => {
+      const params = new URLSearchParams({ page: String(currentPage), pageSize: String(itemsPerPage) });
+      if (dateParams.startDate) params.set("startDate", dateParams.startDate);
+      if (dateParams.endDate) params.set("endDate", dateParams.endDate);
+      const response = await api.get<{ success: boolean; data: { payments: PaymentLedgerItem[]; total: number } }>(`/api/payments/ledger?${params}`);
+      if (response.error) throw new Error(response.error.message || "Failed to load payments");
+      return response.data?.data;
+    },
+    enabled: activeTab === "payments",
   });
 
   // Pending payments
@@ -527,7 +547,7 @@ export default function TokenTransactionsPage() {
 
   return (
     <div className="space-y-6">
-      <PageBreadCrumb pageTitle="Token Transactions" />
+      <PageBreadCrumb pageTitle="Payments & Activity" />
 
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -538,9 +558,9 @@ export default function TokenTransactionsPage() {
             </svg>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Token Transactions</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Payments & Activity</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Track all token movements across your platform
+              See who paid, payment status, bookings, and token activity
             </p>
           </div>
         </div>
@@ -739,7 +759,9 @@ export default function TokenTransactionsPage() {
       <div className="flex flex-wrap gap-2">
         {pageTabs.map((tab) => {
           const count =
-            tab.value === "transactions"
+            tab.value === "payments"
+              ? paymentsData?.total ?? 0
+              : tab.value === "transactions"
               ? data?.total ?? 0
               : tab.value === "active_bookings"
                 ? activeBookingsData?.total ?? 0
@@ -898,7 +920,9 @@ export default function TokenTransactionsPage() {
           {activeTab !== "transactions" && (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                {activeTab === "active_bookings"
+                {activeTab === "payments"
+                  ? "Every payment from packages and guest trials. Paid customers needing a class are clearly flagged."
+                  : activeTab === "active_bookings"
                   ? "Every booking, including confirmed, attended, waitlisted, and cancelled records, ordered by submission time."
                   : activeTab === "expiring_soon"
                   ? "Active packages expiring within 7 days (Singapore date — valid through expiry day)"
@@ -919,7 +943,7 @@ export default function TokenTransactionsPage() {
 
           {/* Date Range & Search */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center ml-auto">
-            {(activeTab === "transactions" || activeTab === "active_bookings") && (
+            {(activeTab === "payments" || activeTab === "transactions" || activeTab === "active_bookings") && (
             <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
               {(["today", "week", "month", "all"] as const).map((range) => (
                 <button
@@ -943,7 +967,7 @@ export default function TokenTransactionsPage() {
             <div className="relative">
               <Input
                 type="text"
-                placeholder={activeTab === "transactions" ? "Search transactions..." : activeTab === "active_bookings" ? "Search by name, email, or class..." : "Search by name or email..."}
+                placeholder={activeTab === "payments" ? "Search payments on this page..." : activeTab === "transactions" ? "Search token activity..." : activeTab === "active_bookings" ? "Search by name, email, or class..." : "Search by name or email..."}
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -968,12 +992,23 @@ export default function TokenTransactionsPage() {
 
       {/* Transactions / Expiry Table */}
       <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
-        {(activeTab === "transactions" && (isLoading || transactionsFetching)) ||
+        {(activeTab === "payments" && paymentsLoading) ||
+        (activeTab === "transactions" && (isLoading || transactionsFetching)) ||
         (activeTab === "active_bookings" && activeBookingsLoading) ||
         ((activeTab === "expiring_soon" || activeTab === "expired") && (expiryLoading || expiryFetching)) ? (
           <div className="flex flex-col items-center justify-center py-16">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
             <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading...</p>
+          </div>
+        ) : activeTab === "payments" && paymentsError ? (
+          <div className="p-12 text-center text-sm text-red-600">{paymentsError instanceof Error ? paymentsError.message : "Failed to load payments"}</div>
+        ) : activeTab === "payments" ? (
+          <div className="overflow-x-auto">
+            <table className="w-full"><thead><tr className="border-b bg-gray-50 text-left text-xs uppercase text-gray-500 dark:bg-gray-900/40"><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Payment</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Class / action</th><th className="px-4 py-3">Date</th></tr></thead>
+              <tbody className="divide-y dark:divide-gray-700">{(paymentsData?.payments || []).filter((p) => !searchQuery || [p.customerName,p.customerEmail,p.id,p.className].some((v) => v?.toLowerCase().includes(searchQuery.toLowerCase()))).map((p) => <tr key={p.id} className={p.needsScheduling ? "bg-amber-50 dark:bg-amber-950/20" : ""}><td className="px-4 py-3"><div className="font-semibold text-gray-900 dark:text-white">{p.customerName}</div><div className="text-xs text-gray-500">{p.customerEmail || "No email"}</div><div className="font-mono text-[10px] text-gray-400">{p.id.slice(0,8)}…</div></td><td className="px-4 py-3"><div className="font-bold">{p.currency} {p.amount.toFixed(2)}</div><div className="text-xs text-gray-500">{p.flowType.replaceAll("_", " ")} · {p.provider}</div></td><td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-bold uppercase ${["succeeded","completed"].includes(p.status) ? "bg-emerald-100 text-emerald-700" : p.status === "pending" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>{p.status}</span></td><td className="px-4 py-3">{p.className ? <><div className="font-medium">{p.className}</div><div className="text-xs text-gray-500">{p.classAt ? formatDate(p.classAt) : p.bookingStatus}</div></> : p.needsScheduling ? <Link href="/leads" className="inline-flex rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white">Needs scheduling</Link> : <span className="text-sm text-gray-400">No class</span>}</td><td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">{formatDate(p.createdAt)}</td></tr>)}</tbody>
+            </table>
+            {!(paymentsData?.payments.length) && <div className="p-10 text-center text-sm text-gray-500">No payments found.</div>}
+            {renderPagination(currentPage, Math.ceil((paymentsData?.total || 0) / itemsPerPage), paymentsData?.total || 0, itemsPerPage, setCurrentPage, setItemsPerPage, "payments")}
           </div>
         ) : activeTab === "transactions" && error ? (
           <div className="flex flex-col items-center justify-center py-16">
