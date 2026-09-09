@@ -22,7 +22,7 @@ const pageTabs: { value: PageTab; label: string }[] = [
 ];
 
 // Map API transaction types to display types
-type DisplayTransactionType = "purchase" | "hold" | "consume" | "release" | "adjustment" | "expire" | "trial";
+type DisplayTransactionType = "purchase" | "hold" | "consume" | "release" | "adjustment" | "admin-sale" | "expire" | "trial";
 
 const mapTransactionType = (apiType: TransactionType): DisplayTransactionType => {
   const typeMap: Record<TransactionType, DisplayTransactionType> = {
@@ -33,6 +33,7 @@ const mapTransactionType = (apiType: TransactionType): DisplayTransactionType =>
     'no-show-consume': 'consume',
     'late-cancel-consume': 'consume',
     'admin-adjust': 'adjustment',
+    'admin-sale': 'admin-sale',
     'refund': 'release',
     'expire': 'expire',
     'trial-booking-purchase': 'trial',
@@ -43,7 +44,7 @@ const mapTransactionType = (apiType: TransactionType): DisplayTransactionType =>
 // Map display filter to API types
 const getApiTypeFilter = (displayType: string): string | undefined => {
   if (displayType === 'all') return undefined;
-  
+
   // For display types that map to multiple API types, we filter client-side
   const typeMap: Record<string, string> = {
     'purchase': 'purchase',
@@ -52,6 +53,7 @@ const getApiTypeFilter = (displayType: string): string | undefined => {
     'release': 'booking-release',
     'consume': 'attendance-consume', // API will return all, we filter client-side
     'adjustment': 'admin-adjust',
+    'admin-sale': 'admin-sale',
     'expire': 'expire',
   };
   return typeMap[displayType];
@@ -100,6 +102,12 @@ const typeConfig: Record<DisplayTransactionType, { label: string; color: string;
     bg: "bg-orange-50 dark:bg-orange-900/30",
     icon: "★"
   },
+  "admin-sale": {
+    label: "Admin Sale",
+    color: "text-indigo-600 dark:text-indigo-400",
+    bg: "bg-indigo-50 dark:bg-indigo-900/30",
+    icon: "⚑"
+  },
 };
 
 const typeFilters: { value: string; label: string }[] = [
@@ -110,6 +118,7 @@ const typeFilters: { value: string; label: string }[] = [
   { value: "consume", label: "Consume" },
   { value: "release", label: "Release" },
   { value: "adjustment", label: "Adjustment" },
+  { value: "admin-sale", label: "Admin Sale" },
   { value: "expire", label: "Expire" },
 ];
 

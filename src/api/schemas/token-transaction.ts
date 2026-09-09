@@ -10,6 +10,7 @@ export const TransactionTypeSchema = z.enum([
   'no-show-consume',
   'late-cancel-consume',
   'admin-adjust',
+  'admin-sale',
   'refund',
   'expire'
 ])

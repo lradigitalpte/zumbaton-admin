@@ -69,13 +69,15 @@ export async function purchasePackage(params: {
     throw new ApiError('SERVER_ERROR', 'Failed to create user package', 500, insertError)
   }
 
-  // 4. Record transaction
+  // 4. Record transaction. Admin-initiated sales get their own type so they're
+  // visually distinguishable from real HitPay/Stripe purchases in the dashboard.
+  const isAdminSale = !paymentId || paymentId.startsWith('admin-sale-')
   await adminClient
     .from(TABLES.TOKEN_TRANSACTIONS)
     .insert({
       user_id: userId,
       user_package_id: userPackage.id,
-      transaction_type: 'purchase',
+      transaction_type: isAdminSale ? 'admin-sale' : 'purchase',
       tokens_change: issuedTokenCount,
       tokens_before: 0,
       tokens_after: issuedTokenCount,
@@ -83,23 +85,38 @@ export async function purchasePackage(params: {
       created_at: new Date().toISOString(),
     })
 
-  // 5. Create payment record for revenue tracking (even for admin sales)
-  // This ensures manual sales show up in revenue reports
-  const isAdminSale = paymentId?.startsWith('admin-sale-')
-  await adminClient
-    .from(TABLES.PAYMENTS)
-    .insert({
-      user_id: userId,
-      package_id: packageId,
-      amount_cents: pkg.price_cents,
-      currency: pkg.currency || 'SGD',
-      status: 'succeeded',
-      payment_method: isAdminSale ? 'admin-manual' : 'hitpay',
-      payment_reference: paymentId || `admin-sale-${Date.now()}`,
-      metadata: isAdminSale ? { source: 'admin-panel', manual_sale: true } : null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+  // 5. Create payment record for revenue tracking — only for admin-initiated sales.
+  // When paymentId already references an existing payments row (a real HitPay/Stripe
+  // purchase — see payment.service.ts, which updates that row to 'succeeded' before
+  // calling this function), inserting another row here would duplicate it.
+  if (isAdminSale) {
+    const { data: paymentRecord, error: paymentInsertError } = await adminClient
+      .from(TABLES.PAYMENTS)
+      .insert({
+        user_id: userId,
+        package_id: packageId,
+        amount_cents: pkg.price_cents,
+        currency: pkg.currency || 'SGD',
+        status: 'succeeded',
+        payment_method: 'admin-manual',
+        provider: 'manual',
+        metadata: { source: 'admin-panel', manual_sale: true, admin_reference: paymentId || null },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+
+    if (paymentInsertError) {
+      console.error('[UserPackageService] Failed to create payment record for admin sale:', paymentInsertError)
+    } else if (paymentRecord) {
+      // Point the user_package at the real payment row instead of the synthetic placeholder
+      await adminClient
+        .from(TABLES.USER_PACKAGES)
+        .update({ payment_id: paymentRecord.id })
+        .eq('id', userPackage.id)
+    }
+  }
 
   // 6. Get new balance
   const balance = await getUserTokenBalance(userId)

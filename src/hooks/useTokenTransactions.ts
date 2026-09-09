@@ -12,6 +12,7 @@ export type TransactionType =
   | 'no-show-consume'
   | 'late-cancel-consume'
   | 'admin-adjust'
+  | 'admin-sale'
   | 'refund'
   | 'expire'
   | 'trial-booking-purchase'

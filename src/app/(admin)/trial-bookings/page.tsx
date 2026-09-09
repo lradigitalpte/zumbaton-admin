@@ -267,6 +267,7 @@ export default function TrialBookingsPage() {
       "cancelled-late": "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
       "no-show": "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400",
       needs_scheduling: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-300",
+      pending_payment: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300 border border-orange-300",
     };
 
     return (
@@ -275,7 +276,7 @@ export default function TrialBookingsPage() {
           styles[status as keyof typeof styles] || styles.confirmed
         }`}
       >
-        {status === "draft" ? "⚠ Draft" : status === "needs_scheduling" ? "Paid · Needs class" : status.charAt(0).toUpperCase() + status.slice(1).replace("-", " ")}
+        {status === "draft" ? "⚠ Draft" : status === "needs_scheduling" ? "Paid · Needs class" : status === "pending_payment" ? "Awaiting payment" : status.charAt(0).toUpperCase() + status.slice(1).replace("-", " ")}
       </span>
     );
   };
@@ -370,8 +371,30 @@ export default function TrialBookingsPage() {
     (isZumFamiliaBooking(booking) ? booking.payment?.metadata?.parent_phone : null) || booking.guestPhone || null;
 
   const handleSyncPayment = async (booking: TrialBooking) => {
+    // Pending-payment rows are virtual (no bookings row yet — id is "payment:<paymentId>"),
+    // so they're re-checked against HitPay via the leads sync endpoint instead.
+    const isVirtual = booking.id.startsWith("payment:");
     try {
       setSyncingPaymentId(booking.id);
+      if (isVirtual) {
+        if (!booking.paymentId) return;
+        const response = await api.post<{ success?: boolean; data?: { status: string; changed: boolean; note?: string; hitpayStatus?: string }; error?: { message: string } }>(`/api/leads/${booking.paymentId}/sync`, {});
+        if (response.error) {
+          showToast(response.error.message || "Failed to sync payment", "error");
+          return;
+        }
+        const result = response.data?.data;
+        if (result?.status === "succeeded") {
+          showToast(result.changed ? "Payment confirmed — now needs scheduling" : "Already confirmed paid", "success");
+        } else if (result?.status === "failed") {
+          showToast(result.note || "Not found on HitPay — marked as failed", "error");
+        } else {
+          showToast(`Still ${result?.hitpayStatus || "pending"} on HitPay — not paid yet`, "info");
+        }
+        await fetchBookings();
+        return;
+      }
+
       const response = await api.post<{ success?: boolean; synced?: boolean; message?: string }>(`/api/trial-bookings/${booking.id}/sync`, {});
       if (response.error) {
         showToast(response.error.message || "Failed to sync payment", "error");
@@ -488,6 +511,7 @@ export default function TrialBookingsPage() {
             className="sm:w-44 px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
           >
             <option value="all">All Statuses</option>
+            <option value="pending_payment">Awaiting payment</option>
             <option value="draft">Draft</option>
             <option value="needs_scheduling">Paid · Needs class</option>
             <option value="confirmed">Confirmed</option>
@@ -541,11 +565,16 @@ export default function TrialBookingsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
           <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">Total</div>
           <div className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{total}</div>
         </div>
+        <button type="button" onClick={() => { setStatusFilter("pending_payment"); setCurrentPage(1); }} className="text-left bg-orange-50 dark:bg-orange-900/20 rounded-xl border-2 border-orange-300 dark:border-orange-700 p-4 transition hover:border-orange-500">
+          <div className="text-xs text-orange-700 dark:text-orange-300 uppercase tracking-wide font-bold">Awaiting payment</div>
+          <div className="text-2xl font-bold text-orange-700 dark:text-orange-300 mt-1">{bookings.filter((b) => b.status === "pending_payment").length}</div>
+          <div className="text-[10px] text-orange-600 mt-0.5">From /start — not confirmed paid yet</div>
+        </button>
         <button type="button" onClick={() => { setStatusFilter("needs_scheduling"); setCurrentPage(1); }} className="text-left bg-amber-50 dark:bg-amber-900/20 rounded-xl border-2 border-amber-300 dark:border-amber-700 p-4 transition hover:border-amber-500">
           <div className="text-xs text-amber-700 dark:text-amber-300 uppercase tracking-wide font-bold">Paid · Needs class</div>
           <div className="text-2xl font-bold text-amber-700 dark:text-amber-300 mt-1">{bookings.filter((b) => b.status === "needs_scheduling").length}</div>
@@ -660,6 +689,7 @@ export default function TrialBookingsPage() {
                       const config = BOOKING_TYPE_CONFIG[type];
                       const isDraft = booking.status === "draft";
                       const isUnscheduled = booking.status === "needs_scheduling";
+                      const isPendingPayment = booking.status === "pending_payment";
                       const isKid = isKidBooking(booking);
                       const isZumFamilia = type === "zumfamilia";
                       const isDuo = type === "duo-trial";
@@ -672,7 +702,7 @@ export default function TrialBookingsPage() {
                       return (
                         <tr
                           key={booking.id}
-                          className={`hover:bg-gray-50 dark:hover:bg-gray-800/60 align-top ${config.rowBorder} ${isDraft ? "bg-yellow-50/40 dark:bg-yellow-900/10" : ""} ${isUnscheduled ? "bg-amber-50 dark:bg-amber-950/30 ring-1 ring-inset ring-amber-200 dark:ring-amber-800" : ""}`}
+                          className={`hover:bg-gray-50 dark:hover:bg-gray-800/60 align-top ${config.rowBorder} ${isDraft ? "bg-yellow-50/40 dark:bg-yellow-900/10" : ""} ${isUnscheduled ? "bg-amber-50 dark:bg-amber-950/30 ring-1 ring-inset ring-amber-200 dark:ring-amber-800" : ""} ${isPendingPayment ? "bg-orange-50 dark:bg-orange-950/30 ring-1 ring-inset ring-orange-200 dark:ring-orange-800" : ""}`}
                         >
                           {/* Guest — name, badges, contact, secondary info */}
                           <td className="px-4 py-3">
@@ -712,6 +742,8 @@ export default function TrialBookingsPage() {
                             ) : (
                               isUnscheduled ? (
                                 <div><p className="font-bold text-amber-700 dark:text-amber-300">Class not selected</p><p className="text-xs text-amber-600">Staff follow-up required</p></div>
+                              ) : isPendingPayment ? (
+                                <div><p className="font-bold text-orange-700 dark:text-orange-300">Awaiting payment</p><p className="text-xs text-orange-600">Not confirmed on HitPay yet</p></div>
                               ) : <span className="text-gray-400 italic">—</span>
                             )}
                           </td>
@@ -736,10 +768,21 @@ export default function TrialBookingsPage() {
                                   Schedule in Leads
                                 </a>
                               )}
+                              {isPendingPayment && (
+                                <button
+                                  onClick={() => handleSyncPayment(booking)}
+                                  disabled={isBusy}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white hover:bg-orange-700 disabled:opacity-50"
+                                  title="Re-check this payment against HitPay"
+                                >
+                                  {syncingPaymentId === booking.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                  Sync payment
+                                </button>
+                              )}
                               <button
                                 onClick={() => setOpenDropdownId(openDropdownId === booking.id ? null : booking.id)}
-                                disabled={isBusy || isUnscheduled}
-                                className={`${isUnscheduled ? "hidden" : "flex"} items-center gap-1.5 px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50`}
+                                disabled={isBusy || isUnscheduled || isPendingPayment}
+                                className={`${isUnscheduled || isPendingPayment ? "hidden" : "flex"} items-center gap-1.5 px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50`}
                               >
                                 {isBusy
                                   ? <Loader2 className="w-3 h-3 animate-spin" />

@@ -192,9 +192,54 @@ export async function GET(request: NextRequest) {
       })
       .filter((booking: any) => !search || [booking.guestName, booking.guestEmail, booking.guestPhone].some((value) => String(value).toLowerCase().includes(search.toLowerCase())))
 
+    // Leads from /start whose HitPay payment hasn't cleared yet (or the webhook
+    // missed it). Surfaced here too so staff can see the whole funnel in one
+    // place and use the lead's "Sync" action to re-check HitPay.
+    let pendingQuery = supabase
+      .from('payments')
+      .select('id, amount_cents, currency, status, created_at, hitpay_payment_request_id, metadata')
+      .eq('is_trial_booking', true)
+      .in('status', ['pending', 'in_progress'])
+      .is('class_id', null)
+      .eq('metadata->>flow_type', 'quick_trial')
+    if (startDate) pendingQuery = pendingQuery.gte('created_at', startDate)
+    if (endDate) pendingQuery = pendingQuery.lte('created_at', endDate)
+    const { data: pendingPayments, error: pendingError } = await pendingQuery
+    if (pendingError) console.error('[Trial Bookings API] Pending payments error:', pendingError)
+
+    const pendingBookings = (pendingPayments || [])
+      .filter((payment: any) => !bookingPaymentIds.has(payment.id))
+      .map((payment: any) => {
+        const metadata = payment.metadata || {}
+        return {
+          id: `payment:${payment.id}`,
+          guestName: metadata.guest_name || 'Guest',
+          guestEmail: metadata.guest_email || '',
+          guestPhone: metadata.guest_phone || '',
+          guestDateOfBirth: null,
+          status: 'pending_payment',
+          bookedAt: payment.created_at,
+          cancelledAt: null,
+          cancellationReason: null,
+          paymentId: payment.id,
+          class: null,
+          payment: {
+            id: payment.id, amountCents: payment.amount_cents, currency: payment.currency,
+            status: payment.status, createdAt: payment.created_at,
+            hitpayPaymentRequestId: payment.hitpay_payment_request_id, metadata,
+          },
+        }
+      })
+      .filter((booking: any) => !search || [booking.guestName, booking.guestEmail, booking.guestPhone].some((value) => String(value).toLowerCase().includes(search.toLowerCase())))
+
+    const virtualOnlyStatuses = ['needs_scheduling', 'pending_payment']
     const includeVirtual = !status || status === 'needs_scheduling'
-    const combined = [...(status === 'needs_scheduling' ? [] : formattedBookings), ...(includeVirtual ? virtualBookings : [])]
-      .sort((a, b) => new Date(b.bookedAt).getTime() - new Date(a.bookedAt).getTime())
+    const includePending = !status || status === 'pending_payment'
+    const combined = [
+      ...(status && virtualOnlyStatuses.includes(status) ? [] : formattedBookings),
+      ...(includeVirtual ? virtualBookings : []),
+      ...(includePending ? pendingBookings : []),
+    ].sort((a, b) => new Date(b.bookedAt).getTime() - new Date(a.bookedAt).getTime())
     const paginated = combined.slice(offset, offset + pageSize)
 
     return NextResponse.json({
