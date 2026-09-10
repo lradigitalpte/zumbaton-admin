@@ -1059,6 +1059,9 @@ export interface GeneratedInvoice {
   billToName: string
   billToEmail: string
   issuedAt: string
+  originalAmountCents?: number | null
+  discountPercent?: number | null
+  discountAmountCents?: number | null
 }
 
 /**

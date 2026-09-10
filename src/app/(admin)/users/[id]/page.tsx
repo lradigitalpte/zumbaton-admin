@@ -929,6 +929,7 @@ export default function UserDetailPage() {
         id: string; invoiceNumber: string; description: string | null;
         amountCents: number; currency: string; pdfUrl: string | null;
         billToName?: string | null; billToEmail?: string | null;
+        originalAmountCents?: number | null; discountPercent?: number | null; discountAmountCents?: number | null;
       };
       const response = await api.post<{ data?: GeneratedInvoice; error?: { message: string } }>(
         `/api/payments/${payment.id}/generate-invoice`, {}
@@ -961,6 +962,9 @@ export default function UserDetailPage() {
         pdfUrl: inv.pdfUrl,
         billToName: inv.billToName ?? user?.name,
         billToEmail: inv.billToEmail ?? user?.email,
+        originalAmountCents: inv.originalAmountCents,
+        discountPercent: inv.discountPercent,
+        discountAmountCents: inv.discountAmountCents,
       });
       setInvoicePreviewOpen(true);
     } catch (error: any) {

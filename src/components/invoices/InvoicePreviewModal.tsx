@@ -16,6 +16,9 @@ export interface PreviewInvoice {
   pdfUrl: string | null;
   billToName?: string | null;
   billToEmail?: string | null;
+  originalAmountCents?: number | null;
+  discountPercent?: number | null;
+  discountAmountCents?: number | null;
 }
 
 interface InvoicePreviewModalProps {
@@ -61,10 +64,27 @@ export function InvoicePreviewModal({ isOpen, onClose, invoice }: InvoicePreview
 
   if (!invoice) return null;
 
+  const hasDiscount = !!(
+    invoice.originalAmountCents &&
+    invoice.originalAmountCents > invoice.totalCents
+  );
+  const discountAmountCents =
+    invoice.discountAmountCents && invoice.discountAmountCents > 0
+      ? invoice.discountAmountCents
+      : hasDiscount
+        ? (invoice.originalAmountCents as number) - invoice.totalCents
+        : 0;
+  const discountPercent =
+    invoice.discountPercent && invoice.discountPercent > 0
+      ? invoice.discountPercent
+      : hasDiscount && invoice.originalAmountCents
+        ? Math.round((discountAmountCents / invoice.originalAmountCents) * 100)
+        : 0;
+
   return (
     <Modal isOpen={isOpen} onClose={handleClose} className="max-w-3xl w-full">
       <div className="flex max-h-[85vh] flex-col p-6">
-        <div className="mb-4 flex items-start justify-between gap-4">
+        <div className="mb-4 flex items-start justify-between gap-4 pr-12 sm:pr-14">
           <div>
             <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
               Invoice {invoice.invoiceNumber}
@@ -75,13 +95,23 @@ export function InvoicePreviewModal({ isOpen, onClose, invoice }: InvoicePreview
               {invoice.billToEmail ? ` (${invoice.billToEmail})` : ""}
             </p>
           </div>
-          <div className="text-right">
+          <div className="shrink-0 text-right">
             <span className="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Amount
+              {hasDiscount ? "Total Paid" : "Amount"}
             </span>
+            {hasDiscount && (
+              <span className="block text-sm text-gray-400 line-through dark:text-gray-500">
+                {invoice.currency} {((invoice.originalAmountCents as number) / 100).toFixed(2)}
+              </span>
+            )}
             <span className="text-xl font-bold text-gray-900 dark:text-white">
               {invoice.currency} {(invoice.totalCents / 100).toFixed(2)}
             </span>
+            {hasDiscount && (
+              <span className="block text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                {discountPercent}% off (−{invoice.currency} {(discountAmountCents / 100).toFixed(2)})
+              </span>
+            )}
           </div>
         </div>
 

@@ -432,6 +432,9 @@ export default function TrialBookingsPage() {
         guestEmail?: string | null;
         billToName?: string | null;
         billToEmail?: string | null;
+        originalAmountCents?: number | null;
+        discountPercent?: number | null;
+        discountAmountCents?: number | null;
       };
 
       const lookup = await api.get<{ data?: InvoiceLookup }>(`/api/payments/${paymentId}/invoice`);
@@ -460,6 +463,9 @@ export default function TrialBookingsPage() {
         pdfUrl: invoiceData.pdfUrl,
         billToName: invoiceData.billToName ?? invoiceData.guestName,
         billToEmail: invoiceData.billToEmail ?? invoiceData.guestEmail,
+        originalAmountCents: invoiceData.originalAmountCents,
+        discountPercent: invoiceData.discountPercent,
+        discountAmountCents: invoiceData.discountAmountCents,
       });
       setInvoicePreviewOpen(true);
     } catch (error: any) {
