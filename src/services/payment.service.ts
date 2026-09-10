@@ -100,9 +100,13 @@ function toPayment(row: Record<string, unknown>): Payment {
 function toInvoice(row: Record<string, unknown>): Invoice {
   return {
     id: row.id as string,
-    userId: row.user_id as string,
+    userId: row.user_id as string | null,
+    guestName: row.guest_name as string | null,
+    guestEmail: row.guest_email as string | null,
+    guestPhone: row.guest_phone as string | null,
     paymentId: row.payment_id as string | null,
     invoiceNumber: row.invoice_number as string,
+    description: row.description as string | null,
     amountCents: row.amount_cents as number,
     taxCents: row.tax_cents as number,
     totalCents: row.total_cents as number,
@@ -884,6 +888,98 @@ export async function getUserInvoices(
       pageSize,
       hasMore: offset + (data?.length || 0) < total,
     },
+  }
+}
+
+// =====================================================
+// GET / RESEND SINGLE INVOICE
+// =====================================================
+
+export async function getInvoice(invoiceId: string): Promise<Invoice> {
+  const { data, error } = await getSupabaseAdminClient()
+    .from('invoices')
+    .select('*')
+    .eq('id', invoiceId)
+    .single()
+
+  if (error || !data) {
+    throw new ApiError('NOT_FOUND_ERROR', 'Invoice not found', 404)
+  }
+
+  return toInvoice(data)
+}
+
+export async function getInvoiceByPaymentId(paymentId: string): Promise<Invoice | null> {
+  const { data, error } = await getSupabaseAdminClient()
+    .from('invoices')
+    .select('*')
+    .eq('payment_id', paymentId)
+    .maybeSingle()
+
+  if (error) {
+    throw new ApiError('SERVER_ERROR', 'Failed to fetch invoice', 500, error)
+  }
+
+  return data ? toInvoice(data) : null
+}
+
+/**
+ * Re-sends an existing invoice email — no PDF regeneration, just re-sends
+ * the same branded email with the already-stored PDF link. Delegates the
+ * actual send to zumbaton-web's Resend integration, same as every other
+ * admin-triggered email (see resend-email, registration-form/send).
+ */
+export async function resendInvoice(invoiceId: string): Promise<void> {
+  const invoice = await getInvoice(invoiceId)
+
+  if (!invoice.pdfUrl) {
+    throw new ApiError('VALIDATION_ERROR', 'This invoice has no PDF to resend yet', 400)
+  }
+
+  let toEmail = invoice.guestEmail
+  let toName = invoice.guestName || 'Customer'
+
+  if (invoice.userId) {
+    const { data: profile } = await getSupabaseAdminClient()
+      .from('user_profiles')
+      .select('name, email')
+      .eq('id', invoice.userId)
+      .single()
+    toEmail = profile?.email || toEmail
+    toName = profile?.name || toName
+  }
+
+  if (!toEmail) {
+    throw new ApiError('VALIDATION_ERROR', 'No email address on file for this invoice', 400)
+  }
+
+  const { getWebAppUrl } = await import('@/lib/email-url')
+  const webAppUrl = getWebAppUrl()
+  const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+
+  const response = await fetch(`${webAppUrl}/api/email/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'invoice',
+      secret: emailApiSecret,
+      data: {
+        toEmail,
+        toName,
+        invoiceNumber: invoice.invoiceNumber,
+        amount: invoice.totalCents / 100,
+        currency: invoice.currency,
+        description: invoice.description || 'One Step Fitness',
+        pdfUrl: invoice.pdfUrl,
+        issuedAt: invoice.issuedAt || invoice.createdAt,
+      },
+    }),
+  })
+
+  if (!response.ok) {
+    const errorBody = await response.text()
+    console.error('[Payment] Failed to resend invoice email:', errorBody)
+    throw new ApiError('SERVER_ERROR', 'Failed to resend invoice email', 500)
   }
 }
 

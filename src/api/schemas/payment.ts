@@ -99,9 +99,13 @@ export type Refund = z.infer<typeof RefundSchema>
 
 export const InvoiceSchema = z.object({
   id: z.string().uuid(),
-  userId: z.string().uuid(),
+  userId: z.string().uuid().nullable(),
+  guestName: z.string().nullable(),
+  guestEmail: z.string().nullable(),
+  guestPhone: z.string().nullable(),
   paymentId: z.string().uuid().nullable(),
   invoiceNumber: z.string(),
+  description: z.string().nullable(),
   amountCents: z.number().int().nonnegative(),
   taxCents: z.number().int().nonnegative(),
   totalCents: z.number().int().nonnegative(),

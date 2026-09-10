@@ -34,9 +34,20 @@ interface TokenTransaction {
   date: string;
 }
 
+interface InvoiceRow {
+  id: string;
+  invoiceNumber: string;
+  description: string | null;
+  totalCents: number;
+  currency: string;
+  status: string;
+  pdfUrl: string | null;
+  issuedAt: string | null;
+}
+
 // Removed placeholder arrays - now using real state
 
-type TabType = "overview" | "classes" | "tokens" | "notes";
+type TabType = "overview" | "classes" | "tokens" | "invoices" | "notes";
 
 export default function UserDetailPage() {
   const params = useParams();
@@ -79,6 +90,9 @@ export default function UserDetailPage() {
   const [isLoadingClassHistory, setIsLoadingClassHistory] = useState(false);
   const [tokenTransactions, setTokenTransactions] = useState<TokenTransaction[]>([]);
   const [isLoadingTokenTransactions, setIsLoadingTokenTransactions] = useState(false);
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
+  const [resendingInvoiceId, setResendingInvoiceId] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [isSavingNotes, setIsSavingNotes] = useState(false);
@@ -220,6 +234,51 @@ export default function UserDetailPage() {
       })
       .finally(() => {
         if (!cancelled) setIsLoadingTokenTransactions(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [activeTab, user?.id]);
+
+  // Fetch invoices when the Invoices tab is opened
+  useEffect(() => {
+    if (activeTab !== "invoices" || !user?.id) return;
+
+    let cancelled = false;
+    setIsLoadingInvoices(true);
+
+    api.get<{ success: boolean; data: { invoices: unknown[] } }>(`/api/users/${user.id}/invoices?pageSize=100`)
+      .then((response) => {
+        if (cancelled) return;
+        if (response.error) {
+          console.error("Failed to fetch invoices:", response.error);
+          setInvoices([]);
+          return;
+        }
+
+        const payload = (response.data as { data?: { invoices?: unknown[] }; invoices?: unknown[] })?.data ?? response.data;
+        const rows = (payload as { invoices?: unknown[] })?.invoices ?? [];
+
+        const rowsMapped: InvoiceRow[] = rows.map((inv: any) => ({
+          id: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          description: inv.description,
+          totalCents: inv.totalCents,
+          currency: inv.currency,
+          status: inv.status,
+          pdfUrl: inv.pdfUrl,
+          issuedAt: inv.issuedAt || inv.createdAt,
+        }));
+
+        setInvoices(rowsMapped);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("Failed to fetch invoices:", err);
+          setInvoices([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingInvoices(false);
       });
 
     return () => { cancelled = true; };
@@ -806,6 +865,41 @@ export default function UserDetailPage() {
     }
   };
 
+  const handleResendInvoice = async (invoiceId: string, invoiceNumber: string) => {
+    if (!confirm(`Resend invoice ${invoiceNumber}?`)) {
+      return;
+    }
+
+    setResendingInvoiceId(invoiceId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Please sign in to resend invoices');
+      }
+
+      const response = await fetch(`/api/invoices/${invoiceId}/resend`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to resend invoice');
+      }
+
+      toast.showToast('Invoice resent successfully', 'success');
+    } catch (error: any) {
+      console.error('Error resending invoice:', error);
+      toast.showToast(error.message || 'Failed to resend invoice', 'error');
+    } finally {
+      setResendingInvoiceId(null);
+    }
+  };
+
   const handleGenerateVoucher = async () => {
     if (!user?.id) return;
     setIsGeneratingVoucher(true);
@@ -1098,6 +1192,7 @@ export default function UserDetailPage() {
     { key: "overview", label: "Overview" },
     { key: "classes", label: "Class History" },
     { key: "tokens", label: "Token History" },
+    { key: "invoices", label: "Invoices" },
     { key: "notes", label: "Notes" },
   ];
 
@@ -1706,6 +1801,99 @@ export default function UserDetailPage() {
                       {tx.balance}
                     </td>
                   </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Invoices Tab */}
+        {activeTab === "invoices" && (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-800/50">
+                  <th className="whitespace-nowrap px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    Invoice #
+                  </th>
+                  <th className="whitespace-nowrap px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    Date
+                  </th>
+                  <th className="whitespace-nowrap px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    Description
+                  </th>
+                  <th className="whitespace-nowrap px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    Amount
+                  </th>
+                  <th className="whitespace-nowrap px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    Status
+                  </th>
+                  <th className="whitespace-nowrap px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+                {isLoadingInvoices ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                      <div className="flex items-center justify-center">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-brand-500 border-t-transparent"></div>
+                        <span className="ml-2">Loading invoices...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : invoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                      No invoices yet.
+                    </td>
+                  </tr>
+                ) : (
+                  invoices.map((inv) => (
+                    <tr key={inv.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
+                        {inv.invoiceNumber}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                        {inv.issuedAt
+                          ? new Date(inv.issuedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                          : "—"}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                        {inv.description || "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-right font-semibold text-gray-900 dark:text-white">
+                        {inv.currency} {(inv.totalCents / 100).toFixed(2)}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+                          {inv.status}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-3">
+                          {inv.pdfUrl && (
+                            <a
+                              href={inv.pdfUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-medium text-brand-500 hover:text-brand-600"
+                            >
+                              Download
+                            </a>
+                          )}
+                          <button
+                            onClick={() => handleResendInvoice(inv.id, inv.invoiceNumber)}
+                            disabled={resendingInvoiceId === inv.id}
+                            className="text-sm font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:text-white"
+                          >
+                            {resendingInvoiceId === inv.id ? "Sending..." : "Resend"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                   ))
                 )}
               </tbody>

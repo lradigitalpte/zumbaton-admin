@@ -5,7 +5,7 @@ import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/components/ui/Toast";
-import { RefreshCw, Mail, Phone, User, Search, Trash2, CheckCircle, XCircle, Eye, Loader2, UserPlus } from "lucide-react";
+import { RefreshCw, Mail, Phone, User, Search, Trash2, CheckCircle, XCircle, Eye, Loader2, UserPlus, FileText } from "lucide-react";
 import Pagination from "@/components/tables/Pagination";
 import { Modal } from "@/components/ui/modal";
 import Button from "@/components/ui/button/Button";
@@ -69,6 +69,7 @@ export default function TrialBookingsPage() {
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<TrialBooking | null>(null);
   const [syncingPaymentId, setSyncingPaymentId] = useState<string | null>(null);
+  const [resendingInvoicePaymentId, setResendingInvoicePaymentId] = useState<string | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
 
   // Companion (2nd Guest) Modal State
@@ -407,6 +408,33 @@ export default function TrialBookingsPage() {
       showToast(error.message || "Failed to sync payment", "error");
     } finally {
       setSyncingPaymentId(null);
+    }
+  };
+
+  const handleResendInvoice = async (booking: TrialBooking) => {
+    const paymentId = booking.paymentId;
+    if (!paymentId) return;
+
+    setResendingInvoicePaymentId(paymentId);
+    try {
+      const lookup = await api.get<{ data?: { id: string }; error?: { message: string } }>(`/api/payments/${paymentId}/invoice`);
+      if (lookup.error || !lookup.data?.data?.id) {
+        showToast("No invoice found for this payment yet", "error");
+        return;
+      }
+
+      const invoiceId = lookup.data.data.id;
+      const response = await api.post<{ success?: boolean; error?: { message: string } }>(`/api/invoices/${invoiceId}/resend`, {});
+      if (response.error) {
+        showToast(response.error.message || "Failed to resend invoice", "error");
+        return;
+      }
+
+      showToast("Invoice resent successfully", "success");
+    } catch (error: any) {
+      showToast(error.message || "Failed to resend invoice", "error");
+    } finally {
+      setResendingInvoicePaymentId(null);
     }
   };
 
@@ -806,6 +834,18 @@ export default function TrialBookingsPage() {
                                       className="w-full flex items-center gap-2 px-3 py-2 text-xs text-lime-700 dark:text-lime-400 hover:bg-lime-50 dark:hover:bg-lime-900/20 transition-colors font-semibold border-t border-b border-gray-100 dark:border-gray-800">
                                       <UserPlus className="w-3.5 h-3.5" /> + Add 2nd Guest
                                     </button>
+
+                                    {booking.payment?.status === "succeeded" && booking.paymentId && (
+                                      <button
+                                        onClick={() => { handleResendInvoice(booking); setOpenDropdownId(null); }}
+                                        disabled={resendingInvoicePaymentId === booking.paymentId}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50">
+                                        {resendingInvoicePaymentId === booking.paymentId
+                                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          : <FileText className="w-3.5 h-3.5 text-emerald-600" />}
+                                        Resend Invoice
+                                      </button>
+                                    )}
 
                                     {isDraft && (
                                       <>
