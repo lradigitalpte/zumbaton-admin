@@ -13,6 +13,7 @@ import { supabase } from "@/lib/supabase";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { isExpiredBySgtCalendar, sgtDaysUntilExpiry } from "@/lib/reports-utils";
+import { InvoicePreviewModal, type PreviewInvoice } from "@/components/invoices/InvoicePreviewModal";
 
 const LOADING_TIMEOUT = 15000; // 15 seconds
 
@@ -43,6 +44,14 @@ interface InvoiceRow {
   status: string;
   pdfUrl: string | null;
   issuedAt: string | null;
+}
+
+interface PaymentMissingInvoice {
+  id: string;
+  amountCents: number;
+  currency: string;
+  description: string;
+  createdAt: string;
 }
 
 // Removed placeholder arrays - now using real state
@@ -92,7 +101,11 @@ export default function UserDetailPage() {
   const [isLoadingTokenTransactions, setIsLoadingTokenTransactions] = useState(false);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
-  const [resendingInvoiceId, setResendingInvoiceId] = useState<string | null>(null);
+  const [missingInvoicePayments, setMissingInvoicePayments] = useState<PaymentMissingInvoice[]>([]);
+  const [isLoadingMissingInvoices, setIsLoadingMissingInvoices] = useState(false);
+  const [generatingPaymentId, setGeneratingPaymentId] = useState<string | null>(null);
+  const [invoicePreview, setInvoicePreview] = useState<PreviewInvoice | null>(null);
+  const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
   const [notes, setNotes] = useState("");
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [isSavingNotes, setIsSavingNotes] = useState(false);
@@ -279,6 +292,36 @@ export default function UserDetailPage() {
       })
       .finally(() => {
         if (!cancelled) setIsLoadingInvoices(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [activeTab, user?.id]);
+
+  // Fetch succeeded payments that never got an invoice (backfill candidates)
+  useEffect(() => {
+    if (activeTab !== "invoices" || !user?.id) return;
+
+    let cancelled = false;
+    setIsLoadingMissingInvoices(true);
+
+    api.get<{ data: { payments: PaymentMissingInvoice[] } }>(`/api/users/${user.id}/payments/missing-invoices`)
+      .then((response) => {
+        if (cancelled) return;
+        if (response.error) {
+          console.error("Failed to fetch payments missing invoices:", response.error);
+          setMissingInvoicePayments([]);
+          return;
+        }
+        setMissingInvoicePayments(response.data?.data?.payments || []);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("Failed to fetch payments missing invoices:", err);
+          setMissingInvoicePayments([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingMissingInvoices(false);
       });
 
     return () => { cancelled = true; };
@@ -865,38 +908,65 @@ export default function UserDetailPage() {
     }
   };
 
-  const handleResendInvoice = async (invoiceId: string, invoiceNumber: string) => {
-    if (!confirm(`Resend invoice ${invoiceNumber}?`)) {
-      return;
-    }
+  const handleViewInvoice = (inv: InvoiceRow) => {
+    setInvoicePreview({
+      id: inv.id,
+      invoiceNumber: inv.invoiceNumber,
+      description: inv.description,
+      totalCents: inv.totalCents,
+      currency: inv.currency,
+      pdfUrl: inv.pdfUrl,
+      billToName: user?.name,
+      billToEmail: user?.email,
+    });
+    setInvoicePreviewOpen(true);
+  };
 
-    setResendingInvoiceId(invoiceId);
+  const handleGenerateInvoice = async (payment: PaymentMissingInvoice) => {
+    setGeneratingPaymentId(payment.id);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        throw new Error('Please sign in to resend invoices');
+      type GeneratedInvoice = {
+        id: string; invoiceNumber: string; description: string | null;
+        amountCents: number; currency: string; pdfUrl: string | null;
+        billToName?: string | null; billToEmail?: string | null;
+      };
+      const response = await api.post<{ data?: GeneratedInvoice; error?: { message: string } }>(
+        `/api/payments/${payment.id}/generate-invoice`, {}
+      );
+      if (response.error || !response.data?.data) {
+        toast.showToast(response.error?.message || "Failed to generate invoice", "error");
+        return;
       }
-
-      const response = await fetch(`/api/invoices/${invoiceId}/resend`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
+      const inv = response.data.data;
+      setMissingInvoicePayments((prev) => prev.filter((p) => p.id !== payment.id));
+      setInvoices((prev) => [
+        {
+          id: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          description: inv.description,
+          totalCents: inv.amountCents,
+          currency: inv.currency,
+          status: "issued",
+          pdfUrl: inv.pdfUrl,
+          issuedAt: new Date().toISOString(),
         },
+        ...prev,
+      ]);
+      setInvoicePreview({
+        id: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        description: inv.description,
+        totalCents: inv.amountCents,
+        currency: inv.currency,
+        pdfUrl: inv.pdfUrl,
+        billToName: inv.billToName ?? user?.name,
+        billToEmail: inv.billToEmail ?? user?.email,
       });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.message || 'Failed to resend invoice');
-      }
-
-      toast.showToast('Invoice resent successfully', 'success');
+      setInvoicePreviewOpen(true);
     } catch (error: any) {
-      console.error('Error resending invoice:', error);
-      toast.showToast(error.message || 'Failed to resend invoice', 'error');
+      toast.showToast(error.message || "Failed to generate invoice", "error");
     } finally {
-      setResendingInvoiceId(null);
+      setGeneratingPaymentId(null);
     }
   };
 
@@ -1810,6 +1880,40 @@ export default function UserDetailPage() {
 
         {/* Invoices Tab */}
         {activeTab === "invoices" && (
+          <>
+            {!isLoadingMissingInvoices && missingInvoicePayments.length > 0 && (
+              <div className="border-b border-gray-200 bg-amber-50 px-6 py-4 dark:border-gray-800 dark:bg-amber-500/10">
+                <p className="mb-3 text-sm font-medium text-amber-800 dark:text-amber-400">
+                  {missingInvoicePayments.length === 1
+                    ? "1 successful payment has no invoice yet."
+                    : `${missingInvoicePayments.length} successful payments have no invoice yet.`}
+                  {" "}These were paid before invoicing existed — generate one to review and send.
+                </p>
+                <div className="space-y-2">
+                  {missingInvoicePayments.map((payment) => (
+                    <div
+                      key={payment.id}
+                      className="flex items-center justify-between rounded-lg border border-amber-200 bg-white px-4 py-2.5 dark:border-amber-500/20 dark:bg-gray-900"
+                    >
+                      <div className="text-sm">
+                        <span className="font-medium text-gray-900 dark:text-white">{payment.description}</span>
+                        <span className="ml-2 text-gray-500 dark:text-gray-400">
+                          {payment.currency} {(payment.amountCents / 100).toFixed(2)} ·{" "}
+                          {new Date(payment.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleGenerateInvoice(payment)}
+                        disabled={generatingPaymentId === payment.id}
+                        className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 dark:bg-brand-600 dark:hover:bg-brand-700"
+                      >
+                        {generatingPaymentId === payment.id ? "Generating..." : "Generate Invoice"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -1885,11 +1989,10 @@ export default function UserDetailPage() {
                             </a>
                           )}
                           <button
-                            onClick={() => handleResendInvoice(inv.id, inv.invoiceNumber)}
-                            disabled={resendingInvoiceId === inv.id}
-                            className="text-sm font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:text-white"
+                            onClick={() => handleViewInvoice(inv)}
+                            className="text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
                           >
-                            {resendingInvoiceId === inv.id ? "Sending..." : "Resend"}
+                            View
                           </button>
                         </div>
                       </td>
@@ -1899,6 +2002,7 @@ export default function UserDetailPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
 
         {/* Notes Tab */}
@@ -2582,6 +2686,12 @@ export default function UserDetailPage() {
           </div>
         </div>
       </SlidePanel>
+
+      <InvoicePreviewModal
+        isOpen={invoicePreviewOpen}
+        onClose={() => setInvoicePreviewOpen(false)}
+        invoice={invoicePreview}
+      />
     </div>
   );
 }

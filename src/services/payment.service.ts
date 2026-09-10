@@ -892,6 +892,68 @@ export async function getUserInvoices(
 }
 
 // =====================================================
+// GET PAYMENTS MISSING AN INVOICE (backfill candidates)
+// =====================================================
+
+export interface PaymentMissingInvoice {
+  id: string
+  amountCents: number
+  currency: string
+  description: string
+  createdAt: string
+}
+
+export async function getPaymentsMissingInvoices(userId: string): Promise<PaymentMissingInvoice[]> {
+  const supabase = getSupabaseAdminClient()
+
+  const { data: payments, error: paymentsError } = await supabase
+    .from('payments')
+    .select('id, amount_cents, currency, created_at, package_id')
+    .eq('user_id', userId)
+    .eq('status', 'succeeded')
+    .order('created_at', { ascending: false })
+
+  if (paymentsError) {
+    throw new ApiError('SERVER_ERROR', 'Failed to fetch payments', 500, paymentsError)
+  }
+  if (!payments || payments.length === 0) return []
+
+  const { data: existingInvoices, error: invoicesError } = await supabase
+    .from('invoices')
+    .select('payment_id')
+    .eq('user_id', userId)
+    .not('payment_id', 'is', null)
+
+  if (invoicesError) {
+    throw new ApiError('SERVER_ERROR', 'Failed to fetch invoices', 500, invoicesError)
+  }
+
+  const invoicedPaymentIds = new Set((existingInvoices || []).map((row) => row.payment_id as string))
+  const missing = payments.filter((p) => !invoicedPaymentIds.has(p.id as string))
+  if (missing.length === 0) return []
+
+  const packageIds = Array.from(new Set(missing.map((p) => p.package_id as string | null).filter(Boolean))) as string[]
+  const packageNames = new Map<string, string>()
+  if (packageIds.length > 0) {
+    const { data: packages } = await supabase
+      .from('packages')
+      .select('id, name')
+      .in('id', packageIds)
+    for (const pkg of packages || []) {
+      packageNames.set(pkg.id as string, pkg.name as string)
+    }
+  }
+
+  return missing.map((p) => ({
+    id: p.id as string,
+    amountCents: p.amount_cents as number,
+    currency: p.currency as string,
+    description: (p.package_id ? packageNames.get(p.package_id as string) : null) || 'Token Package Purchase',
+    createdAt: p.created_at as string,
+  }))
+}
+
+// =====================================================
 // GET / RESEND SINGLE INVOICE
 // =====================================================
 
@@ -981,6 +1043,49 @@ export async function resendInvoice(invoiceId: string): Promise<void> {
     console.error('[Payment] Failed to resend invoice email:', errorBody)
     throw new ApiError('SERVER_ERROR', 'Failed to resend invoice email', 500)
   }
+}
+
+// =====================================================
+// GENERATE INVOICE FOR AN OLD PAYMENT (backfill)
+// =====================================================
+
+export interface GeneratedInvoice {
+  id: string
+  invoiceNumber: string
+  pdfUrl: string
+  amountCents: number
+  currency: string
+  description: string
+  billToName: string
+  billToEmail: string
+  issuedAt: string
+}
+
+/**
+ * Backfills an invoice for a payment that succeeded before the invoicing
+ * feature existed (or otherwise never got one) — creates + stores the PDF
+ * but does NOT email it. Delegates the actual generation to zumbaton-web,
+ * same as every other cross-app email/document action.
+ */
+export async function generateInvoiceForPayment(paymentId: string): Promise<GeneratedInvoice> {
+  const { getWebAppUrl } = await import('@/lib/email-url')
+  const webAppUrl = getWebAppUrl()
+  const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+
+  const response = await fetch(`${webAppUrl}/api/invoices/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paymentId, secret: emailApiSecret }),
+  })
+
+  const body = await response.json().catch(() => null)
+
+  if (!response.ok || !body?.success) {
+    const message = body?.error || `Failed to generate invoice (${response.status})`
+    throw new ApiError('SERVER_ERROR', message, response.status === 400 ? 400 : 500)
+  }
+
+  return body.data as GeneratedInvoice
 }
 
 // =====================================================

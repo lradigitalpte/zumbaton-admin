@@ -6,6 +6,7 @@ import DateRangePicker from "@/components/common/DateRangePicker";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/components/ui/Toast";
 import { RefreshCw, Mail, Phone, User, Search, Trash2, CheckCircle, XCircle, Eye, Loader2, UserPlus, FileText } from "lucide-react";
+import { InvoicePreviewModal, type PreviewInvoice } from "@/components/invoices/InvoicePreviewModal";
 import Pagination from "@/components/tables/Pagination";
 import { Modal } from "@/components/ui/modal";
 import Button from "@/components/ui/button/Button";
@@ -70,6 +71,8 @@ export default function TrialBookingsPage() {
   const [selectedBooking, setSelectedBooking] = useState<TrialBooking | null>(null);
   const [syncingPaymentId, setSyncingPaymentId] = useState<string | null>(null);
   const [resendingInvoicePaymentId, setResendingInvoicePaymentId] = useState<string | null>(null);
+  const [invoicePreview, setInvoicePreview] = useState<PreviewInvoice | null>(null);
+  const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
 
   // Companion (2nd Guest) Modal State
@@ -411,28 +414,56 @@ export default function TrialBookingsPage() {
     }
   };
 
-  const handleResendInvoice = async (booking: TrialBooking) => {
+  const handleViewInvoice = async (booking: TrialBooking) => {
     const paymentId = booking.paymentId;
     if (!paymentId) return;
 
     setResendingInvoicePaymentId(paymentId);
     try {
-      const lookup = await api.get<{ data?: { id: string }; error?: { message: string } }>(`/api/payments/${paymentId}/invoice`);
-      if (lookup.error || !lookup.data?.data?.id) {
-        showToast("No invoice found for this payment yet", "error");
-        return;
+      type InvoiceLookup = {
+        id: string;
+        invoiceNumber: string;
+        description: string | null;
+        totalCents?: number;
+        amountCents?: number;
+        currency: string;
+        pdfUrl: string | null;
+        guestName?: string | null;
+        guestEmail?: string | null;
+        billToName?: string | null;
+        billToEmail?: string | null;
+      };
+
+      const lookup = await api.get<{ data?: InvoiceLookup }>(`/api/payments/${paymentId}/invoice`);
+      let invoiceData = lookup.data?.data;
+
+      if (!invoiceData) {
+        // No invoice yet — this payment predates the invoicing feature. Generate one now
+        // (this does NOT email it — that only happens if "Send to Customer" is clicked).
+        const generated = await api.post<{ data?: InvoiceLookup; error?: { message: string } }>(
+          `/api/payments/${paymentId}/generate-invoice`,
+          {}
+        );
+        if (generated.error || !generated.data?.data) {
+          showToast(generated.error?.message || "Failed to generate invoice for this payment", "error");
+          return;
+        }
+        invoiceData = generated.data.data;
       }
 
-      const invoiceId = lookup.data.data.id;
-      const response = await api.post<{ success?: boolean; error?: { message: string } }>(`/api/invoices/${invoiceId}/resend`, {});
-      if (response.error) {
-        showToast(response.error.message || "Failed to resend invoice", "error");
-        return;
-      }
-
-      showToast("Invoice resent successfully", "success");
+      setInvoicePreview({
+        id: invoiceData.id,
+        invoiceNumber: invoiceData.invoiceNumber,
+        description: invoiceData.description,
+        totalCents: invoiceData.totalCents ?? invoiceData.amountCents ?? 0,
+        currency: invoiceData.currency,
+        pdfUrl: invoiceData.pdfUrl,
+        billToName: invoiceData.billToName ?? invoiceData.guestName,
+        billToEmail: invoiceData.billToEmail ?? invoiceData.guestEmail,
+      });
+      setInvoicePreviewOpen(true);
     } catch (error: any) {
-      showToast(error.message || "Failed to resend invoice", "error");
+      showToast(error.message || "Failed to load invoice", "error");
     } finally {
       setResendingInvoicePaymentId(null);
     }
@@ -837,13 +868,13 @@ export default function TrialBookingsPage() {
 
                                     {booking.payment?.status === "succeeded" && booking.paymentId && (
                                       <button
-                                        onClick={() => { handleResendInvoice(booking); setOpenDropdownId(null); }}
+                                        onClick={() => { handleViewInvoice(booking); setOpenDropdownId(null); }}
                                         disabled={resendingInvoicePaymentId === booking.paymentId}
                                         className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50">
                                         {resendingInvoicePaymentId === booking.paymentId
                                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                           : <FileText className="w-3.5 h-3.5 text-emerald-600" />}
-                                        Resend Invoice
+                                        View Invoice
                                       </button>
                                     )}
 
@@ -1298,6 +1329,12 @@ export default function TrialBookingsPage() {
           </div>
         </form>
       </Modal>
+
+      <InvoicePreviewModal
+        isOpen={invoicePreviewOpen}
+        onClose={() => setInvoicePreviewOpen(false)}
+        invoice={invoicePreview}
+      />
     </div>
   );
 }
