@@ -56,6 +56,7 @@ export default function TrialBookingsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [ageGroupFilter, setAgeGroupFilter] = useState<string>("all");
   const [bookingTypeFilter, setBookingTypeFilter] = useState<string>("all");
+  const [paymentFilter, setPaymentFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -354,12 +355,18 @@ export default function TrialBookingsPage() {
     return 'trial';
   };
 
-  const BOOKING_TYPE_CONFIG: Record<BookingType, { label: string; badge: string; rowBorder: string }> = {
-    'trial':      { label: 'Trial',      badge: 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700',       rowBorder: 'border-l-4 border-blue-400' },
-    'duo-trial':  { label: 'Duo Trial',  badge: 'bg-lime-100 text-lime-700 border-lime-300 dark:bg-lime-900/30 dark:text-lime-400 dark:border-lime-700',         rowBorder: 'border-l-4 border-lime-500' },
-    'zumfamilia': { label: 'ZumFamilia', badge: 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700', rowBorder: 'border-l-4 border-emerald-500' },
-    'zumfiesta':  { label: 'ZumFiesta',  badge: 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-700',  rowBorder: 'border-l-4 border-orange-500' },
+  const BOOKING_TYPE_CONFIG: Record<BookingType, { label: string; badge: string; rowBorder: string; avatar: string }> = {
+    'trial':      { label: 'Trial',      badge: 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700',       rowBorder: 'border-l-4 border-blue-400', avatar: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
+    'duo-trial':  { label: 'Duo Trial',  badge: 'bg-lime-100 text-lime-700 border-lime-300 dark:bg-lime-900/30 dark:text-lime-400 dark:border-lime-700',         rowBorder: 'border-l-4 border-lime-500', avatar: 'bg-lime-100 text-lime-700 dark:bg-lime-900/40 dark:text-lime-300' },
+    'zumfamilia': { label: 'ZumFamilia', badge: 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700', rowBorder: 'border-l-4 border-emerald-500', avatar: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
+    'zumfiesta':  { label: 'ZumFiesta',  badge: 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-700',  rowBorder: 'border-l-4 border-orange-500', avatar: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' },
   };
+
+  const getInitials = (name: string): string =>
+    (name || "?").trim().split(/\s+/).map((n) => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
+
+  const isPaymentPaid = (booking: TrialBooking): boolean =>
+    booking.payment?.status === "succeeded" || booking.payment?.status === "completed";
 
   const getDisplayScheduleTime = (booking: TrialBooking): string =>
     (isZumFamiliaBooking(booking) ? booking.payment?.metadata?.custom_schedule : null) ||
@@ -627,6 +634,41 @@ export default function TrialBookingsPage() {
             );
           })}
         </div>
+
+        {/* Row 3: Payment filter */}
+        <div className="flex flex-wrap gap-2">
+          {([
+            { key: 'all', label: 'All Payments' },
+            { key: 'paid', label: 'Paid' },
+            { key: 'unpaid', label: 'Unpaid / Pending' },
+          ] as const).map(({ key, label }) => {
+            const isActive = paymentFilter === key;
+            const count =
+              key === 'all' ? bookings.length :
+              key === 'paid' ? bookings.filter(isPaymentPaid).length :
+              bookings.filter((b) => !isPaymentPaid(b)).length;
+            return (
+              <button
+                key={key}
+                onClick={() => { setPaymentFilter(key); setCurrentPage(1); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                  isActive
+                    ? key === 'paid'
+                      ? 'bg-green-600 text-white border-green-600'
+                      : key === 'unpaid'
+                        ? 'bg-orange-600 text-white border-orange-600'
+                        : 'bg-gray-900 text-white border-gray-900 dark:bg-white dark:text-gray-900 dark:border-white'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600'
+                }`}
+              >
+                {label}
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Stats */}
@@ -713,262 +755,270 @@ export default function TrialBookingsPage() {
         </div>
       )}
 
-      {/* Bookings Table */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-        {loading ? (
-          <div className="p-10 text-center">
-            <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-amber-500 mx-auto" />
-            <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Loading…</p>
-          </div>
-        ) : !Array.isArray(bookings) || bookings.length === 0 ? (
-          <div className="p-10 text-center">
-            <User className="w-9 h-9 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-            <p className="text-sm text-gray-500 dark:text-gray-400">No bookings found</p>
-            {searchQuery && <p className="text-xs text-gray-400 mt-1">Try adjusting your search or filters</p>}
-          </div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs divide-y divide-gray-100 dark:divide-gray-800">
-                <thead className="bg-gray-50 dark:bg-gray-800 text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  <tr>
-                    <th className="px-4 py-2.5 text-left font-semibold w-[38%]">Guest</th>
-                    <th className="px-4 py-2.5 text-left font-semibold w-[32%]">Class &amp; Time</th>
-                    <th className="px-4 py-2.5 text-left font-semibold w-[16%]">Payment</th>
-                    <th className="px-4 py-2.5 text-left font-semibold w-[14%]">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  {bookings
-                    .filter((booking) => {
-                      if (ageGroupFilter !== "all") {
-                        const isKid = isKidBooking(booking);
-                        if (ageGroupFilter === "kid" && !isKid) return false;
-                        if (ageGroupFilter === "adult" && isKid) return false;
-                      }
-                      if (bookingTypeFilter !== "all" && getBookingType(booking) !== bookingTypeFilter) return false;
-                      return true;
-                    })
-                    .map((booking) => {
-                      const type = getBookingType(booking);
-                      const config = BOOKING_TYPE_CONFIG[type];
-                      const isDraft = booking.status === "draft";
-                      const isUnscheduled = booking.status === "needs_scheduling";
-                      const isPendingPayment = booking.status === "pending_payment";
-                      const isKid = isKidBooking(booking);
-                      const isZumFamilia = type === "zumfamilia";
-                      const isDuo = type === "duo-trial";
-                      const primaryName = getPrimaryContactName(booking);
-                      const primaryEmail = getPrimaryContactEmail(booking);
-                      const primaryPhone = getPrimaryContactPhone(booking);
-                      const p2 = getParticipant2(booking);
-                      const isBusy = updatingStatus === booking.id || deletingId === booking.id || syncingPaymentId === booking.id;
+      {/* Bookings List */}
+      {loading ? (
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-10 text-center">
+          <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-amber-500 mx-auto" />
+          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+        </div>
+      ) : !Array.isArray(bookings) || bookings.length === 0 ? (
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-10 text-center">
+          <User className="w-9 h-9 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">No bookings found</p>
+          {searchQuery && <p className="text-xs text-gray-400 mt-1">Try adjusting your search or filters</p>}
+        </div>
+      ) : (
+        <>
+          <div className="space-y-3">
+            {bookings
+              .filter((booking) => {
+                if (ageGroupFilter !== "all") {
+                  const isKid = isKidBooking(booking);
+                  if (ageGroupFilter === "kid" && !isKid) return false;
+                  if (ageGroupFilter === "adult" && isKid) return false;
+                }
+                if (bookingTypeFilter !== "all" && getBookingType(booking) !== bookingTypeFilter) return false;
+                if (paymentFilter === "paid" && !isPaymentPaid(booking)) return false;
+                if (paymentFilter === "unpaid" && isPaymentPaid(booking)) return false;
+                return true;
+              })
+              .map((booking) => {
+                const type = getBookingType(booking);
+                const config = BOOKING_TYPE_CONFIG[type];
+                const isDraft = booking.status === "draft";
+                const isUnscheduled = booking.status === "needs_scheduling";
+                const isPendingPayment = booking.status === "pending_payment";
+                const isKid = isKidBooking(booking);
+                const isZumFamilia = type === "zumfamilia";
+                const isDuo = type === "duo-trial";
+                const primaryName = getPrimaryContactName(booking);
+                const primaryEmail = getPrimaryContactEmail(booking);
+                const primaryPhone = getPrimaryContactPhone(booking);
+                const p2 = getParticipant2(booking);
+                const isBusy = updatingStatus === booking.id || deletingId === booking.id || syncingPaymentId === booking.id;
 
-                      return (
-                        <tr
-                          key={booking.id}
-                          className={`hover:bg-gray-50 dark:hover:bg-gray-800/60 align-top ${config.rowBorder} ${isDraft ? "bg-yellow-50/40 dark:bg-yellow-900/10" : ""} ${isUnscheduled ? "bg-amber-50 dark:bg-amber-950/30 ring-1 ring-inset ring-amber-200 dark:ring-amber-800" : ""} ${isPendingPayment ? "bg-orange-50 dark:bg-orange-950/30 ring-1 ring-inset ring-orange-200 dark:ring-orange-800" : ""}`}
-                        >
-                          {/* Guest — name, badges, contact, secondary info */}
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border leading-none ${config.badge}`}>{config.label}</span>
-                              {getStatusBadge(booking.status)}
-                              {isKid && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 border border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700 leading-none">{isZumFamilia ? "Child" : "Kid"}</span>}
-                            </div>
-                            <p className="font-semibold text-gray-900 dark:text-white leading-tight">{primaryName}</p>
-                            <p className="text-gray-400 dark:text-gray-500 truncate">{primaryEmail}</p>
-                            <p className="text-gray-400 dark:text-gray-500">
-                              {primaryPhone && <span>{primaryPhone}</span>}
-                              {booking.guestDateOfBirth && <span className="ml-1.5">· Age {calculateAge(booking.guestDateOfBirth)}</span>}
+                return (
+                  <div
+                    key={booking.id}
+                    className={`rounded-xl border bg-white dark:bg-gray-900 shadow-sm hover:shadow-md transition-shadow p-4 sm:p-5 ${config.rowBorder} ${
+                      isDraft ? "border-yellow-200 dark:border-yellow-800 bg-yellow-50/40 dark:bg-yellow-900/10" :
+                      isUnscheduled ? "border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20" :
+                      isPendingPayment ? "border-orange-200 dark:border-orange-800 bg-orange-50/60 dark:bg-orange-950/20" :
+                      "border-gray-200 dark:border-gray-800"
+                    }`}
+                  >
+                    <div className="flex flex-col lg:flex-row lg:items-start gap-4 lg:gap-5">
+                      {/* Guest — name, badges, contact, secondary info */}
+                      <div className="flex-1 min-w-0 flex gap-3">
+                        <div className={`hidden sm:flex shrink-0 w-11 h-11 rounded-full items-center justify-center text-sm font-black ${config.avatar}`}>
+                          {getInitials(primaryName)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border leading-none ${config.badge}`}>{config.label}</span>
+                            {getStatusBadge(booking.status)}
+                            {isKid && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 border border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700 leading-none">{isZumFamilia ? "Child" : "Kid"}</span>}
+                          </div>
+                          <p className="font-semibold text-gray-900 dark:text-white leading-tight truncate">{primaryName}</p>
+                          <p className="text-gray-400 dark:text-gray-500 text-xs truncate">{primaryEmail}</p>
+                          <p className="text-gray-400 dark:text-gray-500 text-xs">
+                            {primaryPhone && <span>{primaryPhone}</span>}
+                            {booking.guestDateOfBirth && <span className="ml-1.5">· Age {calculateAge(booking.guestDateOfBirth)}</span>}
+                          </p>
+                          {isZumFamilia && <p className="text-emerald-600 dark:text-emerald-400 font-medium mt-0.5 text-[10px]">Child: {booking.guestName}{booking.guestDateOfBirth ? ` (${calculateAge(booking.guestDateOfBirth)} yrs)` : ""}</p>}
+                          {p2 && (
+                            <p className="text-lime-600 dark:text-lime-400 font-bold mt-0.5 text-[10px]">
+                              P2 (2nd Guest): {p2.name || "—"}{p2.phone ? ` · ${p2.phone}` : ""}
+                              {p2.dateOfBirth ? ` · Age ${calculateAge(p2.dateOfBirth)}` : ""}
+                              {p2.gender ? ` · ${p2.gender.charAt(0).toUpperCase() + p2.gender.slice(1)}` : ""}
                             </p>
-                            {isZumFamilia && <p className="text-emerald-600 dark:text-emerald-400 font-medium mt-0.5 text-[10px]">Child: {booking.guestName}{booking.guestDateOfBirth ? ` (${calculateAge(booking.guestDateOfBirth)} yrs)` : ""}</p>}
-                            {p2 && (
-                              <p className="text-lime-600 dark:text-lime-400 font-bold mt-0.5 text-[10px]">
-                                P2 (2nd Guest): {p2.name || "—"}{p2.phone ? ` · ${p2.phone}` : ""}
-                                {p2.dateOfBirth ? ` · Age ${calculateAge(p2.dateOfBirth)}` : ""}
-                                {p2.gender ? ` · ${p2.gender.charAt(0).toUpperCase() + p2.gender.slice(1)}` : ""}
-                              </p>
-                            )}
-                            <p className="text-[10px] text-gray-300 dark:text-gray-600 mt-0.5">Booked {formatDate(booking.bookedAt)}</p>
-                          </td>
+                          )}
+                          <p className="text-[10px] text-gray-300 dark:text-gray-600 mt-1">Booked {formatDate(booking.bookedAt)}</p>
+                        </div>
+                      </div>
 
-                          {/* Class & Time — merged */}
-                          <td className="px-4 py-3">
-                            {booking.class ? (
-                              <>
-                                <p className="font-semibold text-gray-900 dark:text-white uppercase leading-tight">{booking.class.title}</p>
-                                {booking.class.instructorName && <p className="text-gray-400 dark:text-gray-500">{booking.class.instructorName}</p>}
-                                {isZumFamilia && booking.payment?.metadata?.package_label && (
-                                  <p className="text-emerald-600 dark:text-emerald-400 font-medium text-[10px]">{booking.payment.metadata.package_label}</p>
-                                )}
-                                <p className="text-gray-600 dark:text-gray-300 mt-0.5">{getDisplayScheduleTime(booking)}</p>
-                              </>
-                            ) : (
-                              isUnscheduled ? (
-                                <div><p className="font-bold text-amber-700 dark:text-amber-300">Class not selected</p><p className="text-xs text-amber-600">Staff follow-up required</p></div>
-                              ) : isPendingPayment ? (
-                                <div><p className="font-bold text-orange-700 dark:text-orange-300">Awaiting payment</p><p className="text-xs text-orange-600">Not confirmed on HitPay yet</p></div>
-                              ) : <span className="text-gray-400 italic">—</span>
-                            )}
-                          </td>
+                      <div className="hidden lg:block w-px self-stretch bg-gray-100 dark:bg-gray-800" />
 
-                          {/* Payment */}
-                          <td className="px-4 py-3">
-                            {booking.payment ? (
-                              <>
-                                <p className="font-semibold text-gray-900 dark:text-white">{booking.payment.currency} {(booking.payment.amountCents / 100).toFixed(2)}</p>
-                                <p className={`text-[10px] ${booking.payment.status === "succeeded" ? "text-green-600 dark:text-green-400" : "text-yellow-600 dark:text-yellow-400"}`}>{booking.payment.status}</p>
-                              </>
-                            ) : (
-                              <span className="text-gray-400">—</span>
+                      {/* Class & Time */}
+                      <div className="lg:w-56 shrink-0 text-xs">
+                        <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-gray-500 font-semibold mb-1">Class &amp; Time</p>
+                        {booking.class ? (
+                          <>
+                            <p className="font-semibold text-gray-900 dark:text-white uppercase leading-tight">{booking.class.title}</p>
+                            {booking.class.instructorName && <p className="text-gray-400 dark:text-gray-500">{booking.class.instructorName}</p>}
+                            {isZumFamilia && booking.payment?.metadata?.package_label && (
+                              <p className="text-emerald-600 dark:text-emerald-400 font-medium text-[10px]">{booking.payment.metadata.package_label}</p>
                             )}
-                          </td>
+                            <p className="text-gray-600 dark:text-gray-300 mt-0.5">{getDisplayScheduleTime(booking)}</p>
+                          </>
+                        ) : (
+                          isUnscheduled ? (
+                            <div><p className="font-bold text-amber-700 dark:text-amber-300">Class not selected</p><p className="text-xs text-amber-600">Staff follow-up required</p></div>
+                          ) : isPendingPayment ? (
+                            <div><p className="font-bold text-orange-700 dark:text-orange-300">Awaiting payment</p><p className="text-xs text-orange-600">Not confirmed on HitPay yet</p></div>
+                          ) : <span className="text-gray-400 italic">—</span>
+                        )}
+                      </div>
 
-                          {/* Actions — dropdown */}
-                          <td className="px-4 py-3">
-                            <div className="relative">
-                              {isUnscheduled && (
-                                <a href={`/leads?search=${encodeURIComponent(primaryEmail || primaryPhone || primaryName)}`} className="inline-flex rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-700">
-                                  Schedule in Leads
-                                </a>
-                              )}
-                              {isPendingPayment && (
-                                <button
-                                  onClick={() => handleSyncPayment(booking)}
-                                  disabled={isBusy}
-                                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white hover:bg-orange-700 disabled:opacity-50"
-                                  title="Re-check this payment against HitPay"
-                                >
-                                  {syncingPaymentId === booking.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                                  Sync payment
+                      <div className="hidden lg:block w-px self-stretch bg-gray-100 dark:bg-gray-800" />
+
+                      {/* Payment */}
+                      <div className="lg:w-32 shrink-0 text-xs">
+                        <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-gray-500 font-semibold mb-1">Payment</p>
+                        {booking.payment ? (
+                          <>
+                            <p className="font-semibold text-gray-900 dark:text-white">{booking.payment.currency} {(booking.payment.amountCents / 100).toFixed(2)}</p>
+                            <p className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${isPaymentPaid(booking) ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"}`}>{booking.payment.status}</p>
+                          </>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </div>
+
+                      <div className="hidden lg:block w-px self-stretch bg-gray-100 dark:bg-gray-800" />
+
+                      {/* Actions — dropdown */}
+                      <div className="lg:w-40 shrink-0 flex lg:justify-end">
+                        <div className="relative">
+                          {isUnscheduled && (
+                            <a href={`/leads?search=${encodeURIComponent(primaryEmail || primaryPhone || primaryName)}`} className="inline-flex rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-700">
+                              Schedule in Leads
+                            </a>
+                          )}
+                          {isPendingPayment && (
+                            <button
+                              onClick={() => handleSyncPayment(booking)}
+                              disabled={isBusy}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white hover:bg-orange-700 disabled:opacity-50"
+                              title="Re-check this payment against HitPay"
+                            >
+                              {syncingPaymentId === booking.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                              Sync payment
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setOpenDropdownId(openDropdownId === booking.id ? null : booking.id)}
+                            disabled={isBusy || isUnscheduled || isPendingPayment}
+                            className={`${isUnscheduled || isPendingPayment ? "hidden" : "flex"} items-center gap-1.5 px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50`}
+                          >
+                            {isBusy
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <><span>Actions</span><span className="text-gray-400">▾</span></>
+                            }
+                          </button>
+
+                          {openDropdownId === booking.id && (
+                            <>
+                              {/* backdrop to close */}
+                              <div className="fixed inset-0 z-10" onClick={() => setOpenDropdownId(null)} />
+                              <div className="absolute right-0 top-full mt-1 z-20 w-48 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden">
+                                {/* View */}
+                                <button onClick={() => { setSelectedBooking(booking); setDetailsModalOpen(true); setOpenDropdownId(null); }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                  <Eye className="w-3.5 h-3.5 text-gray-500" /> View Details
                                 </button>
-                              )}
-                              <button
-                                onClick={() => setOpenDropdownId(openDropdownId === booking.id ? null : booking.id)}
-                                disabled={isBusy || isUnscheduled || isPendingPayment}
-                                className={`${isUnscheduled || isPendingPayment ? "hidden" : "flex"} items-center gap-1.5 px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50`}
-                              >
-                                {isBusy
-                                  ? <Loader2 className="w-3 h-3 animate-spin" />
-                                  : <><span>Actions</span><span className="text-gray-400">▾</span></>
-                                }
-                              </button>
 
-                              {openDropdownId === booking.id && (
-                                <>
-                                  {/* backdrop to close */}
-                                  <div className="fixed inset-0 z-10" onClick={() => setOpenDropdownId(null)} />
-                                  <div className="absolute right-0 top-full mt-1 z-20 w-48 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden">
-                                    {/* View */}
-                                    <button onClick={() => { setSelectedBooking(booking); setDetailsModalOpen(true); setOpenDropdownId(null); }}
+                                {/* Add 2nd Guest / Companion */}
+                                <button onClick={() => { handleOpenCompanionModal(booking); setOpenDropdownId(null); }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-lime-700 dark:text-lime-400 hover:bg-lime-50 dark:hover:bg-lime-900/20 transition-colors font-semibold border-t border-b border-gray-100 dark:border-gray-800">
+                                  <UserPlus className="w-3.5 h-3.5" /> + Add 2nd Guest
+                                </button>
+
+                                {booking.payment?.status === "succeeded" && booking.paymentId && (
+                                  <button
+                                    onClick={() => { handleViewInvoice(booking); setOpenDropdownId(null); }}
+                                    disabled={resendingInvoicePaymentId === booking.paymentId}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50">
+                                    {resendingInvoicePaymentId === booking.paymentId
+                                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      : <FileText className="w-3.5 h-3.5 text-emerald-600" />}
+                                    View Invoice
+                                  </button>
+                                )}
+
+                                {isDraft && (
+                                  <>
+                                    <a href={`mailto:${primaryEmail}?subject=Complete Your Booking&body=Hi ${primaryName},%0D%0A%0D%0AWe noticed your booking wasn't completed. We'd love to help!%0D%0A%0D%0AThank you!`}
+                                      onClick={() => setOpenDropdownId(null)}
                                       className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                                      <Eye className="w-3.5 h-3.5 text-gray-500" /> View Details
-                                    </button>
-
-                                    {/* Add 2nd Guest / Companion */}
-                                    <button onClick={() => { handleOpenCompanionModal(booking); setOpenDropdownId(null); }}
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-lime-700 dark:text-lime-400 hover:bg-lime-50 dark:hover:bg-lime-900/20 transition-colors font-semibold border-t border-b border-gray-100 dark:border-gray-800">
-                                      <UserPlus className="w-3.5 h-3.5" /> + Add 2nd Guest
-                                    </button>
-
-                                    {booking.payment?.status === "succeeded" && booking.paymentId && (
-                                      <button
-                                        onClick={() => { handleViewInvoice(booking); setOpenDropdownId(null); }}
-                                        disabled={resendingInvoicePaymentId === booking.paymentId}
-                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50">
-                                        {resendingInvoicePaymentId === booking.paymentId
-                                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                          : <FileText className="w-3.5 h-3.5 text-emerald-600" />}
-                                        View Invoice
+                                      <Mail className="w-3.5 h-3.5 text-green-600" /> Email Guest
+                                    </a>
+                                    {primaryPhone && (
+                                      <a href={`tel:${primaryPhone}`} onClick={() => setOpenDropdownId(null)}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                        <Phone className="w-3.5 h-3.5 text-blue-600" /> Call Guest
+                                      </a>
+                                    )}
+                                    {booking.payment?.hitpayPaymentRequestId && (
+                                      <button onClick={() => { handleSyncPayment(booking); setOpenDropdownId(null); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                        <RefreshCw className="w-3.5 h-3.5 text-indigo-600" /> Sync Payment
                                       </button>
                                     )}
+                                    <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+                                    <button onClick={() => { handleStatusUpdate(booking.id, "confirmed"); setOpenDropdownId(null); }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors font-semibold">
+                                      <CheckCircle className="w-3.5 h-3.5" /> Confirm Booking
+                                    </button>
+                                    <button onClick={() => { setCancelBookingId(booking.id); setCancelReason(""); setCancelModalOpen(true); setOpenDropdownId(null); }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors">
+                                      <XCircle className="w-3.5 h-3.5" /> Cancel
+                                    </button>
+                                    <button onClick={() => { handleDeleteClick(booking.id, booking.guestName); setOpenDropdownId(null); }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                                    </button>
+                                  </>
+                                )}
 
-                                    {isDraft && (
-                                      <>
-                                        <a href={`mailto:${primaryEmail}?subject=Complete Your Booking&body=Hi ${primaryName},%0D%0A%0D%0AWe noticed your booking wasn't completed. We'd love to help!%0D%0A%0D%0AThank you!`}
-                                          onClick={() => setOpenDropdownId(null)}
-                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                                          <Mail className="w-3.5 h-3.5 text-green-600" /> Email Guest
-                                        </a>
-                                        {primaryPhone && (
-                                          <a href={`tel:${primaryPhone}`} onClick={() => setOpenDropdownId(null)}
-                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                                            <Phone className="w-3.5 h-3.5 text-blue-600" /> Call Guest
-                                          </a>
-                                        )}
-                                        {booking.payment?.hitpayPaymentRequestId && (
-                                          <button onClick={() => { handleSyncPayment(booking); setOpenDropdownId(null); }}
-                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                                            <RefreshCw className="w-3.5 h-3.5 text-indigo-600" /> Sync Payment
-                                          </button>
-                                        )}
-                                        <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
-                                        <button onClick={() => { handleStatusUpdate(booking.id, "confirmed"); setOpenDropdownId(null); }}
-                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors font-semibold">
-                                          <CheckCircle className="w-3.5 h-3.5" /> Confirm Booking
-                                        </button>
-                                        <button onClick={() => { setCancelBookingId(booking.id); setCancelReason(""); setCancelModalOpen(true); setOpenDropdownId(null); }}
-                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors">
-                                          <XCircle className="w-3.5 h-3.5" /> Cancel
-                                        </button>
-                                        <button onClick={() => { handleDeleteClick(booking.id, booking.guestName); setOpenDropdownId(null); }}
-                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-                                          <Trash2 className="w-3.5 h-3.5" /> Delete
-                                        </button>
-                                      </>
-                                    )}
+                                {booking.status === "confirmed" && (
+                                  <>
+                                    <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+                                    <button onClick={() => { handleStatusUpdate(booking.id, "attended"); setOpenDropdownId(null); }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors font-semibold">
+                                      <CheckCircle className="w-3.5 h-3.5" /> Mark Attended
+                                    </button>
+                                    <button onClick={() => { handleStatusUpdate(booking.id, "no-show"); setOpenDropdownId(null); }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                      <XCircle className="w-3.5 h-3.5" /> No Show
+                                    </button>
+                                    <button onClick={() => { handleDeleteClick(booking.id, booking.guestName); setOpenDropdownId(null); }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                                    </button>
+                                  </>
+                                )}
 
-                                    {booking.status === "confirmed" && (
-                                      <>
-                                        <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
-                                        <button onClick={() => { handleStatusUpdate(booking.id, "attended"); setOpenDropdownId(null); }}
-                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors font-semibold">
-                                          <CheckCircle className="w-3.5 h-3.5" /> Mark Attended
-                                        </button>
-                                        <button onClick={() => { handleStatusUpdate(booking.id, "no-show"); setOpenDropdownId(null); }}
-                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                                          <XCircle className="w-3.5 h-3.5" /> No Show
-                                        </button>
-                                        <button onClick={() => { handleDeleteClick(booking.id, booking.guestName); setOpenDropdownId(null); }}
-                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-                                          <Trash2 className="w-3.5 h-3.5" /> Delete
-                                        </button>
-                                      </>
-                                    )}
+                                {(booking.status === "cancelled" || booking.status === "cancelled-late" || booking.status === "no-show") && (
+                                  <>
+                                    <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+                                    <button onClick={() => { handleDeleteClick(booking.id, booking.guestName); setOpenDropdownId(null); }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
 
-                                    {(booking.status === "cancelled" || booking.status === "cancelled-late" || booking.status === "no-show") && (
-                                      <>
-                                        <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
-                                        <button onClick={() => { handleDeleteClick(booking.id, booking.guestName); setOpenDropdownId(null); }}
-                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-                                          <Trash2 className="w-3.5 h-3.5" /> Delete
-                                        </button>
-                                      </>
-                                    )}
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 dark:border-gray-800">
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Showing {Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, total)}–{Math.min(currentPage * ITEMS_PER_PAGE, total)} of {total} booking{total !== 1 ? "s" : ""}
-              </p>
-              {totalPages > 1 && (
-                <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
-              )}
-            </div>
-          </>
-        )}
-      </div>
+          <div className="flex items-center justify-between bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 px-4 py-3 mt-3">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Showing {Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, total)}–{Math.min(currentPage * ITEMS_PER_PAGE, total)} of {total} booking{total !== 1 ? "s" : ""}
+            </p>
+            {totalPages > 1 && (
+              <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+            )}
+          </div>
+        </>
+      )}
 
       {/* Booking Details Modal */}
       <Modal
