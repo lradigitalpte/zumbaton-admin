@@ -17,6 +17,7 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS guest_phone TEXT;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS description TEXT;
 
 -- Every invoice must be attributable to a registered user or a guest.
+ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_user_or_guest_check;
 ALTER TABLE invoices ADD CONSTRAINT invoices_user_or_guest_check
   CHECK (user_id IS NOT NULL OR guest_email IS NOT NULL);
 
