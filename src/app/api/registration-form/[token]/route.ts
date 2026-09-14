@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { getSupabaseAdminClient, TABLES } from '@/lib/supabase'
 
 // CORS headers for public access
@@ -271,36 +271,44 @@ export async function POST(
       responseData.profileSynced = true
     }
 
-    // Send email with PDF attachment
-    try {
-      // Get user details for email
-      const { data: userProfile } = await supabase
-        .from(TABLES.USER_PROFILES)
-        .select('email, name')
-        .eq('id', form.user_id)
-        .single()
+    // Send email with PDF attachment AFTER responding to the user.
+    // The form data is already saved at this point (above) - emailing the PDF copy
+    // is a nice-to-have, not something that should ever block or fail the customer's
+    // submission. Previously this was awaited before responding, so a slow/flaky
+    // email step (or a hiccup in either app's server) could make a successful
+    // submission look like a "Failed to submit form" error to the customer.
+    const memberSignatureDate = new Date().toISOString()
+    const submittedAt = memberSignatureDate
+    after(async () => {
+      try {
+        // Get user details for email
+        const { data: userProfile } = await supabase
+          .from(TABLES.USER_PROFILES)
+          .select('email, name')
+          .eq('id', form.user_id)
+          .single()
 
-      if (userProfile?.email) {
-        const { getWebAppUrl } = await import('@/lib/email-url')
-        const webAppUrl = getWebAppUrl()
+        if (userProfile?.email) {
+          const { getWebAppUrl } = await import('@/lib/email-url')
+          const webAppUrl = getWebAppUrl()
 
-        // Request PDF generation and email sending from web app
-        await fetch(`${webAppUrl}/api/registration-form/send-pdf`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...formData,
-            userEmail: userProfile.email,
-            userName: userProfile.name,
-            memberSignatureDate: new Date().toISOString(),
-            submittedAt: new Date().toISOString(),
-          }),
-        })
+          // Request PDF generation and email sending from web app
+          await fetch(`${webAppUrl}/api/registration-form/send-pdf`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...formData,
+              userEmail: userProfile.email,
+              userName: userProfile.name,
+              memberSignatureDate,
+              submittedAt,
+            }),
+          })
+        }
+      } catch (emailError) {
+        console.error('[Registration Form] Failed to send PDF email:', emailError)
       }
-    } catch (emailError) {
-      console.error('[Registration Form] Failed to send PDF email:', emailError)
-      // Don't fail the form submission if email fails
-    }
+    })
 
     return NextResponse.json(responseData, { headers: corsHeaders })
   } catch (error) {

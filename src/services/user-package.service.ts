@@ -234,6 +234,70 @@ export async function freezePackage(params: {
   }
 }
 
+// Extend a package's expiry date by a number of days (admin override).
+// Unlike freeze, this doesn't change status to 'frozen' - it's for cases like
+// "give this member more time to use their remaining tokens". If the package had
+// already expired, extending it into the future reactivates it so it's usable again.
+export async function extendPackageExpiry(params: {
+  userId: string
+  userPackageId: string
+  days: number
+}): Promise<{
+  userPackageId: string
+  previousExpiresAt: string
+  newExpiresAt: string
+  message: string
+}> {
+  const { userId, userPackageId, days } = params
+
+  const { data: userPackage, error: fetchError } = await supabase
+    .from(TABLES.USER_PACKAGES)
+    .select('*')
+    .eq('id', userPackageId)
+    .eq('user_id', userId)
+    .single()
+
+  if (fetchError || !userPackage) {
+    throw new ApiError('NOT_FOUND_ERROR', 'User package not found', 404)
+  }
+
+  if (userPackage.status === 'cancelled') {
+    throw new ApiError('VALIDATION_ERROR', 'Cannot extend a cancelled package', 400)
+  }
+
+  const previousExpiresAt = userPackage.expires_at as string
+  // Base the extension off whichever is later: now, or the current expiry.
+  // This ensures extending an already-expired package actually pushes it into
+  // the future, instead of just adding days to a stale past date.
+  const base = Math.max(Date.now(), new Date(previousExpiresAt).getTime())
+  const newExpiry = new Date(base)
+  newExpiry.setDate(newExpiry.getDate() + days)
+
+  const updates: Record<string, unknown> = {
+    expires_at: newExpiry.toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+  if (userPackage.status === 'expired') {
+    updates.status = 'active'
+  }
+
+  const { error: updateError } = await supabase
+    .from(TABLES.USER_PACKAGES)
+    .update(updates)
+    .eq('id', userPackageId)
+
+  if (updateError) {
+    throw new ApiError('SERVER_ERROR', 'Failed to extend package expiry', 500, updateError)
+  }
+
+  return {
+    userPackageId,
+    previousExpiresAt,
+    newExpiresAt: newExpiry.toISOString(),
+    message: `Expiry extended to ${newExpiry.toLocaleDateString()}.`,
+  }
+}
+
 // Unfreeze a package (manual or scheduled)
 export async function unfreezePackage(userPackageId: string): Promise<{
   success: boolean

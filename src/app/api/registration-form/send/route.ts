@@ -9,7 +9,7 @@ import crypto from 'crypto'
 export async function POST(request: Request) {
   try {
     const supabase = getSupabaseAdminClient()
-    const { userId } = await request.json()
+    const { userId, skipEmail } = await request.json()
 
     if (!userId) {
       return NextResponse.json(
@@ -75,7 +75,20 @@ export async function POST(request: Request) {
     const { getWebAppUrl } = await import('@/lib/email-url')
     const baseUrl = getWebAppUrl()
     const formUrl = `${baseUrl}/registration-form/${formToken}`
-    
+
+    // Allow generating a link without emailing it (e.g. "Copy Link" action),
+    // so staff can hand it to the user directly when email delivery is unreliable.
+    if (skipEmail) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          formId: formRecord.id,
+          formUrl,
+          expiresAt: tokenExpiresAt.toISOString(),
+        },
+      })
+    }
+
     // Send email using the email API
     try {
       const { getWebAppUrl } = await import('@/lib/email-url')

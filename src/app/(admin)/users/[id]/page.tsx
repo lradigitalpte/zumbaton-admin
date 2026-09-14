@@ -7,7 +7,7 @@ import SlidePanel from "@/components/ui/SlidePanel";
 import Label from "@/components/form/Label";
 import Input from "@/components/form/input/InputField";
 import { useUser, useInvalidateUser, type UserDetail } from "@/hooks/useUser";
-import { RefreshCw, Upload, Trash2 } from "lucide-react";
+import { RefreshCw, Upload, Trash2, Copy, Check } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 import { supabase } from "@/lib/supabase";
 import { useQueryClient } from "@tanstack/react-query";
@@ -23,7 +23,7 @@ interface ClassHistory {
   instructor: string;
   date: string;
   time: string;
-  status: "attended" | "no-show" | "cancelled";
+  status: "attended" | "no-show" | "cancelled" | "confirmed" | "waitlist";
 }
 
 interface TokenTransaction {
@@ -77,6 +77,10 @@ export default function UserDetailPage() {
   const [discount, setDiscount] = useState("");
   const [userPackages, setUserPackages] = useState<Array<{ id: string; packageName: string; tokensRemaining: number; purchasedAt: string; expiresAt: string; status: string }>>([]);
   const [isLoadingUserPackages, setIsLoadingUserPackages] = useState(false);
+  const [isExtendPanelOpen, setIsExtendPanelOpen] = useState(false);
+  const [extendingPackage, setExtendingPackage] = useState<{ id: string; packageName: string; expiresAt: string } | null>(null);
+  const [extendDays, setExtendDays] = useState("30");
+  const [isExtendingExpiry, setIsExtendingExpiry] = useState(false);
   const [isLoadingTakingTooLong, setIsLoadingTakingTooLong] = useState(false);
   const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(false);
   const [physicalFormFile, setPhysicalFormFile] = useState<File | null>(null);
@@ -111,6 +115,8 @@ export default function UserDetailPage() {
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [isProcessingTokens, setIsProcessingTokens] = useState(false);
   const [isSendingForm, setIsSendingForm] = useState(false);
+  const [isCopyingFormLink, setIsCopyingFormLink] = useState(false);
+  const [formLinkCopied, setFormLinkCopied] = useState(false);
   const [registrationFormStatus, setRegistrationFormStatus] = useState<'pending' | 'completed' | 'expired' | null>(null);
   const [showReferralPanel, setShowReferralPanel] = useState(false);
   const [referralDiscountPercent, setReferralDiscountPercent] = useState(8);
@@ -177,7 +183,8 @@ export default function UserDetailPage() {
               rawStatus === "attended" ? "attended"
               : rawStatus === "no-show" || rawStatus === "no_show" ? "no-show"
               : rawStatus === "cancelled" || rawStatus === "cancelled-late" ? "cancelled"
-              : "attended",
+              : rawStatus === "waitlist" ? "waitlist"
+              : "confirmed",
           };
         });
 
@@ -537,6 +544,10 @@ export default function UserDetailPage() {
         return "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400";
       case "cancelled":
         return "bg-gray-50 text-gray-600 dark:bg-gray-500/10 dark:text-gray-400";
+      case "confirmed":
+        return "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400";
+      case "waitlist":
+        return "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400";
       default:
         return "bg-gray-50 text-gray-600";
     }
@@ -657,6 +668,50 @@ export default function UserDetailPage() {
       } finally {
         setIsProcessingTokens(false);
       }
+    }
+  };
+
+  const openExtendExpiryPanel = (pkg: { id: string; packageName: string; expiresAt: string }) => {
+    setExtendingPackage(pkg);
+    setExtendDays("30");
+    setIsExtendPanelOpen(true);
+  };
+
+  const handleExtendExpiry = async () => {
+    if (!user?.id || !extendingPackage) return;
+
+    const days = parseInt(extendDays);
+    if (!days || days <= 0) {
+      toast.showToast("Enter a number of days greater than 0", "error");
+      return;
+    }
+
+    setIsExtendingExpiry(true);
+    try {
+      const response = await api.post<{ success: boolean; data: { newExpiresAt: string }; error?: { message: string } }>(
+        `/api/user-packages/${extendingPackage.id}/extend-expiry`,
+        { userId: user.id, days }
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message || "Failed to extend expiry");
+      }
+      if (response.data?.success) {
+        const newDate = new Date(response.data.data.newExpiresAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+        toast.showToast(`Expiry extended to ${newDate}`, "success");
+        setIsExtendPanelOpen(false);
+        setExtendingPackage(null);
+        setForceRefreshKey(prev => prev + 1);
+        invalidateDetail(user.id);
+        queryClient.invalidateQueries({ queryKey: ["user", user.id] });
+      } else {
+        throw new Error("Failed to extend expiry");
+      }
+    } catch (error) {
+      console.error("Error extending package expiry:", error);
+      toast.showToast(error instanceof Error ? error.message : "Failed to extend expiry", "error");
+    } finally {
+      setIsExtendingExpiry(false);
     }
   };
 
@@ -905,6 +960,62 @@ export default function UserDetailPage() {
       toast.showToast(error.message || 'Failed to send registration form', 'error');
     } finally {
       setIsSendingForm(false);
+    }
+  };
+
+  // Generates a fresh registration form link and copies it to the clipboard
+  // without emailing it, so staff can share it manually (WhatsApp, SMS, in person)
+  // when email delivery fails or the customer needs to redo the form.
+  // Works regardless of whether a previous form was already signed/completed.
+  const handleCopyRegistrationFormLink = async () => {
+    if (!user?.id) return;
+
+    setIsCopyingFormLink(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Please sign in to get form link');
+      }
+
+      const response = await fetch('/api/registration-form/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ userId: user.id, skipEmail: true }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to generate registration form link');
+      }
+
+      const formUrl = result.data?.formUrl;
+      if (!formUrl) {
+        throw new Error('No form link returned');
+      }
+
+      try {
+        await navigator.clipboard.writeText(formUrl);
+        toast.showToast('Form link copied to clipboard', 'success');
+        setFormLinkCopied(true);
+        setTimeout(() => setFormLinkCopied(false), 2000);
+      } catch {
+        // Clipboard access can fail (permissions, insecure context); fall back to a visible prompt
+        window.prompt('Copy this registration form link:', formUrl);
+      }
+
+      // Refresh user data since a new pending form record was created
+      setForceRefreshKey(prev => prev + 1);
+      invalidateDetail(userId);
+      await refetch();
+    } catch (error: any) {
+      console.error('Error copying registration form link:', error);
+      toast.showToast(error.message || 'Failed to get registration form link', 'error');
+    } finally {
+      setIsCopyingFormLink(false);
     }
   };
 
@@ -1543,6 +1654,25 @@ export default function UserDetailPage() {
                       >
                         {isSendingForm ? 'Sending...' : (userData.registrationFormSentAt ? 'Resend Form' : 'Send Form')}
                       </button>
+
+                      {/* Copy Form Link Button - always available, even if a form was already signed,
+                          so staff can grab a working link when email delivery fails or the form needs redoing */}
+                      <button
+                        onClick={handleCopyRegistrationFormLink}
+                        disabled={isCopyingFormLink || !user?.id}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+                        title="Copy the registration form link to clipboard"
+                      >
+                        {formLinkCopied ? (
+                          <>
+                            <Check className="h-3.5 w-3.5" /> Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3.5 w-3.5" /> {isCopyingFormLink ? 'Getting Link...' : 'Copy Link'}
+                          </>
+                        )}
+                      </button>
                     </dd>
                   </div>
                   <div className="flex justify-between">
@@ -1666,6 +1796,9 @@ export default function UserDetailPage() {
                           <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                             Status
                           </th>
+                          <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                            Actions
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -1712,6 +1845,16 @@ export default function UserDetailPage() {
                                 >
                                   {displayStatus}
                                 </span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                {pkg.status !== "cancelled" && (
+                                  <button
+                                    onClick={() => openExtendExpiryPanel(pkg)}
+                                    className="text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
+                                  >
+                                    Extend
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           );
@@ -2689,6 +2832,94 @@ export default function UserDetailPage() {
             </button>
           </div>
         </div>
+      </SlidePanel>
+
+      <SlidePanel
+        isOpen={isExtendPanelOpen}
+        onClose={() => {
+          setIsExtendPanelOpen(false);
+          setExtendingPackage(null);
+          setExtendDays("30");
+        }}
+        title="Extend Token Expiry"
+      >
+        {extendingPackage && (
+          <div className="space-y-6">
+            <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-lg font-semibold text-white">
+                {getInitials(user.name)}
+              </div>
+              <div>
+                <div className="font-medium text-gray-900 dark:text-white">{user.name}</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">{extendingPackage.packageName}</div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+              <div className="text-sm text-gray-500 dark:text-gray-400">Current Expiry Date</div>
+              <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
+                {new Date(extendingPackage.expiresAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="extendDays">Extend By (Days)</Label>
+              <Input
+                id="extendDays"
+                type="number"
+                min="1"
+                placeholder="30"
+                value={extendDays}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === "" || (!isNaN(parseInt(value)) && parseInt(value) > 0)) {
+                    setExtendDays(value);
+                  }
+                }}
+              />
+              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                Number of extra days to give this package. If it's already expired, the new expiry is counted from today.
+              </p>
+            </div>
+
+            {extendDays && !isNaN(parseInt(extendDays)) && parseInt(extendDays) > 0 && (
+              <div className="rounded-xl border-2 border-dashed border-gray-300 p-4 dark:border-gray-600">
+                <div className="text-sm text-gray-500 dark:text-gray-400">New Expiry Date Preview</div>
+                <div className="mt-1 text-2xl font-bold text-brand-600">
+                  {(() => {
+                    const base = Math.max(Date.now(), new Date(extendingPackage.expiresAt).getTime());
+                    const newDate = new Date(base);
+                    newDate.setDate(newDate.getDate() + parseInt(extendDays));
+                    return newDate.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+                  })()}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={() => {
+                  setIsExtendPanelOpen(false);
+                  setExtendingPackage(null);
+                  setExtendDays("30");
+                }}
+                className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExtendExpiry}
+                disabled={isExtendingExpiry || !extendDays || parseInt(extendDays) <= 0}
+                className="flex-1 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isExtendingExpiry && (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                )}
+                {isExtendingExpiry ? "Extending..." : "Extend Expiry"}
+              </button>
+            </div>
+          </div>
+        )}
       </SlidePanel>
 
       <InvoicePreviewModal
