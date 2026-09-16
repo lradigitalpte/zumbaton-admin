@@ -82,9 +82,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: { message: 'Add an email address before booking this lead' } }, { status: 400 })
     }
 
-    const { data: booking, error: bookingErr } = await supabase
-      .from('bookings')
-      .insert({
+    const companionName = (metadata.companion_name as string) || ''
+    const companionEmail = (metadata.companion_email as string) || ''
+    const companionPhone = (metadata.companion_phone as string) || ''
+    const hasCompanion = Boolean(companionName && companionEmail)
+    const spotsNeeded = hasCompanion ? 2 : 1
+    if (bookedCount + spotsNeeded > classData.capacity) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            message: hasCompanion
+              ? 'Not enough spots left in this class for both guests'
+              : 'This class is full',
+          },
+        },
+        { status: 400 }
+      )
+    }
+
+    const bookingsToInsert = [
+      {
         class_id: classId,
         guest_name: guestName,
         guest_email: guestEmail,
@@ -92,17 +110,37 @@ export async function POST(request: NextRequest) {
         is_trial_booking: true,
         payment_id: paymentLead ? leadId : null,
         marketing_lead_id: marketingLead ? leadId : null,
-        status: 'confirmed',
+        status: 'confirmed' as const,
+        tokens_used: 0,
+        booked_at: new Date().toISOString(),
+      },
+    ]
+    if (hasCompanion) {
+      bookingsToInsert.push({
+        class_id: classId,
+        guest_name: companionName,
+        guest_email: companionEmail,
+        guest_phone: companionPhone,
+        is_trial_booking: true,
+        payment_id: paymentLead ? leadId : null,
+        marketing_lead_id: marketingLead ? leadId : null,
+        status: 'confirmed' as const,
         tokens_used: 0,
         booked_at: new Date().toISOString(),
       })
-      .select('id')
-      .single()
+    }
 
-    if (bookingErr || !booking) {
+    const { data: insertedBookings, error: bookingErr } = await supabase
+      .from('bookings')
+      .insert(bookingsToInsert)
+      .select('id, guest_name, guest_email')
+
+    if (bookingErr || !insertedBookings || insertedBookings.length === 0) {
       console.error('[API /leads/book] Booking insert error:', bookingErr)
       return NextResponse.json({ success: false, error: { message: bookingErr?.message || 'Failed to create booking' } }, { status: 500 })
     }
+    const booking = insertedBookings[0]
+    const companionBooking = hasCompanion ? insertedBookings[1] : null
 
     // Mark lead scheduled + record the class on the lead
     if (paymentLead) await supabase.from('payments').update({
@@ -111,6 +149,7 @@ export async function POST(request: NextRequest) {
           lead_status: 'scheduled',
           booked_class_id: classId,
           booked_booking_id: booking.id,
+          booked_companion_booking_id: companionBooking?.id || null,
           booked_class_title: classData.title,
           booked_class_at: classData.scheduled_at,
         },
@@ -122,21 +161,21 @@ export async function POST(request: NextRequest) {
       await supabase.from('lead_activities').insert({ lead_id: leadId, actor_id: user.id, activity_type: 'status_changed', note: `Booked into ${classData.title}`, new_values: { status: 'trial_scheduled', class_id: classId, booking_id: booking.id } })
     }
 
-    // Send a booking-confirmation email to the client (best-effort).
-    let emailSent = false
-    const realEmail = guestEmail && guestEmail.includes('@') && !guestEmail.includes('@guest.')
-    if (realEmail) {
+    // Send a booking-confirmation email to the client, and the friend if there is one (best-effort).
+    const scheduledAt = new Date(classData.scheduled_at)
+    const classDate = scheduledAt.toLocaleDateString('en-SG', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Singapore',
+    })
+    const classTime = scheduledAt.toLocaleTimeString('en-SG', {
+      hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Singapore',
+    })
+    const sendConfirmation = async (toEmail: string, toName: string) => {
+      const realEmail = toEmail && toEmail.includes('@') && !toEmail.includes('@guest.')
+      if (!realEmail) return false
       try {
-        const scheduledAt = new Date(classData.scheduled_at)
-        const classDate = scheduledAt.toLocaleDateString('en-SG', {
-          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Singapore',
-        })
-        const classTime = scheduledAt.toLocaleTimeString('en-SG', {
-          hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Singapore',
-        })
         const emailResult = await sendAdminEmail('booking-confirmation', {
-          userEmail: guestEmail,
-          userName: guestName,
+          userEmail: toEmail,
+          userName: toName,
           className: classData.title,
           classDate,
           classTime,
@@ -144,18 +183,29 @@ export async function POST(request: NextRequest) {
           tokensUsed: 0,
           instructorName: classData.instructor_name || undefined,
         })
-        emailSent = emailResult.success
         if (!emailResult.success) {
           console.warn('[API /leads/book] Confirmation email not sent:', emailResult.error)
         }
+        return emailResult.success
       } catch (emailErr) {
         console.error('[API /leads/book] Confirmation email error:', emailErr)
+        return false
       }
     }
 
+    const emailSent = await sendConfirmation(guestEmail, guestName)
+    const companionEmailSent = companionBooking ? await sendConfirmation(companionEmail, companionName) : false
+
     return NextResponse.json({
       success: true,
-      data: { bookingId: booking.id, classTitle: classData.title, classAt: classData.scheduled_at, emailSent },
+      data: {
+        bookingId: booking.id,
+        companionBookingId: companionBooking?.id || null,
+        classTitle: classData.title,
+        classAt: classData.scheduled_at,
+        emailSent,
+        companionEmailSent,
+      },
     })
   } catch (error) {
     console.error('[API /leads/book]', error)

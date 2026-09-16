@@ -159,7 +159,7 @@ export async function GET(request: NextRequest) {
       .eq('is_trial_booking', true)
       .in('status', ['succeeded', 'completed'])
       .is('class_id', null)
-      .eq('metadata->>flow_type', 'quick_trial')
+      .in('metadata->>flow_type', ['quick_trial', 'quick_join'])
       .eq('metadata->>needs_scheduling', 'true')
     if (startDate) unscheduledQuery = unscheduledQuery.gte('created_at', startDate)
     if (endDate) unscheduledQuery = unscheduledQuery.lte('created_at', endDate)
@@ -201,7 +201,7 @@ export async function GET(request: NextRequest) {
       .eq('is_trial_booking', true)
       .in('status', ['pending', 'in_progress'])
       .is('class_id', null)
-      .eq('metadata->>flow_type', 'quick_trial')
+      .in('metadata->>flow_type', ['quick_trial', 'quick_join'])
     if (startDate) pendingQuery = pendingQuery.gte('created_at', startDate)
     if (endDate) pendingQuery = pendingQuery.lte('created_at', endDate)
     const { data: pendingPayments, error: pendingError } = await pendingQuery

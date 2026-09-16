@@ -5,7 +5,8 @@ import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/components/ui/Toast";
-import { RefreshCw, Mail, Phone, User, Search, Trash2, CheckCircle, XCircle, Eye, Loader2, UserPlus, FileText } from "lucide-react";
+import { RefreshCw, Mail, Phone, User, Search, Trash2, CheckCircle, XCircle, Eye, Loader2, UserPlus, FileText, Send, Copy } from "lucide-react";
+import { getWebAppUrl } from "@/lib/email-url";
 import { InvoicePreviewModal, type PreviewInvoice } from "@/components/invoices/InvoicePreviewModal";
 import Pagination from "@/components/tables/Pagination";
 import { Modal } from "@/components/ui/modal";
@@ -421,6 +422,35 @@ export default function TrialBookingsPage() {
     }
   };
 
+  const handleCopyBookingLink = async (booking: TrialBooking) => {
+    if (!booking.paymentId) return;
+    const url = `${getWebAppUrl()}/start/pick-class?payment_id=${booking.paymentId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast("Booking link copied", "success");
+    } catch {
+      showToast(url, "info");
+    }
+  };
+
+  const [sendingLinkPaymentId, setSendingLinkPaymentId] = useState<string | null>(null);
+  const handleSendBookingLink = async (booking: TrialBooking) => {
+    if (!booking.paymentId) return;
+    try {
+      setSendingLinkPaymentId(booking.paymentId);
+      const response = await api.post<{ success?: boolean; data?: { companionEmailSent: boolean }; error?: { message: string } }>(`/api/leads/${booking.paymentId}/send-booking-link`, {});
+      if (response.error) {
+        showToast(response.error.message || "Failed to send booking link", "error");
+        return;
+      }
+      showToast(`Booking link emailed to ${booking.guestName}${response.data?.data?.companionEmailSent ? " and their friend" : ""}`, "success");
+    } catch (error: any) {
+      showToast(error.message || "Failed to send booking link", "error");
+    } finally {
+      setSendingLinkPaymentId(null);
+    }
+  };
+
   const handleViewInvoice = async (booking: TrialBooking) => {
     const paymentId = booking.paymentId;
     if (!paymentId) return;
@@ -772,6 +802,9 @@ export default function TrialBookingsPage() {
           <div className="space-y-3">
             {bookings
               .filter((booking) => {
+                // Awaiting-payment rows clutter the default view — hide them unless
+                // staff explicitly filters to "Awaiting payment" (draft stays visible).
+                if (statusFilter === "all" && booking.status === "pending_payment") return false;
                 if (ageGroupFilter !== "all") {
                   const isKid = isKidBooking(booking);
                   if (ageGroupFilter === "kid" && !isKid) return false;
@@ -795,7 +828,7 @@ export default function TrialBookingsPage() {
                 const primaryEmail = getPrimaryContactEmail(booking);
                 const primaryPhone = getPrimaryContactPhone(booking);
                 const p2 = getParticipant2(booking);
-                const isBusy = updatingStatus === booking.id || deletingId === booking.id || syncingPaymentId === booking.id;
+                const isBusy = updatingStatus === booking.id || deletingId === booking.id || syncingPaymentId === booking.id || (!!booking.paymentId && sendingLinkPaymentId === booking.paymentId);
 
                 return (
                   <div
@@ -898,8 +931,8 @@ export default function TrialBookingsPage() {
                           )}
                           <button
                             onClick={() => setOpenDropdownId(openDropdownId === booking.id ? null : booking.id)}
-                            disabled={isBusy || isUnscheduled || isPendingPayment}
-                            className={`${isUnscheduled || isPendingPayment ? "hidden" : "flex"} items-center gap-1.5 px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50`}
+                            disabled={isBusy}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50"
                           >
                             {isBusy
                               ? <Loader2 className="w-3 h-3 animate-spin" />
@@ -918,11 +951,33 @@ export default function TrialBookingsPage() {
                                   <Eye className="w-3.5 h-3.5 text-gray-500" /> View Details
                                 </button>
 
-                                {/* Add 2nd Guest / Companion */}
-                                <button onClick={() => { handleOpenCompanionModal(booking); setOpenDropdownId(null); }}
-                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-lime-700 dark:text-lime-400 hover:bg-lime-50 dark:hover:bg-lime-900/20 transition-colors font-semibold border-t border-b border-gray-100 dark:border-gray-800">
-                                  <UserPlus className="w-3.5 h-3.5" /> + Add 2nd Guest
-                                </button>
+                                {/* Add 2nd Guest / Companion — needs a real booking row, not a virtual one */}
+                                {!isUnscheduled && !isPendingPayment && (
+                                  <button onClick={() => { handleOpenCompanionModal(booking); setOpenDropdownId(null); }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-lime-700 dark:text-lime-400 hover:bg-lime-50 dark:hover:bg-lime-900/20 transition-colors font-semibold border-t border-b border-gray-100 dark:border-gray-800">
+                                    <UserPlus className="w-3.5 h-3.5" /> + Add 2nd Guest
+                                  </button>
+                                )}
+
+                                {isUnscheduled && booking.paymentId && (
+                                  <>
+                                    <button
+                                      onClick={() => { handleSendBookingLink(booking); setOpenDropdownId(null); }}
+                                      disabled={sendingLinkPaymentId === booking.paymentId}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors font-semibold border-t border-gray-100 dark:border-gray-800 disabled:opacity-50">
+                                      {sendingLinkPaymentId === booking.paymentId
+                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        : <Send className="w-3.5 h-3.5" />}
+                                      Send booking link
+                                    </button>
+                                    <button
+                                      onClick={() => { handleCopyBookingLink(booking); setOpenDropdownId(null); }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors font-semibold border-b border-gray-100 dark:border-gray-800">
+                                      <Copy className="w-3.5 h-3.5" />
+                                      Copy booking link
+                                    </button>
+                                  </>
+                                )}
 
                                 {booking.payment?.status === "succeeded" && booking.paymentId && (
                                   <button
