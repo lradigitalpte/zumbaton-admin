@@ -115,7 +115,22 @@ export async function GET(request: NextRequest) {
     }
 
     // Format the response
-    const formattedBookings = (bookings || []).map((booking: any) => {
+    const formattedBookings = (bookings || [])
+      .filter((booking: any) => {
+        // Duo Trial (online payment) creates one booking row per participant so
+        // each person counts toward class capacity, but only the payer's row
+        // (the first id in draft_booking_ids) should surface in this list — the
+        // 2nd participant's details already show as "P2 (2nd Guest)" on the
+        // payer's row via payment.metadata.participant2. Their own row stays in
+        // the DB (capacity/attendance still see it), it's just hidden here.
+        const paymentData = booking.payment || (Array.isArray(booking.payments) ? booking.payments[0] : booking.payments)
+        const draftIds = paymentData?.metadata?.draft_booking_ids
+        if (Array.isArray(draftIds) && draftIds.length > 1 && draftIds[0] !== booking.id) {
+          return false
+        }
+        return true
+      })
+      .map((booking: any) => {
       // Handle relation data (may be object or array depending on FK direction)
       const classData = booking.class || (Array.isArray(booking.classes) ? booking.classes[0] : booking.classes)
       const paymentData = booking.payment || (Array.isArray(booking.payments) ? booking.payments[0] : booking.payments)
