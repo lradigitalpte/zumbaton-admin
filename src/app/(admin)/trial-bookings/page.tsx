@@ -250,6 +250,7 @@ export default function TrialBookingsPage() {
       year: "numeric",
       month: "short",
       day: "numeric",
+      timeZone: "Asia/Singapore",
     });
   };
 
@@ -257,6 +258,7 @@ export default function TrialBookingsPage() {
     return new Date(dateString).toLocaleTimeString("en-SG", {
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Asia/Singapore",
     });
   };
 
