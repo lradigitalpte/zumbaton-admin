@@ -342,6 +342,10 @@ export async function GET(request: NextRequest) {
     // Guest bookings map is built from the booking data itself (guest_name is already in the query)
 
     // Fetch guest info for trial payment purchases (lookup by payment_id)
+    // Note: a duo trial (1-for-1) creates TWO booking rows sharing the same payment_id
+    // (primary guest + companion). Order by booked_at so the primary guest (inserted
+    // first) is seen first, and keep only the first name per payment so the companion's
+    // row can't overwrite the actual payer's name.
     const trialPaymentIds = (recentPayments.data || [])
       .filter(p => !p.user_id && p.is_trial_booking)
       .map(p => p.id)
@@ -352,8 +356,9 @@ export async function GET(request: NextRequest) {
         .select('guest_name, payment_id')
         .in('payment_id', trialPaymentIds)
         .eq('is_trial_booking', true)
+        .order('booked_at', { ascending: true })
       for (const tb of trialBookings || []) {
-        if (tb.payment_id && tb.guest_name) {
+        if (tb.payment_id && tb.guest_name && !trialPaymentBookingsMap[tb.payment_id]) {
           trialPaymentBookingsMap[tb.payment_id] = tb.guest_name
         }
       }

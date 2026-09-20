@@ -17,8 +17,8 @@ export function middleware(request: NextRequest) {
   const allowedOrigins = [
     'http://localhost:3001', // Web app dev
     'http://localhost:3000', // Admin app (same origin)
-    'https://zumbaton.sg',
-    'https://www.zumbaton.sg',
+    'https://onestepfitness.sg',
+    'https://www.onestepfitness.sg',
     process.env.NEXT_PUBLIC_WEB_APP_URL, // Web app production
   ].filter(Boolean) as string[]
 

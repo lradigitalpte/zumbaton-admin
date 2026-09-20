@@ -294,20 +294,20 @@ export async function sendClassReminders(): Promise<JobResult> {
   return runJob('sendClassReminders', async () => {
     const { supabase, TABLES } = await import('@/lib/supabase')
 
-    // Find classes starting in 3 hours
-    const threeHoursFromNow = new Date()
-    threeHoursFromNow.setHours(threeHoursFromNow.getHours() + 3)
-    const threeHoursAndFifteenMins = new Date()
-    threeHoursAndFifteenMins.setHours(threeHoursAndFifteenMins.getHours() + 3)
-    threeHoursAndFifteenMins.setMinutes(threeHoursAndFifteenMins.getMinutes() + 15)
+    // Find classes starting in 1 hour
+    const oneHourFromNow = new Date()
+    oneHourFromNow.setHours(oneHourFromNow.getHours() + 1)
+    const oneHourAndFifteenMins = new Date()
+    oneHourAndFifteenMins.setHours(oneHourAndFifteenMins.getHours() + 1)
+    oneHourAndFifteenMins.setMinutes(oneHourAndFifteenMins.getMinutes() + 15)
 
-    // Get classes in the 3h-3h15m window with instructor info
+    // Get classes in the 1h-1h15m window with instructor info
     const { data: upcomingClasses } = await supabase
       .from(TABLES.CLASSES)
       .select('id, title, scheduled_at, instructor_id, location')
       .eq('status', 'scheduled')
-      .gte('scheduled_at', threeHoursFromNow.toISOString())
-      .lt('scheduled_at', threeHoursAndFifteenMins.toISOString())
+      .gte('scheduled_at', oneHourFromNow.toISOString())
+      .lt('scheduled_at', oneHourAndFifteenMins.toISOString())
 
     let studentRemindersSent = 0
     let tutorRemindersSent = 0
@@ -356,7 +356,7 @@ export async function sendClassReminders(): Promise<JobResult> {
                 class_time: formattedTime,
                 class_location: classData.location || 'TBA',
                 booked_count: bookedCount || 0,
-                message: `Your class "${classData.title}" starts in 3 hours at ${formattedTime}. ${bookedCount || 0} student(s) booked.`,
+                message: `Your class "${classData.title}" starts in 1 hour at ${formattedTime}. ${bookedCount || 0} student(s) booked.`,
               },
             })
             tutorRemindersSent++
@@ -366,11 +366,13 @@ export async function sendClassReminders(): Promise<JobResult> {
         }
       }
 
-      // Send reminders to STUDENTS
+      // Send reminders to STUDENTS (registered members + trial/guest bookings)
       const { data: bookings } = await supabase
         .from(TABLES.BOOKINGS)
         .select(`
           user_id,
+          guest_name,
+          guest_email,
           users(email, name)
         `)
         .eq('class_id', classData.id)
@@ -378,29 +380,33 @@ export async function sendClassReminders(): Promise<JobResult> {
 
       for (const booking of bookings || []) {
         try {
-          const { sendNotification, sendBookingReminder } = await import('./notification.service')
+          const { sendNotification } = await import('./notification.service')
           const user = booking.users as any
-          
-          if (user?.email && user?.name) {
-            // Send in-app notification
-            await sendNotification({
-              userId: booking.user_id,
-              type: 'booking_reminder',
-              channel: 'in_app',
-              data: {
-                user_name: user.name,
-                class_title: classData.title,
-                class_time: formattedTime,
-                class_location: classData.location || 'TBA',
-              },
-            })
+          const recipientEmail = user?.email || (booking as any).guest_email
+          const recipientName = user?.name || (booking as any).guest_name
+
+          if (recipientEmail && recipientName) {
+            // Send in-app notification (registered members only — guests have no account)
+            if (booking.user_id) {
+              await sendNotification({
+                userId: booking.user_id,
+                type: 'booking_reminder',
+                channel: 'in_app',
+                data: {
+                  user_name: recipientName,
+                  class_title: classData.title,
+                  class_time: formattedTime,
+                  class_location: classData.location || 'TBA',
+                },
+              })
+            }
 
             // Send email reminder via web app email API
             try {
               const { getWebAppUrl } = await import('@/lib/email-url')
               const webAppUrl = getWebAppUrl()
               const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
-              
+
               // Get instructor name if available
               let instructorName: string | undefined
               if (classData.instructor_id) {
@@ -411,7 +417,7 @@ export async function sendClassReminders(): Promise<JobResult> {
                   .single()
                 instructorName = instructor?.name
               }
-              
+
               await fetch(`${webAppUrl}/api/email/send`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -419,8 +425,8 @@ export async function sendClassReminders(): Promise<JobResult> {
                   type: 'class-reminder',
                   secret: emailApiSecret,
                   data: {
-                    userEmail: user.email,
-                    userName: user.name,
+                    userEmail: recipientEmail,
+                    userName: recipientName,
                     className: classData.title,
                     classDate: formattedDate,
                     classTime: formattedTime,
@@ -429,9 +435,9 @@ export async function sendClassReminders(): Promise<JobResult> {
                   },
                 }),
               })
-              console.log(`[Scheduled Jobs] Class reminder email sent to ${user.email}`)
+              console.log(`[Scheduled Jobs] Class reminder email sent to ${recipientEmail}`)
             } catch (emailError) {
-              console.error(`[Scheduled Jobs] Failed to send class reminder email to ${user.email}:`, emailError)
+              console.error(`[Scheduled Jobs] Failed to send class reminder email to ${recipientEmail}:`, emailError)
               // Continue even if email fails
             }
 
@@ -881,7 +887,7 @@ export function getJobSchedule() {
       },
       {
         name: 'sendClassReminders',
-        description: 'Sends reminders for classes starting in 2 hours',
+        description: 'Sends reminders (email + in-app) for classes starting in 1 hour, to members and trial guests',
         frequency: 'Every 15 minutes',
         cron: '*/15 * * * *',
       },
