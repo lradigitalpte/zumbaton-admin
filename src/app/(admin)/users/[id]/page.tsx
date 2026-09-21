@@ -1514,7 +1514,7 @@ export default function UserDetailPage() {
               <div className="text-xs text-gray-500 dark:text-gray-400">Tokens</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">{userData.totalClasses}</div>
+              <div className="text-2xl font-bold text-gray-900 dark:text-white">{userData.classesAttended + userData.noShows}</div>
               <div className="text-xs text-gray-500 dark:text-gray-400">Classes</div>
             </div>
             <div>
@@ -1758,8 +1758,8 @@ export default function UserDetailPage() {
                   <div className="flex justify-between">
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Attendance Rate</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">
-                      {user.totalClasses > 0 
-                        ? Math.round(((user.totalClasses - user.noShows) / user.totalClasses) * 100)
+                      {user.classesAttended + user.noShows > 0
+                        ? Math.round((user.classesAttended / (user.classesAttended + user.noShows)) * 100)
                         : 0}%
                     </dd>
                   </div>
@@ -1870,11 +1870,11 @@ export default function UserDetailPage() {
                 <h3 className="mb-4 font-semibold text-gray-900 dark:text-white">Activity Summary</h3>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
-                    <div className="text-2xl font-bold text-gray-900 dark:text-white">{user.totalClasses}</div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-white">{user.classesAttended + user.noShows}</div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">Total Classes</div>
                   </div>
                   <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
-                    <div className="text-2xl font-bold text-emerald-600">{user.totalClasses - user.noShows}</div>
+                    <div className="text-2xl font-bold text-emerald-600">{user.classesAttended}</div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">Attended</div>
                   </div>
                   <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800">

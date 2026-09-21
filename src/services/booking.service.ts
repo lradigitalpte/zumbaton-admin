@@ -182,10 +182,14 @@ export async function createBooking(params: CreateBookingParams): Promise<Bookin
   }
 
   // 3. Hold tokens
+  // Generate the booking ID upfront so the hold's audit-log entry can
+  // reference the real booking instead of a placeholder.
+  const bookingId = crypto.randomUUID()
+
   const tokenResult = await holdTokens({
     userId,
     tokensNeeded: classData.token_cost,
-    bookingId: '', // will be set after booking created
+    bookingId,
     classType: classData.class_type,
   })
 
@@ -193,6 +197,7 @@ export async function createBooking(params: CreateBookingParams): Promise<Bookin
   const { data: booking, error: bookingError } = await supabase
     .from(TABLES.BOOKINGS)
     .insert({
+      id: bookingId,
       user_id: userId,
       class_id: classId,
       user_package_id: tokenResult.userPackageId,
@@ -212,7 +217,7 @@ export async function createBooking(params: CreateBookingParams): Promise<Bookin
       await releaseTokens({
         userId,
         userPackageId: tokenResult.userPackageId,
-        bookingId: '',
+        bookingId,
         tokensToRelease: classData.token_cost,
         description: 'Rollback: booking creation failed',
       })
@@ -472,10 +477,12 @@ async function createCourseBooking(
   const totalTokensNeeded = futureSessions.length * tokenCostPerSession
 
   // 6. Hold tokens for the entire course
+  // One hold spans multiple booking rows, so there's no single booking to
+  // attribute it to — null is the valid "not tied to one booking" value.
   const tokenResult = await holdTokens({
     userId,
     tokensNeeded: totalTokensNeeded,
-    bookingId: '', // will be set after bookings created
+    bookingId: null,
     classType: parentClassData.class_type as string,
   })
 
@@ -503,7 +510,7 @@ async function createCourseBooking(
       await releaseTokens({
         userId,
         userPackageId: tokenResult.userPackageId,
-        bookingId: '',
+        bookingId: null,
         tokensToRelease: totalTokensNeeded,
         description: 'Rollback: course booking creation failed',
       })
@@ -1111,10 +1118,12 @@ export async function createBatchBooking(params: BatchBookingParams): Promise<Ba
   }
 
   // 3. Hold tokens for ALL classes (all-or-nothing)
+  // One hold spans multiple booking rows, so there's no single booking to
+  // attribute it to — null is the valid "not tied to one booking" value.
   const tokenResult = await holdTokens({
     userId,
     tokensNeeded: totalTokensNeeded,
-    bookingId: '', // will be set after bookings created
+    bookingId: null,
     classType: 'batch',
   })
 
@@ -1140,7 +1149,7 @@ export async function createBatchBooking(params: BatchBookingParams): Promise<Ba
         await releaseTokens({
           userId,
           userPackageId: tokenResult.userPackageId,
-          bookingId: '',
+          bookingId: null,
           tokensToRelease: totalTokensNeeded,
           description: 'Rollback: batch booking creation failed',
         })
@@ -1247,7 +1256,7 @@ export async function createBatchBooking(params: BatchBookingParams): Promise<Ba
       await releaseTokens({
         userId,
         userPackageId: tokenResult.userPackageId,
-        bookingId: '',
+        bookingId: null,
         tokensToRelease: totalTokensNeeded,
         description: 'Rollback: batch booking failed',
       })

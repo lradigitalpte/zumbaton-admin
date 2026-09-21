@@ -28,7 +28,7 @@ interface TokenOperationResult {
 interface HoldTokensParams {
   userId: string
   tokensNeeded: number
-  bookingId: string
+  bookingId: string | null
   classType?: string
   strategy?: TokenSelectionStrategy
 }
@@ -46,7 +46,7 @@ interface ConsumeTokensParams {
 interface ReleaseTokensParams {
   userId: string
   userPackageId: string
-  bookingId: string
+  bookingId: string | null
   tokensToRelease: number
   description?: string
   adminClient?: SupabaseClient
@@ -385,7 +385,7 @@ export async function releaseTokens(params: ReleaseTokensParams): Promise<TokenO
 async function recordTransaction(params: {
   userId: string
   userPackageId: string | null
-  bookingId?: string
+  bookingId?: string | null
   transactionType: TransactionType
   tokensChange: number
   tokensBefore: number
@@ -418,8 +418,15 @@ async function recordTransaction(params: {
     .single()
 
   if (error) {
-    // Log error but don't fail the main operation
+    // Log error but don't fail the main operation — the token balance itself
+    // was already updated by this point, only the audit-log entry is missing.
     console.error('[TokenService] Failed to record transaction:', error)
+    void alertAdminsOfFailedTransactionLog({
+      userId: params.userId,
+      transactionType: params.transactionType,
+      tokensChange: params.tokensChange,
+      description: params.description,
+    })
     // Return a mock transaction for now
     return {
       id: 'pending',
@@ -448,6 +455,42 @@ async function recordTransaction(params: {
     description: data.description,
     performedBy: data.performed_by,
     createdAt: data.created_at,
+  }
+}
+
+// Notify admins when a token audit-log entry fails to write, so a gap in the
+// trail is visible in the admin notification bell instead of only server logs.
+async function alertAdminsOfFailedTransactionLog(params: {
+  userId: string
+  transactionType: string
+  tokensChange: number
+  description?: string
+}): Promise<void> {
+  try {
+    const adminClient = getSupabaseAdminClient()
+    const { data: admins } = await adminClient
+      .from('user_profiles')
+      .select('id')
+      .in('role', ['admin', 'super_admin'])
+
+    if (!admins || admins.length === 0) return
+
+    const { sendNotification } = await import('./notification.service')
+    const sign = params.tokensChange > 0 ? '+' : ''
+    const body = `A token transaction (${params.transactionType}, ${sign}${params.tokensChange}) for user ${params.userId} was applied but its audit-log entry failed to save.${params.description ? ` ${params.description}` : ''} The token balance itself is correct — only this trail entry is missing. Check server logs for details.`
+
+    for (const admin of admins) {
+      await sendNotification({
+        userId: admin.id,
+        type: 'general',
+        channel: 'in_app',
+        subject: 'Token audit log write failed',
+        body,
+        data: {},
+      })
+    }
+  } catch (notifyError) {
+    console.error('[TokenService] Failed to alert admins of transaction log failure:', notifyError)
   }
 }
 

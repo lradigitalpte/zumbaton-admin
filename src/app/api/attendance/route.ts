@@ -71,6 +71,9 @@ export async function GET(request: NextRequest) {
         tokens_used,
         status,
         booked_at,
+        guest_name,
+        guest_email,
+        guest_phone,
         attendances (
           id,
           checked_in_at,
@@ -90,7 +93,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user IDs and fetch their profiles separately (no direct FK from bookings to user_profiles)
-    const userIds = [...new Set((bookings || []).map(b => b.user_id))]
+    const userIds = [...new Set((bookings || []).map(b => b.user_id).filter(Boolean))] as string[]
     
     let userProfiles: Record<string, { id: string; name: string; email: string; phone: string | null; avatar_url: string | null }> = {}
     let userTokens: Record<string, number> = {}
@@ -134,10 +137,10 @@ export async function GET(request: NextRequest) {
         else if (booking.status === 'no-show') uiStatus = 'no-show'
         
         return {
-          id: booking.user_id,
-          name: profile?.name || 'Unknown',
-          email: profile?.email || 'unknown@email.com',
-          phone: profile?.phone || null,
+          id: booking.id,
+          name: profile?.name || booking.guest_name?.trim() || 'Unknown',
+          email: profile?.email || booking.guest_email?.trim() || 'unknown@email.com',
+          phone: profile?.phone || booking.guest_phone?.trim() || null,
           avatarUrl: profile?.avatar_url || null,
           bookingId: booking.id,
           status: uiStatus,

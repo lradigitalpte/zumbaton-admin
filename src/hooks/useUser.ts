@@ -15,6 +15,7 @@ export interface UserDetail {
   // Stats
   tokenBalance: number
   totalClasses: number
+  classesAttended: number
   noShows: number
   status: "active" | "flagged" | "inactive"
   joinedDate: string
@@ -93,6 +94,7 @@ async function fetchUserDetail(userId: string, cacheBuster?: number): Promise<Us
     // Enhanced data from API (UserProfileWithStats structure)
     tokenBalance: user.currentTokenBalance || 0,
     totalClasses: user.stats?.totalClassesBooked || 0,
+    classesAttended: user.stats?.totalClassesAttended || 0,
     noShows: user.stats?.totalNoShows || 0,
     joinedDate: user.createdAt, // Map createdAt to joinedDate
     lastActive: user.updatedAt || user.createdAt,
