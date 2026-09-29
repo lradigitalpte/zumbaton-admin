@@ -1,6 +1,6 @@
 import { supabase, getSupabaseAdminClient, TABLES } from '@/lib/supabase'
 import { ApiError } from '@/lib/api-error'
-import { consumeTokens } from './token.service'
+import { getUserTokenBalance } from './token.service'
 import { updateUserStreak, incrementUserStat, updateLastClassAt } from './user.service'
 import type {
   CheckInRequest,
@@ -15,7 +15,8 @@ import type {
 const CHECK_IN_WINDOW_BEFORE_MINUTES = 30 // 30 min before class
 const CHECK_IN_WINDOW_AFTER_MINUTES = 15 // 15 min after class start
 
-// Check in a single booking
+// Mark a booking as attended. Tokens were already spent at booking time, so this
+// never touches the token balance.
 export async function checkIn(params: {
   bookingId: string
   method: 'manual' | 'qr-code' | 'auto' | 'admin'
@@ -53,8 +54,8 @@ export async function checkIn(params: {
     (minutesUntilClass <= CHECK_IN_WINDOW_BEFORE_MINUTES && minutesUntilClass > 0) ||
     (minutesAfterStart >= 0 && minutesAfterStart <= CHECK_IN_WINDOW_AFTER_MINUTES)
 
-  // Admin override
-  if (!canCheckIn && method !== 'admin') {
+  // Admin and the after-class job can mark attendance at any time
+  if (!canCheckIn && method !== 'admin' && method !== 'auto') {
     throw new ApiError(
       'VALIDATION_ERROR',
       `Check-in window is ${CHECK_IN_WINDOW_BEFORE_MINUTES} minutes before to ${CHECK_IN_WINDOW_AFTER_MINUTES} minutes after class start`,
@@ -62,18 +63,7 @@ export async function checkIn(params: {
     )
   }
 
-  // 3. Consume tokens
-  const tokenResult = await consumeTokens({
-    userId: booking.user_id,
-    userPackageId: booking.user_package_id,
-    bookingId,
-    tokensToConsume: booking.tokens_used,
-    transactionType: 'attendance-consume',
-    description: `Checked in via ${method}`,
-    performedBy: checkedInBy,
-  })
-
-  // 4. Update booking status
+  // 3. Update booking status
   const { error: updateError } = await adminClient
     .from(TABLES.BOOKINGS)
     .update({
@@ -86,13 +76,14 @@ export async function checkIn(params: {
     throw new ApiError('SERVER_ERROR', 'Failed to update booking status', 500, updateError)
   }
 
-  // 5. Create attendance record
+  // 4. Create attendance record
+  const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(checkedInBy)
   const { data: attendance, error: attendanceError } = await adminClient
     .from(TABLES.ATTENDANCES)
     .insert({
       booking_id: bookingId,
       checked_in_at: new Date().toISOString(),
-      checked_in_by: checkedInBy,
+      checked_in_by: isValidUUID ? checkedInBy : null,
       check_in_method: method,
       notes: notes || null,
     })
@@ -104,7 +95,7 @@ export async function checkIn(params: {
     console.error('[AttendanceService] Failed to create attendance record:', attendanceError)
   }
 
-  // 6. Update user stats (attendance count and streak)
+  // 5. Update user stats (attendance count and streak)
   try {
     await incrementUserStat(booking.user_id, 'totalClassesAttended', 1)
     await updateUserStreak(booking.user_id, classTime)
@@ -124,9 +115,9 @@ export async function checkIn(params: {
       notes: notes || null,
       createdAt: attendance?.created_at || new Date().toISOString(),
     },
-    tokensConsumed: booking.tokens_used,
-    tokensRemaining: tokenResult.newBalance,
-    message: `Successfully checked in. ${booking.tokens_used} token(s) consumed.`,
+    tokensConsumed: 0,
+    tokensRemaining: (await getUserTokenBalance(booking.user_id, adminClient)).availableTokens,
+    message: 'Marked as attended.',
   }
 }
 
@@ -183,7 +174,8 @@ export async function bulkCheckIn(params: {
   }
 }
 
-// Mark booking as no-show
+// Mark booking as no-show (staff action). Tokens were already spent at booking time,
+// so this only records the no-show for stats and flagging.
 export async function markNoShow(params: {
   bookingId: string
   markedBy: string
@@ -206,38 +198,19 @@ export async function markNoShow(params: {
     throw new ApiError('NOT_FOUND_ERROR', 'Booking not found', 404)
   }
 
-  if (booking.status !== 'confirmed') {
+  // Bookings auto-marked attended after class can still be corrected to no-show by staff
+  const wasAttended = booking.status === 'attended'
+  if (booking.status !== 'confirmed' && !wasAttended) {
     throw new ApiError('VALIDATION_ERROR', `Cannot mark as no-show: booking status is ${booking.status}`, 400)
   }
 
-  // 2. Check class has ended (or is in progress past check-in window)
+  // 2. Class must have started
   const classTime = new Date(booking.class.scheduled_at)
-  const classEndTime = new Date(classTime.getTime() + booking.class.duration_minutes * 60 * 1000)
-  const now = new Date()
-
-  if (now < classTime) {
+  if (new Date() < classTime) {
     throw new ApiError('VALIDATION_ERROR', 'Cannot mark as no-show before class starts', 400)
   }
 
-  // 3. Consume tokens (best effort - don't fail if token consumption fails)
-  let tokenResult = { newBalance: 0 }
-  try {
-    tokenResult = await consumeTokens({
-      userId: booking.user_id,
-      userPackageId: booking.user_package_id,
-      bookingId,
-      tokensToConsume: booking.tokens_used,
-      transactionType: 'no-show-consume',
-      description: `No-show for class ${booking.class.title}`,
-      performedBy: markedBy,
-    })
-  } catch (tokenError) {
-    console.error('[AttendanceService] Token consumption failed for no-show:', tokenError)
-    // Log but don't fail - we still want to mark as no-show even if token consumption fails
-    console.warn('[AttendanceService] Continuing with no-show marking despite token error')
-  }
-
-  // 4. Update booking status
+  // 3. Update booking status
   const { error: updateError } = await adminClient
     .from(TABLES.BOOKINGS)
     .update({
@@ -248,6 +221,16 @@ export async function markNoShow(params: {
 
   if (updateError) {
     throw new ApiError('SERVER_ERROR', 'Failed to update booking status', 500, updateError)
+  }
+
+  // 4. Undo the attendance record/stat if the job had auto-marked them attended
+  if (wasAttended) {
+    await adminClient.from(TABLES.ATTENDANCES).delete().eq('booking_id', bookingId)
+    try {
+      await incrementUserStat(booking.user_id, 'totalClassesAttended', -1)
+    } catch (statsError) {
+      console.error('[AttendanceService] Failed to decrement attended count:', statsError)
+    }
   }
 
   // 5. Get/update user's no-show count
@@ -325,12 +308,12 @@ export async function markNoShow(params: {
         class_title: booking.class.title,
         class_date: formattedDate,
         class_time: formattedTime,
-        tokens_consumed: booking.tokens_used,
+        tokens_consumed: booking.tokens_used, // spent at booking; not refunded for a no-show
         no_show_count: noShowCount,
         is_flagged: userFlagged,
         message: userFlagged
           ? `You missed "${booking.class.title}" on ${formattedDate}. This is your ${noShowCount}${noShowCount === 1 ? 'st' : noShowCount === 2 ? 'nd' : noShowCount === 3 ? 'rd' : 'th'} no-show. Your account has been flagged.`
-          : `You missed "${booking.class.title}" on ${formattedDate}. ${booking.tokens_used} token(s) have been consumed.`,
+          : `You missed "${booking.class.title}" on ${formattedDate}.`,
       },
     })
 
@@ -352,7 +335,7 @@ export async function markNoShow(params: {
             className: booking.class.title,
             classDate: formattedDate,
             classTime: formattedTime,
-            tokensConsumed: booking.tokens_used,
+            tokensConsumed: booking.tokens_used, // spent at booking; not refunded for a no-show
             noShowCount,
             isFlagged: userFlagged,
           },
@@ -366,17 +349,19 @@ export async function markNoShow(params: {
 
   return {
     bookingId,
-    tokensConsumed: booking.tokens_used,
+    tokensConsumed: 0,
     userNoShowCount: noShowCount,
     userFlagged,
     message: userFlagged
       ? `Marked as no-show. User has ${noShowCount} no-shows and has been flagged.`
-      : `Marked as no-show. ${booking.tokens_used} token(s) consumed.`,
+      : 'Marked as no-show.',
   }
 }
 
-// Process no-shows for ended classes (scheduled job)
-export async function processNoShows(): Promise<{
+// Mark bookings as attended once their class has ended (scheduled job).
+// There is no QR check-in: everyone still booked is treated as attended, and staff
+// can correct individual bookings to no-show afterwards. Tokens are never touched here.
+export async function processCompletedBookings(): Promise<{
   processed: number
   failed: number
   errors?: string[]
@@ -386,8 +371,6 @@ export async function processNoShows(): Promise<{
   
   // Find bookings for classes that ended more than 30 minutes ago
   // and are still in 'confirmed' status
-  const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
-
   const { data: bookings, error } = await adminClient
     .from(TABLES.BOOKINGS)
     .select(`
@@ -404,9 +387,10 @@ export async function processNoShows(): Promise<{
     `)
     .eq('status', 'confirmed')
     .eq('is_trial_booking', false)
+    .lt('class.scheduled_at', new Date().toISOString())
 
   if (error) {
-    console.error('[AttendanceService] Failed to fetch bookings for no-show processing:', error)
+    console.error('[AttendanceService] Failed to fetch bookings for completion processing:', error)
     return { processed: 0, failed: 0, errors: ['Failed to fetch bookings: ' + error.message] }
   }
 
@@ -423,17 +407,16 @@ export async function processNoShows(): Promise<{
 
     if (new Date() > graceEndTime) {
       try {
-        console.log(`[AttendanceService] Processing no-show for booking ${booking.id} (class: ${classData.title})`)
-        await markNoShow({
+        await checkIn({
           bookingId: booking.id,
-          markedBy: 'system',
-          notes: 'Auto-processed no-show',
+          method: 'auto',
+          checkedInBy: 'system',
+          notes: 'Auto-marked attended after class ended',
         })
-        console.log(`[AttendanceService] Successfully marked booking ${booking.id} as no-show`)
         processed++
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
-        console.error(`[AttendanceService] Failed to process no-show for booking ${booking.id}:`, err)
+        console.error(`[AttendanceService] Failed to mark booking ${booking.id} attended:`, err)
         errors.push(`Booking ${booking.id}: ${errorMsg}`)
         failed++
       }
@@ -441,7 +424,7 @@ export async function processNoShows(): Promise<{
   }
 
   if (errors.length > 0) {
-    console.error('[AttendanceService] No-show processing had errors:', errors)
+    console.error('[AttendanceService] Completed-booking processing had errors:', errors)
   }
 
   return { processed, failed, errors: errors.length > 0 ? errors : undefined }

@@ -1,6 +1,12 @@
 import { supabase, getSupabaseAdminClient, TABLES, isSupabaseError, SUPABASE_ERRORS } from '@/lib/supabase'
 import { ApiError } from '@/lib/api-error'
-import { holdTokens, releaseTokens, consumeTokens } from './token.service'
+import {
+  chargeTokensForBooking,
+  recordBookingCharges,
+  refundBookingTokens,
+  getUserTokenBalance,
+} from './token.service'
+import { canCancelWithRefund, SAME_DAY_CANCEL_MESSAGE } from '@/lib/cancellation-policy'
 import type {
   Booking,
   BookingWithClass,
@@ -9,9 +15,6 @@ import type {
   BookingResponse,
   CancelBookingResponse,
 } from '@/api/schemas'
-
-// Configuration
-const CANCELLATION_WINDOW_HOURS = 4 // Free cancellation up to 4 hours before class
 
 interface CreateBookingParams {
   userId: string
@@ -181,26 +184,23 @@ export async function createBooking(params: CreateBookingParams): Promise<Bookin
     throw new ApiError('CONFLICT_ERROR', 'You already have a booking for this class', 409)
   }
 
-  // 3. Hold tokens
-  // Generate the booking ID upfront so the hold's audit-log entry can
-  // reference the real booking instead of a placeholder.
+  // 3. Charge tokens (spent at booking; refunded if cancelled by 23:59 the day before)
   const bookingId = crypto.randomUUID()
 
-  const tokenResult = await holdTokens({
+  const charge = await chargeTokensForBooking({
     userId,
     tokensNeeded: classData.token_cost,
-    bookingId,
-    classType: classData.class_type,
+    ageGroup: classData.age_group,
   })
 
   // 4. Create booking
-  const { data: booking, error: bookingError } = await supabase
+  const { data: booking, error: bookingError } = await getSupabaseAdminClient()
     .from(TABLES.BOOKINGS)
     .insert({
       id: bookingId,
       user_id: userId,
       class_id: classId,
-      user_package_id: tokenResult.userPackageId,
+      user_package_id: charge.userPackageId,
       tokens_used: classData.token_cost,
       status: 'confirmed',
       booked_at: new Date().toISOString(),
@@ -212,22 +212,27 @@ export async function createBooking(params: CreateBookingParams): Promise<Bookin
     .single()
 
   if (bookingError) {
-    // Rollback: release tokens
-    if (tokenResult.userPackageId) {
-      await releaseTokens({
-        userId,
-        userPackageId: tokenResult.userPackageId,
-        bookingId,
-        tokensToRelease: classData.token_cost,
-        description: 'Rollback: booking creation failed',
-      })
-    }
+    // Rollback: give the tokens back (no ledger row was written yet)
+    await refundBookingTokens({
+      userId,
+      userPackageId: charge.userPackageId,
+      bookingId: null,
+      tokensToRefund: classData.token_cost,
+      recordLedger: false,
+    })
 
     if (isSupabaseError(bookingError, SUPABASE_ERRORS.UNIQUE_VIOLATION)) {
       throw new ApiError('CONFLICT_ERROR', 'You already have a booking for this class', 409)
     }
     throw new ApiError('SERVER_ERROR', 'Failed to create booking', 500, bookingError)
   }
+
+  await recordBookingCharges({
+    userId,
+    userPackageId: charge.userPackageId,
+    tokensBefore: charge.tokensBefore,
+    charges: [{ bookingId, tokens: classData.token_cost, description: `Booked class: ${classData.title}` }],
+  })
 
   // Send booking confirmation notification (in-app and email)
   try {
@@ -359,11 +364,13 @@ export async function createBooking(params: CreateBookingParams): Promise<Bookin
     console.error('[Booking] Error sending confirmation notification:', notificationError)
   }
 
+  const balance = await getUserTokenBalance(userId, getSupabaseAdminClient())
+
   return {
     booking: mapBookingToSchema(booking),
     tokensHeld: classData.token_cost,
-    tokensAvailable: tokenResult.newBalance,
-    message: `Successfully booked ${classData.title}. ${classData.token_cost} token(s) held.`,
+    tokensAvailable: balance.availableTokens,
+    message: `Successfully booked ${classData.title}. ${classData.token_cost} token(s) used.`,
   }
 }
 
@@ -476,21 +483,18 @@ async function createCourseBooking(
   const tokenCostPerSession = parentClassData.token_cost as number || futureSessions[0]?.token_cost || 1
   const totalTokensNeeded = futureSessions.length * tokenCostPerSession
 
-  // 6. Hold tokens for the entire course
-  // One hold spans multiple booking rows, so there's no single booking to
-  // attribute it to — null is the valid "not tied to one booking" value.
-  const tokenResult = await holdTokens({
+  // 6. Charge tokens for the entire course (one ledger row per session once bookings exist)
+  const charge = await chargeTokensForBooking({
     userId,
     tokensNeeded: totalTokensNeeded,
-    bookingId: null,
-    classType: parentClassData.class_type as string,
+    ageGroup: parentClassData.age_group as string | null,
   })
 
   // 7. Create bookings for all future sessions
   const bookingsToCreate = futureSessions.map(session => ({
     user_id: userId,
     class_id: session.id,
-    user_package_id: tokenResult.userPackageId,
+    user_package_id: charge.userPackageId,
     tokens_used: tokenCostPerSession,
     status: 'confirmed' as const,
     booked_at: new Date().toISOString(),
@@ -504,29 +508,35 @@ async function createCourseBooking(
       class:${TABLES.CLASSES}(*)
     `)
 
-  if (bookingsError) {
-    // Rollback: release tokens
-    if (tokenResult.userPackageId) {
-      await releaseTokens({
-        userId,
-        userPackageId: tokenResult.userPackageId,
-        bookingId: null,
-        tokensToRelease: totalTokensNeeded,
-        description: 'Rollback: course booking creation failed',
-      })
-    }
+  if (bookingsError || !createdBookings || createdBookings.length === 0) {
+    // Rollback: give the tokens back (no ledger rows were written yet)
+    await refundBookingTokens({
+      userId,
+      userPackageId: charge.userPackageId,
+      bookingId: null,
+      tokensToRefund: totalTokensNeeded,
+      recordLedger: false,
+    })
 
-    if (isSupabaseError(bookingsError, SUPABASE_ERRORS.UNIQUE_VIOLATION)) {
+    if (bookingsError && isSupabaseError(bookingsError, SUPABASE_ERRORS.UNIQUE_VIOLATION)) {
       throw new ApiError('CONFLICT_ERROR', 'You already have a booking for one or more sessions in this course', 409)
     }
     throw new ApiError('SERVER_ERROR', 'Failed to create course bookings', 500, bookingsError)
   }
 
+  await recordBookingCharges({
+    userId,
+    userPackageId: charge.userPackageId,
+    tokensBefore: charge.tokensBefore,
+    charges: createdBookings.map((b) => ({
+      bookingId: b.id as string,
+      tokens: tokenCostPerSession,
+      description: `Booked course session: ${parentClassData.title}`,
+    })),
+  })
+
   // Return the first booking as the main booking (for API compatibility)
-  const firstBooking = createdBookings?.[0]
-  if (!firstBooking) {
-    throw new ApiError('SERVER_ERROR', 'Failed to create course bookings', 500)
-  }
+  const firstBooking = createdBookings[0]
 
   try {
     await sendMemberBookingStaffEmailNotifications({
@@ -540,22 +550,25 @@ async function createCourseBooking(
     console.error('[Booking] Error sending course booking staff emails:', notificationError)
   }
 
+  const balance = await getUserTokenBalance(userId, adminClient)
+
   return {
     booking: mapBookingToSchema(firstBooking),
     tokensHeld: totalTokensNeeded,
-    tokensAvailable: tokenResult.newBalance,
-    message: `Successfully enrolled in course "${parentClassData.title}". ${futureSessions.length} sessions booked. ${totalTokensNeeded} token(s) held.`,
+    tokensAvailable: balance.availableTokens,
+    message: `Successfully enrolled in course "${parentClassData.title}". ${futureSessions.length} sessions booked. ${totalTokensNeeded} token(s) used.`,
   }
 }
 
-// Cancel a booking (release or consume tokens based on timing)
+// Cancel a booking. Tokens were spent at booking time, so a cancellation made by
+// 23:59 (Singapore) the day before the class refunds them; same-day cancellation is
+// not allowed. Admins can always cancel with a refund (forceRefund).
 export async function cancelBooking(params: CancelBookingParams): Promise<CancelBookingResponse> {
   const { userId, bookingId, reason, forceRefund = false } = params
-  const adminClient = forceRefund ? getSupabaseAdminClient() : undefined
-  const db = adminClient || supabase
+  const adminClient = getSupabaseAdminClient()
 
   // 1. Get booking
-  const { data: booking, error: fetchError } = await db
+  const { data: booking, error: fetchError } = await adminClient
     .from(TABLES.BOOKINGS)
     .select(`
       *,
@@ -573,76 +586,220 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
     throw new ApiError('VALIDATION_ERROR', `Cannot cancel booking with status: ${booking.status}`, 400)
   }
 
-  // Check if this is part of a course (has parent_class_id and recurrence_type is 'course')
   const classData = booking.class as Record<string, unknown>
   const isCourseSession = classData.parent_class_id && classData.recurrence_type === 'course'
 
-  // For course sessions, cancel all remaining sessions in the course
+  // Members cancelling a course session cancel every remaining session they can still cancel
   if (isCourseSession && !forceRefund) {
-    return await cancelCourseBooking(userId, bookingId, booking, classData.parent_class_id as string, reason)
+    return await cancelCourseBooking(userId, bookingId, classData.parent_class_id as string, reason)
   }
 
-  // 2. Check if within cancellation window (for single/recurring classes)
-  const classTime = new Date(classData.scheduled_at as string)
-  const now = new Date()
-  const hoursUntilClass = (classTime.getTime() - now.getTime()) / (1000 * 60 * 60)
-  const isWithinWindow = forceRefund || hoursUntilClass >= CANCELLATION_WINDOW_HOURS
-  const isPenalty = !forceRefund && !isWithinWindow && hoursUntilClass > 0 // only penalty if class hasn't started
-
-  let newStatus: 'cancelled' | 'cancelled-late'
-  let tokensRefunded = 0
-
-  if (isWithinWindow) {
-    // Free cancellation - release tokens
-    newStatus = 'cancelled'
-    tokensRefunded = booking.tokens_used
-
-    await releaseTokens({
-      userId,
-      userPackageId: booking.user_package_id,
-      bookingId,
-      tokensToRelease: booking.tokens_used,
-      description: forceRefund
-        ? `Admin cancellation with refund: ${reason || 'booking exception'}`
-        : `Cancelled within ${CANCELLATION_WINDOW_HOURS}h window`,
-      adminClient,
-    })
-  } else if (isPenalty) {
-    // Late cancellation - consume tokens as penalty
-    newStatus = 'cancelled-late'
-    tokensRefunded = 0
-
-    await consumeTokens({
-      userId,
-      userPackageId: booking.user_package_id,
-      bookingId,
-      tokensToConsume: booking.tokens_used,
-      transactionType: 'late-cancel-consume',
-      description: `Late cancellation penalty (within ${CANCELLATION_WINDOW_HOURS}h of class)`,
-    })
-  } else {
-    // Class already started/ended
-    throw new ApiError('VALIDATION_ERROR', 'Cannot cancel after class has started', 400)
+  // 2. Same-day (or past) cancellations are not allowed unless an admin forces a refund
+  if (!forceRefund && !canCancelWithRefund(classData.scheduled_at as string)) {
+    throw new ApiError('VALIDATION_ERROR', SAME_DAY_CANCEL_MESSAGE, 400)
   }
 
-  // 3. Update booking
-  const { data: updatedBooking, error: updateError } = await db
+  // 3. Cancel + refund
+  const [cancelled] = await cancelAndRefundBookings({
+    userId,
+    bookingIds: [bookingId],
+    reason: reason || null,
+    refundDescription: forceRefund
+      ? `Admin cancellation with refund: ${reason || 'booking exception'}`
+      : 'Cancelled by 23:59 the day before the class',
+  })
+
+  if (!cancelled) {
+    throw new ApiError('CONFLICT_ERROR', 'This booking was already cancelled', 409)
+  }
+
+  const tokensRefunded = cancelled.tokensRefunded
+
+  const { data: updatedBooking } = await adminClient
     .from(TABLES.BOOKINGS)
-    .update({
-      status: newStatus,
-      cancelled_at: new Date().toISOString(),
-      cancellation_reason: reason || null,
-      updated_at: new Date().toISOString(),
-    })
+    .select(`
+      *,
+      class:${TABLES.CLASSES}(*)
+    `)
     .eq('id', bookingId)
-    .select()
     .single()
 
-  if (updateError) {
-    throw new ApiError('SERVER_ERROR', 'Failed to cancel booking', 500, updateError)
+  await sendCancellationNotifications({ userId, classData, tokensRefunded, reason })
+  await processWaitlists([classData.id as string])
+
+  return {
+    booking: mapBookingToSchema(updatedBooking!),
+    tokensRefunded,
+    penalty: false,
+    message: `Booking cancelled. ${tokensRefunded} token(s) refunded.`,
+  }
+}
+
+// Cancel a member's course: every remaining session dated tomorrow or later (Singapore)
+// is cancelled and refunded; sessions happening today stay booked.
+async function cancelCourseBooking(
+  userId: string,
+  bookingId: string,
+  parentClassId: string,
+  reason?: string
+): Promise<CancelBookingResponse> {
+  const adminClient = getSupabaseAdminClient()
+
+  const { data: courseSessions, error: sessionsError } = await adminClient
+    .from(TABLES.CLASSES)
+    .select('id, scheduled_at')
+    .eq('parent_class_id', parentClassId)
+    .gt('scheduled_at', new Date().toISOString())
+
+  if (sessionsError) {
+    throw new ApiError('SERVER_ERROR', 'Failed to fetch course sessions', 500, sessionsError)
   }
 
-  // 4. Send cancellation notification (in-app and email)
+  const cancellableSessionIds = (courseSessions || [])
+    .filter((s) => canCancelWithRefund(s.scheduled_at as string))
+    .map((s) => s.id as string)
+
+  if (cancellableSessionIds.length === 0) {
+    throw new ApiError('VALIDATION_ERROR', SAME_DAY_CANCEL_MESSAGE, 400)
+  }
+
+  const { data: userCourseBookings, error: bookingsError } = await adminClient
+    .from(TABLES.BOOKINGS)
+    .select('id, class_id')
+    .eq('user_id', userId)
+    .in('class_id', cancellableSessionIds)
+    .eq('status', 'confirmed')
+
+  if (bookingsError) {
+    throw new ApiError('SERVER_ERROR', 'Failed to fetch course bookings', 500, bookingsError)
+  }
+
+  if (!userCourseBookings || userCourseBookings.length === 0) {
+    throw new ApiError('VALIDATION_ERROR', SAME_DAY_CANCEL_MESSAGE, 400)
+  }
+
+  const cancelled = await cancelAndRefundBookings({
+    userId,
+    bookingIds: userCourseBookings.map((b) => b.id as string),
+    reason: reason || 'Course cancellation',
+    refundDescription: 'Course session cancelled by 23:59 the day before',
+  })
+
+  const tokensRefunded = cancelled.reduce((sum, b) => sum + b.tokensRefunded, 0)
+  const keptToday = (courseSessions || []).length - cancellableSessionIds.length
+
+  await processWaitlists(userCourseBookings.map((b) => b.class_id as string))
+
+  const { data: updatedBooking } = await adminClient
+    .from(TABLES.BOOKINGS)
+    .select(`
+      *,
+      class:${TABLES.CLASSES}(*)
+    `)
+    .eq('id', bookingId)
+    .single()
+
+  return {
+    booking: mapBookingToSchema(updatedBooking!),
+    tokensRefunded,
+    penalty: false,
+    message:
+      `Course cancelled. ${tokensRefunded} token(s) refunded for ${cancelled.length} session(s).` +
+      (keptToday > 0 ? ` ${keptToday} session(s) today stay booked.` : ''),
+  }
+}
+
+// Mark confirmed bookings as cancelled, then refund each one's tokens.
+// The status update only matches still-confirmed rows, so a booking can never be refunded twice.
+export async function cancelAndRefundBookings(params: {
+  userId?: string
+  bookingIds: string[]
+  reason: string | null
+  refundDescription: string
+  performedBy?: string
+}): Promise<{ bookingId: string; tokensRefunded: number }[]> {
+  const adminClient = getSupabaseAdminClient()
+  const now = new Date().toISOString()
+
+  let query = adminClient
+    .from(TABLES.BOOKINGS)
+    .update({
+      status: 'cancelled',
+      cancelled_at: now,
+      cancellation_reason: params.reason,
+      updated_at: now,
+    })
+    .in('id', params.bookingIds)
+    .eq('status', 'confirmed')
+
+  if (params.userId) {
+    query = query.eq('user_id', params.userId)
+  }
+
+  const { data: claimed, error } = await query.select('id, user_id, user_package_id, tokens_used')
+
+  if (error) {
+    throw new ApiError('SERVER_ERROR', 'Failed to cancel booking', 500, error)
+  }
+
+  const results: { bookingId: string; tokensRefunded: number }[] = []
+  const rows = claimed || []
+
+  for (let i = 0; i < rows.length; i++) {
+    const b = rows[i]
+    const tokens = (b.tokens_used as number) || 0
+    // Trial / paid bookings have no package and nothing to refund
+    if (!b.user_package_id || tokens <= 0) {
+      results.push({ bookingId: b.id as string, tokensRefunded: 0 })
+      continue
+    }
+
+    try {
+      await refundBookingTokens({
+        userId: b.user_id as string,
+        userPackageId: b.user_package_id as string,
+        bookingId: b.id as string,
+        tokensToRefund: tokens,
+        description: params.refundDescription,
+        performedBy: params.performedBy,
+      })
+      results.push({ bookingId: b.id as string, tokensRefunded: tokens })
+    } catch (refundError) {
+      // Put this and every not-yet-refunded booking back so the member keeps their places and can retry
+      const unrefundedIds = rows.slice(i).map((r) => r.id as string)
+      console.error(`[Booking] Refund failed for booking ${b.id}, restoring ${unrefundedIds.length} booking(s):`, refundError)
+      await adminClient
+        .from(TABLES.BOOKINGS)
+        .update({ status: 'confirmed', cancelled_at: null, cancellation_reason: null, updated_at: new Date().toISOString() })
+        .in('id', unrefundedIds)
+      throw refundError
+    }
+  }
+
+  return results
+}
+
+async function processWaitlists(classIds: string[]) {
+  const { processWaitlistForClass } = await import('./waitlist.service')
+  for (const classId of [...new Set(classIds)]) {
+    try {
+      await processWaitlistForClass(classId)
+    } catch (waitlistError) {
+      // Log but don't fail the cancellation if waitlist processing fails
+      console.error(`[Booking] Error processing waitlist for class ${classId} after cancellation:`, waitlistError)
+    }
+  }
+}
+
+async function sendCancellationNotifications(params: {
+  userId: string
+  classData: Record<string, unknown>
+  tokensRefunded: number
+  reason?: string
+}) {
+  const { userId, classData, tokensRefunded, reason } = params
+  const db = getSupabaseAdminClient()
+
   try {
     const { sendNotification } = await import('./notification.service')
     const { data: userProfile } = await db
@@ -650,6 +807,18 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
       .select('name, email')
       .eq('id', userId)
       .single()
+
+    const classDate = new Date(classData.scheduled_at as string)
+    const formattedDate = classDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+    const formattedTime = classDate.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+    })
 
     // In-app notification
     await sendNotification({
@@ -660,24 +829,12 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
         user_name: userProfile?.name || 'User',
         class_title: classData.title,
         tokens_refunded: tokensRefunded,
-        penalty: isPenalty,
+        penalty: false,
       },
     })
 
     // Email notification via web app API
     if (userProfile?.email && userProfile?.name) {
-      const classDate = new Date(classData.scheduled_at as string)
-      const formattedDate = classDate.toLocaleDateString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      })
-      const formattedTime = classDate.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-      })
-
       const { getWebAppUrl } = await import('@/lib/email-url')
       const webAppUrl = getWebAppUrl()
       const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
@@ -695,7 +852,7 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
             classDate: formattedDate,
             classTime: formattedTime,
             tokensRefunded,
-            penalty: isPenalty,
+            penalty: false,
             reason: reason || undefined,
           },
         }),
@@ -705,18 +862,6 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
 
     // Notify the instructor/tutor about the cancellation
     if (classData.instructor_id) {
-      const classDate = new Date(classData.scheduled_at as string)
-      const formattedDate = classDate.toLocaleDateString('en-US', { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
-      })
-      const formattedTime = classDate.toLocaleTimeString('en-US', { 
-        hour: 'numeric', 
-        minute: '2-digit' 
-      })
-
       await sendNotification({
         userId: classData.instructor_id as string,
         type: 'booking_cancelled',
@@ -733,290 +878,28 @@ export async function cancelBooking(params: CancelBookingParams): Promise<Cancel
     }
 
     // Notify admins about the cancellation
-    const classDate = classData.instructor_id ? null : new Date(classData.scheduled_at as string)
-    const formattedDateAdmin = classDate ? classDate.toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    }) : new Date(classData.scheduled_at as string).toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    })
-
     const { data: admins } = await db
       .from('user_profiles')
       .select('id')
       .in('role', ['admin', 'super_admin'])
 
-    if (admins && admins.length > 0) {
-      for (const admin of admins) {
-        await sendNotification({
-          userId: admin.id,
-          type: 'booking_cancelled',
-          channel: 'in_app',
-          data: {
-            is_admin_notification: true,
-            student_name: userProfile?.name || 'A student',
-            class_title: classData.title,
-            class_date: formattedDateAdmin,
-            penalty: isPenalty,
-            message: `Booking cancelled: ${userProfile?.name || 'A student'} cancelled "${classData.title}" on ${formattedDateAdmin}${isPenalty ? ' (late cancellation)' : ''}.`,
-          },
-        })
-      }
+    for (const admin of admins || []) {
+      await sendNotification({
+        userId: admin.id,
+        type: 'booking_cancelled',
+        channel: 'in_app',
+        data: {
+          is_admin_notification: true,
+          student_name: userProfile?.name || 'A student',
+          class_title: classData.title,
+          class_date: formattedDate,
+          penalty: false,
+          message: `Booking cancelled: ${userProfile?.name || 'A student'} cancelled "${classData.title}" on ${formattedDate}.`,
+        },
+      })
     }
   } catch (notificationError) {
     console.error('[Booking] Error sending cancellation notification:', notificationError)
-  }
-
-  // 5. Process waitlist - notify next person when a spot opens
-  const { processWaitlistForClass } = await import('./waitlist.service')
-  try {
-    await processWaitlistForClass(classData.id as string)
-  } catch (waitlistError) {
-    // Log but don't fail the cancellation if waitlist processing fails
-    console.error('[Booking] Error processing waitlist after cancellation:', waitlistError)
-  }
-
-  return {
-    booking: mapBookingToSchema(updatedBooking),
-    tokensRefunded,
-    penalty: isPenalty,
-    penaltyReason: isPenalty ? `Cancelled less than ${CANCELLATION_WINDOW_HOURS} hours before class` : undefined,
-    message: isPenalty
-      ? `Booking cancelled. ${booking.tokens_used} token(s) consumed as late cancellation penalty.`
-      : `Booking cancelled. ${tokensRefunded} token(s) refunded.`,
-  }
-}
-
-// Cancel all remaining course sessions
-async function cancelCourseBooking(
-  userId: string,
-  bookingId: string,
-  booking: Record<string, unknown>,
-  parentClassId: string,
-  reason?: string
-): Promise<CancelBookingResponse> {
-  const now = new Date()
-
-  const adminClient = getSupabaseAdminClient()
-
-  // Find all remaining future sessions for this course that the user has booked
-  const { data: allCourseSessions, error: sessionsError } = await adminClient
-    .from(TABLES.CLASSES)
-    .select('id, scheduled_at, token_cost')
-    .eq('parent_class_id', parentClassId)
-    .eq('status', 'scheduled')
-    .gt('scheduled_at', now.toISOString())
-    .order('scheduled_at', { ascending: true })
-
-  if (sessionsError) {
-    throw new ApiError('SERVER_ERROR', 'Failed to fetch course sessions', 500, sessionsError)
-  }
-
-  // Get all user's bookings for these future sessions
-  const sessionIds = allCourseSessions?.map(s => s.id) || []
-  if (sessionIds.length === 0) {
-    // No future sessions, just cancel this one
-    return await cancelSingleBooking(userId, bookingId, booking, reason)
-  }
-
-  const { data: userCourseBookings, error: bookingsError } = await adminClient
-    .from(TABLES.BOOKINGS)
-    .select('id, tokens_used, class_id, class:classes(scheduled_at)')
-    .eq('user_id', userId)
-    .in('class_id', sessionIds)
-    .eq('status', 'confirmed')
-
-  if (bookingsError) {
-    throw new ApiError('SERVER_ERROR', 'Failed to fetch course bookings', 500, bookingsError)
-  }
-
-  if (!userCourseBookings || userCourseBookings.length === 0) {
-    // No other bookings found, just cancel this one
-    return await cancelSingleBooking(userId, bookingId, booking, reason)
-  }
-
-  // Calculate total tokens to refund (all future sessions)
-  const totalTokensToRefund = userCourseBookings.reduce((sum, b) => sum + (b.tokens_used || 0), 0)
-  const bookingIds = userCourseBookings.map(b => b.id)
-
-  // Check cancellation window for the earliest session
-  const earliestBooking = userCourseBookings[0]
-  const earliestClassTime = new Date((earliestBooking.class as any)?.scheduled_at || earliestBooking.class_id)
-  const hoursUntilEarliest = (earliestClassTime.getTime() - now.getTime()) / (1000 * 60 * 60)
-  const isWithinWindow = hoursUntilEarliest >= CANCELLATION_WINDOW_HOURS
-  const isPenalty = !isWithinWindow && hoursUntilEarliest > 0
-
-  let tokensRefunded = 0
-  let newStatus: 'cancelled' | 'cancelled-late' = 'cancelled'
-
-  if (isWithinWindow) {
-    // Free cancellation - release all tokens
-    tokensRefunded = totalTokensToRefund
-    newStatus = 'cancelled'
-
-    // Release tokens for all bookings (they should all use the same package)
-    for (const b of userCourseBookings) {
-      await releaseTokens({
-        userId,
-        userPackageId: booking.user_package_id as string,
-        bookingId: b.id,
-        tokensToRelease: b.tokens_used || 0,
-        description: `Course cancelled within ${CANCELLATION_WINDOW_HOURS}h window`,
-      })
-    }
-  } else if (isPenalty) {
-    // Late cancellation - consume tokens as penalty
-    tokensRefunded = 0
-    newStatus = 'cancelled-late'
-
-    // Consume tokens for all bookings
-    for (const b of userCourseBookings) {
-      await consumeTokens({
-        userId,
-        userPackageId: booking.user_package_id as string,
-        bookingId: b.id,
-        tokensToConsume: b.tokens_used || 0,
-        transactionType: 'late-cancel-consume',
-        description: `Course late cancellation penalty (within ${CANCELLATION_WINDOW_HOURS}h of first session)`,
-      })
-    }
-  } else {
-    // Course already started
-    throw new ApiError('VALIDATION_ERROR', 'Cannot cancel course after it has started', 400)
-  }
-
-  // Update all bookings
-  const { error: updateError } = await adminClient
-    .from(TABLES.BOOKINGS)
-    .update({
-      status: newStatus,
-      cancelled_at: new Date().toISOString(),
-      cancellation_reason: reason || 'Course cancellation',
-      updated_at: new Date().toISOString(),
-    })
-    .in('id', bookingIds)
-
-  if (updateError) {
-    throw new ApiError('SERVER_ERROR', 'Failed to cancel course bookings', 500, updateError)
-  }
-
-  // Process waitlist for all cancelled sessions
-  const { processWaitlistForClass } = await import('./waitlist.service')
-  const uniqueClassIds = [...new Set(userCourseBookings.map(b => b.class_id as string))]
-  for (const sessionClassId of uniqueClassIds) {
-    try {
-      await processWaitlistForClass(sessionClassId)
-    } catch (waitlistError) {
-      // Log but don't fail the cancellation if waitlist processing fails
-      console.error(`[Booking] Error processing waitlist for session ${sessionClassId} after cancellation:`, waitlistError)
-    }
-  }
-
-  // Get the updated booking for return
-  const { data: updatedBooking } = await adminClient
-    .from(TABLES.BOOKINGS)
-    .select(`
-      *,
-      class:${TABLES.CLASSES}(*)
-    `)
-    .eq('id', bookingId)
-    .single()
-
-  return {
-    booking: mapBookingToSchema(updatedBooking!),
-    tokensRefunded,
-    penalty: isPenalty,
-    penaltyReason: isPenalty ? `Cancelled less than ${CANCELLATION_WINDOW_HOURS} hours before course start` : undefined,
-    message: isPenalty
-      ? `Course cancelled. ${totalTokensToRefund} token(s) consumed as late cancellation penalty.`
-      : `Course cancelled. ${tokensRefunded} token(s) refunded for ${userCourseBookings.length} remaining session(s).`,
-  }
-}
-
-// Helper to cancel a single booking
-async function cancelSingleBooking(
-  userId: string,
-  bookingId: string,
-  booking: Record<string, unknown>,
-  reason?: string
-): Promise<CancelBookingResponse> {
-  const classData = booking.class as Record<string, unknown>
-  const classTime = new Date(classData.scheduled_at as string)
-  const now = new Date()
-  const hoursUntilClass = (classTime.getTime() - now.getTime()) / (1000 * 60 * 60)
-  const isWithinWindow = hoursUntilClass >= CANCELLATION_WINDOW_HOURS
-  const isPenalty = !isWithinWindow && hoursUntilClass > 0
-
-  let newStatus: 'cancelled' | 'cancelled-late'
-  let tokensRefunded = 0
-
-  if (isWithinWindow) {
-    newStatus = 'cancelled'
-    tokensRefunded = booking.tokens_used as number
-    await releaseTokens({
-      userId,
-      userPackageId: booking.user_package_id as string,
-      bookingId,
-      tokensToRelease: booking.tokens_used as number,
-      description: `Cancelled within ${CANCELLATION_WINDOW_HOURS}h window`,
-    })
-  } else if (isPenalty) {
-    newStatus = 'cancelled-late'
-    tokensRefunded = 0
-    await consumeTokens({
-      userId,
-      userPackageId: booking.user_package_id as string,
-      bookingId,
-      tokensToConsume: booking.tokens_used as number,
-      transactionType: 'late-cancel-consume',
-      description: `Late cancellation penalty (within ${CANCELLATION_WINDOW_HOURS}h of class)`,
-    })
-  } else {
-    throw new ApiError('VALIDATION_ERROR', 'Cannot cancel after class has started', 400)
-  }
-
-  const adminClient = getSupabaseAdminClient()
-  const { data: updatedBooking, error: updateError } = await adminClient
-    .from(TABLES.BOOKINGS)
-    .update({
-      status: newStatus,
-      cancelled_at: new Date().toISOString(),
-      cancellation_reason: reason || null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', bookingId)
-    .select(`
-      *,
-      class:${TABLES.CLASSES}(*)
-    `)
-    .single()
-
-  if (updateError) {
-    throw new ApiError('SERVER_ERROR', 'Failed to cancel booking', 500, updateError)
-  }
-
-  // Process waitlist - notify next person when a spot opens
-  const { processWaitlistForClass } = await import('./waitlist.service')
-  try {
-    await processWaitlistForClass(classData.id as string)
-  } catch (waitlistError) {
-    // Log but don't fail the cancellation if waitlist processing fails
-    console.error('[Booking] Error processing waitlist after cancellation:', waitlistError)
-  }
-
-  return {
-    booking: mapBookingToSchema(updatedBooking),
-    tokensRefunded,
-    penalty: isPenalty,
-    penaltyReason: isPenalty ? `Cancelled less than ${CANCELLATION_WINDOW_HOURS} hours before class` : undefined,
-    message: isPenalty
-      ? `Booking cancelled. ${booking.tokens_used} token(s) consumed as late cancellation penalty.`
-      : `Booking cancelled. ${tokensRefunded} token(s) refunded.`,
   }
 }
 
@@ -1117,151 +1000,148 @@ export async function createBatchBooking(params: BatchBookingParams): Promise<Ba
     throw new ApiError('VALIDATION_ERROR', `Full classes: ${fullClasses.join(', ')}. Cannot complete batch booking.`, 400)
   }
 
-  // 3. Hold tokens for ALL classes (all-or-nothing)
-  // One hold spans multiple booking rows, so there's no single booking to
-  // attribute it to — null is the valid "not tied to one booking" value.
-  const tokenResult = await holdTokens({
+  // 3. Charge tokens for ALL classes from one package (all-or-nothing)
+  const ageGroups = [...new Set(classes.map(c => (c.age_group as string) || 'all').filter(g => g !== 'all'))]
+  if (ageGroups.length > 1) {
+    throw new ApiError('VALIDATION_ERROR', 'Please book adult and kids classes separately.', 400)
+  }
+
+  const charge = await chargeTokensForBooking({
     userId,
     tokensNeeded: totalTokensNeeded,
-    bookingId: null,
-    classType: 'batch',
+    ageGroup: ageGroups[0] || 'all',
   })
 
+  // 4. Create all bookings in a single insert
+  const bookingsToInsert = classes.map(classData => ({
+    user_id: userId,
+    class_id: classData.id,
+    user_package_id: charge.userPackageId,
+    tokens_used: classData.token_cost,
+    status: 'confirmed',
+    booked_at: new Date().toISOString(),
+  }))
+
+  const { data: createdBookings, error: bookingError } = await adminClient
+    .from(TABLES.BOOKINGS)
+    .insert(bookingsToInsert)
+    .select('*')
+
+  if (bookingError || !createdBookings || createdBookings.length === 0) {
+    // Rollback: give the tokens back (no ledger rows were written yet)
+    await refundBookingTokens({
+      userId,
+      userPackageId: charge.userPackageId,
+      bookingId: null,
+      tokensToRefund: totalTokensNeeded,
+      recordLedger: false,
+    })
+
+    throw new ApiError('SERVER_ERROR', 'Failed to create bookings', 500, bookingError)
+  }
+
+  await recordBookingCharges({
+    userId,
+    userPackageId: charge.userPackageId,
+    tokensBefore: charge.tokensBefore,
+    charges: createdBookings.map((b) => ({
+      bookingId: b.id as string,
+      tokens: b.tokens_used as number,
+      description: `Booked class: ${classMap.get(b.class_id)?.title || 'class'}`,
+    })),
+  })
+
+  // 5. Send notifications for all bookings
   try {
-    // 4. Create all bookings in a single transaction
-    const bookingsToInsert = classes.map(classData => ({
-      user_id: userId,
-      class_id: classData.id,
-      user_package_id: tokenResult.userPackageId,
-      tokens_used: classData.token_cost,
-      status: 'confirmed',
-      booked_at: new Date().toISOString(),
-    }))
+    const { sendNotification, sendBookingConfirmation } = await import('./notification.service')
+    const { data: userProfile } = await supabase
+      .from('user_profiles')
+      .select('name, email')
+      .eq('id', userId)
+      .single()
 
-    const { data: createdBookings, error: bookingError } = await adminClient
-      .from(TABLES.BOOKINGS)
-      .insert(bookingsToInsert)
-      .select('*')
+    // Send one notification for batch booking
+    const classNames = classes.map(c => c.title).join(', ')
+    await sendNotification({
+      userId,
+      type: 'booking_confirmation',
+      channel: 'in_app',
+      data: {
+        user_name: userProfile?.name || 'User',
+        class_titles: classNames,
+        session_count: classes.length,
+        total_tokens: totalTokensNeeded,
+      },
+    })
 
-    if (bookingError || !createdBookings) {
-      // Rollback: release tokens
-      if (tokenResult.userPackageId) {
-        await releaseTokens({
-          userId,
-          userPackageId: tokenResult.userPackageId,
-          bookingId: null,
-          tokensToRelease: totalTokensNeeded,
-          description: 'Rollback: batch booking creation failed',
+    // Send notifications to instructors and admins
+    const instructorIds = new Set(classes.map(c => c.instructor_id).filter(Boolean))
+    
+    for (const instructorId of instructorIds) {
+      if (instructorId) {
+        await sendNotification({
+          userId: instructorId,
+          type: 'booking_confirmation',
+          channel: 'in_app',
+          data: {
+            is_tutor_notification: true,
+            student_name: userProfile?.name || 'A student',
+            class_titles: classNames,
+            session_count: classes.length,
+            message: `${userProfile?.name || 'A student'} has booked ${classes.length} of your classes.`,
+          },
         })
       }
-
-      throw new ApiError('SERVER_ERROR', 'Failed to create bookings', 500, bookingError)
     }
 
-    // 5. Send notifications for all bookings
-    try {
-      const { sendNotification, sendBookingConfirmation } = await import('./notification.service')
-      const { data: userProfile } = await supabase
-        .from('user_profiles')
-        .select('name, email')
-        .eq('id', userId)
-        .single()
+    // Notify admins
+    const { data: admins } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .in('role', ['admin', 'super_admin'])
 
-      // Send one notification for batch booking
-      const classNames = classes.map(c => c.title).join(', ')
-      await sendNotification({
+    if (admins && admins.length > 0) {
+      for (const admin of admins) {
+        await sendNotification({
+          userId: admin.id,
+          type: 'booking_confirmation',
+          channel: 'in_app',
+          data: {
+            is_admin_notification: true,
+            student_name: userProfile?.name || 'A student',
+            class_titles: classNames,
+            session_count: classes.length,
+            total_tokens: totalTokensNeeded,
+            message: `${userProfile?.name || 'A student'} has batch booked ${classes.length} classes using ${totalTokensNeeded} token(s).`,
+          },
+        })
+      }
+    }
+
+    for (const classData of classes) {
+      const bookingRecord = createdBookings.find((booking) => booking.class_id === classData.id)
+      await sendMemberBookingStaffEmailNotifications({
         userId,
-        type: 'booking_confirmation',
-        channel: 'in_app',
-        data: {
-          user_name: userProfile?.name || 'User',
-          class_titles: classNames,
-          session_count: classes.length,
-          total_tokens: totalTokensNeeded,
-        },
+        classData,
+        tokensUsed: classData.token_cost,
+        bookingId: bookingRecord?.id,
       })
-
-      // Send notifications to instructors and admins
-      const instructorIds = new Set(classes.map(c => c.instructor_id).filter(Boolean))
-      
-      for (const instructorId of instructorIds) {
-        if (instructorId) {
-          await sendNotification({
-            userId: instructorId,
-            type: 'booking_confirmation',
-            channel: 'in_app',
-            data: {
-              is_tutor_notification: true,
-              student_name: userProfile?.name || 'A student',
-              class_titles: classNames,
-              session_count: classes.length,
-              message: `${userProfile?.name || 'A student'} has booked ${classes.length} of your classes.`,
-            },
-          })
-        }
-      }
-
-      // Notify admins
-      const { data: admins } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .in('role', ['admin', 'super_admin'])
-
-      if (admins && admins.length > 0) {
-        for (const admin of admins) {
-          await sendNotification({
-            userId: admin.id,
-            type: 'booking_confirmation',
-            channel: 'in_app',
-            data: {
-              is_admin_notification: true,
-              student_name: userProfile?.name || 'A student',
-              class_titles: classNames,
-              session_count: classes.length,
-              total_tokens: totalTokensNeeded,
-              message: `${userProfile?.name || 'A student'} has batch booked ${classes.length} classes using ${totalTokensNeeded} token(s).`,
-            },
-          })
-        }
-      }
-
-      for (const classData of classes) {
-        const bookingRecord = createdBookings.find((booking) => booking.class_id === classData.id)
-        await sendMemberBookingStaffEmailNotifications({
-          userId,
-          classData,
-          tokensUsed: classData.token_cost,
-          bookingId: bookingRecord?.id,
-        })
-      }
-    } catch (notificationError) {
-      console.error('Error sending notifications:', notificationError)
-      // Don't throw - notifications are not critical
     }
+  } catch (notificationError) {
+    console.error('Error sending notifications:', notificationError)
+    // Don't throw - notifications are not critical
+  }
 
-    return {
+  return {
+    success: true,
+    message: `Successfully booked ${classes.length} class${classes.length !== 1 ? 'es' : ''} using ${totalTokensNeeded} token${totalTokensNeeded !== 1 ? 's' : ''}`,
+    bookings: createdBookings.map(booking => ({
+      classId: booking.class_id,
+      bookingId: booking.id,
       success: true,
-      message: `Successfully booked ${classes.length} class${classes.length !== 1 ? 'es' : ''} using ${totalTokensNeeded} token${totalTokensNeeded !== 1 ? 's' : ''}`,
-      bookings: createdBookings.map(booking => ({
-        classId: booking.class_id,
-        bookingId: booking.id,
-        success: true,
-        message: 'Booked successfully',
-      })),
-      totalTokensHeld: totalTokensNeeded,
-    }
-  } catch (error) {
-    // Rollback: release tokens on any error
-    if (tokenResult.userPackageId) {
-      await releaseTokens({
-        userId,
-        userPackageId: tokenResult.userPackageId,
-        bookingId: null,
-        tokensToRelease: totalTokensNeeded,
-        description: 'Rollback: batch booking failed',
-      })
-    }
-    throw error
+      message: 'Booked successfully',
+    })),
+    totalTokensHeld: totalTokensNeeded,
   }
 }
 

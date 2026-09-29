@@ -72,9 +72,9 @@ const CRON_JOBS: CronJob[] = [
   },
   // Maintenance Jobs
   {
-    name: "processNoShows",
-    displayName: "Process No-Shows",
-    description: "Marks bookings as no-show 30 minutes after class ends, consumes tokens, sends warning",
+    name: "processCompletedBookings",
+    displayName: "Mark Classes Attended",
+    description: "Marks bookings as attended 30 minutes after class ends. Staff can still mark individual no-shows. Tokens are not touched.",
     frequency: "Every hour",
     cron: "0 * * * *",
     category: "maintenance",

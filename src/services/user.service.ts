@@ -535,6 +535,9 @@ export async function createUser(
       role: data.role,
       signup_source: 'admin',
     },
+    app_metadata: {
+      role: data.role,
+    },
   })
 
   if (authError) {
@@ -559,6 +562,9 @@ export async function createUser(
               name: data.name,
               role: data.role,
               signup_source: 'admin',
+            },
+            app_metadata: {
+              role: data.role,
             },
           })
 

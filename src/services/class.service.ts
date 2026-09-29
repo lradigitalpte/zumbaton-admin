@@ -675,40 +675,22 @@ export async function cancelClass(classId: string): Promise<{
   // Get all confirmed bookings for this class
   const { data: bookings } = await adminClient
     .from(TABLES.BOOKINGS)
-    .select('id, user_id, user_package_id, tokens_used')
+    .select('id')
     .eq('class_id', classId)
     .eq('status', 'confirmed')
 
   let refundedBookings = 0
 
-  // Refund tokens for each booking
-  // Note: This would normally use the token service, but we're keeping it simple here
-  // In production, you'd want to use a transaction
+  // Cancel and refund each booking on its own so one failure doesn't block the rest
+  const { cancelAndRefundBookings } = await import('./booking.service')
   for (const booking of bookings || []) {
     try {
-      // Release held tokens
-      await adminClient
-        .from(TABLES.USER_PACKAGES)
-        .update({
-          tokens_held: adminClient.rpc('decrement_tokens_held', {
-            pkg_id: booking.user_package_id,
-            amount: booking.tokens_used,
-          }),
-        })
-        .eq('id', booking.user_package_id)
-
-      // Update booking status
-      await adminClient
-        .from(TABLES.BOOKINGS)
-        .update({
-          status: 'cancelled',
-          cancellation_reason: 'Class cancelled by admin',
-          cancelled_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', booking.id)
-
-      refundedBookings++
+      const cancelled = await cancelAndRefundBookings({
+        bookingIds: [booking.id as string],
+        reason: 'Class cancelled by admin',
+        refundDescription: `Class cancelled by admin: ${classData.title}`,
+      })
+      refundedBookings += cancelled.length
     } catch (err) {
       console.error(`[ClassService] Failed to refund booking ${booking.id}:`, err)
     }

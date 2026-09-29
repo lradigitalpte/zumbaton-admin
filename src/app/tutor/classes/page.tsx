@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import QRAttendanceModal from "@/components/attendance/QRAttendanceModal";
+import ClassAttendeesModal from "@/components/attendance/ClassAttendeesModal";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import { useTutorClasses } from "@/hooks/useTutor";
 
@@ -786,7 +786,7 @@ export default function TutorClassesPage() {
 
       {/* QR Attendance Modal */}
       {attendanceClass && (
-        <QRAttendanceModal
+        <ClassAttendeesModal
           isOpen={!!attendanceClass}
           onClose={() => setAttendanceClass(null)}
           classInfo={attendanceClass}

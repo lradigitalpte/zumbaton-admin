@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdminClient } from '@/lib/supabase'
 import { withAuth, AuthenticatedUser } from '@/middleware/rbac'
-import { processNoShows, markNoShow } from '@/services/attendance.service'
+import { processCompletedBookings, markNoShow } from '@/services/attendance.service'
 import { ApiError } from '@/lib/api-error'
 
 // GET /api/attendance/debug-no-shows - View pending no-shows (admin only)
@@ -201,7 +201,7 @@ async function handlePostDebugNoShows(
 
     if (action === 'process-all') {
       // Run the full no-show processing job
-      const result = await processNoShows()
+      const result = await processCompletedBookings()
       return NextResponse.json({
         success: true,
         data: {

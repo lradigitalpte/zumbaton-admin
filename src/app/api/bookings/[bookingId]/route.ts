@@ -6,7 +6,22 @@ import { cancelBooking, getUserBookings } from '@/services/booking.service'
 import { UuidSchema } from '@/api/schemas'
 import { ApiError } from '@/lib/api-error'
 import { z } from 'zod'
-import { getSupabaseAdminClient } from '@/lib/supabase'
+import { getAuthenticatedUser, hasRequiredRole } from '@/middleware/rbac'
+
+// Members may only act on their own bookings; staff and above may act for anyone.
+// Force-refund (cancel on the day, or after class) is admin-only.
+async function assertCanActForUser(request: NextRequest, userId: string, forceRefund = false) {
+  const actor = await getAuthenticatedUser(request)
+  if (!actor) {
+    throw new ApiError('AUTHENTICATION_ERROR', 'Authentication required', 401)
+  }
+  if (forceRefund && !hasRequiredRole(actor.role, 'admin')) {
+    throw new ApiError('AUTHORIZATION_ERROR', 'Admin access required', 403)
+  }
+  if (actor.id !== userId && !hasRequiredRole(actor.role, 'staff')) {
+    throw new ApiError('AUTHORIZATION_ERROR', 'You can only manage your own bookings', 403)
+  }
+}
 
 // Cancel booking schema with userId
 const CancelSchema = z.object({
@@ -33,6 +48,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       throw new ApiError('VALIDATION_ERROR', 'userId is required', 400)
     }
     UuidSchema.parse(userId)
+    await assertCanActForUser(request, userId)
 
     // Get user's bookings and find this one
     const result = await getUserBookings({ userId, page: 1, pageSize: 100 })
@@ -63,24 +79,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     // Validate request body
     const validatedData = CancelSchema.parse(body)
 
-    if (validatedData.forceRefund) {
-      const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
-      if (!token) throw new ApiError('AUTHENTICATION_ERROR', 'Authentication required', 401)
-
-      const adminClient = getSupabaseAdminClient()
-      const { data: authData } = await adminClient.auth.getUser(token)
-      const actorId = authData.user?.id
-      if (!actorId) throw new ApiError('AUTHENTICATION_ERROR', 'Invalid session', 401)
-
-      const { data: actorProfile } = await adminClient
-        .from('user_profiles')
-        .select('role')
-        .eq('id', actorId)
-        .single()
-      if (!actorProfile || !['admin', 'super_admin'].includes(actorProfile.role)) {
-        throw new ApiError('AUTHORIZATION_ERROR', 'Admin access required', 403)
-      }
-    }
+    await assertCanActForUser(request, validatedData.userId, validatedData.forceRefund)
 
     const result = await cancelBooking({
       bookingId,

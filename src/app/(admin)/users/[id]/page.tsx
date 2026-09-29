@@ -205,7 +205,7 @@ export default function UserDetailPage() {
 
   const mapTokenTransactionType = (txType: string): TokenTransaction["type"] => {
     if (txType === "purchase" || txType === "trial-booking-purchase") return "purchase";
-    if (txType === "attendance-consume" || txType === "no-show-consume" || txType === "late-cancel-consume") return "consume";
+    if (txType === "booking-consume" || txType === "attendance-consume" || txType === "no-show-consume" || txType === "late-cancel-consume") return "consume";
     if (txType === "expire") return "expire";
     if (txType === "admin-adjust") return "adjustment";
     if (txType === "booking-release" || txType === "refund") return "release";
