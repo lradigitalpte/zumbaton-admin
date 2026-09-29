@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdminClient } from '@/lib/supabase'
 import { UuidSchema } from '@/api/schemas'
+import { getAuthenticatedUser, hasRequiredRole } from '@/middleware/rbac'
 
 interface RouteParams {
   params: Promise<{ classId: string }>
@@ -12,8 +13,17 @@ interface RouteParams {
 // GET /api/attendance/class/[classId]/attendees - Get attendees for a class
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    // Attendee names are only for instructors, staff and admins
+    const actor = await getAuthenticatedUser(request)
+    if (!actor || !hasRequiredRole(actor.role, 'instructor')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'AUTHORIZATION_ERROR', message: 'Staff access required' } },
+        { status: actor ? 403 : 401 }
+      )
+    }
+
     const { classId } = await params
-    
+
     // Validate UUID
     UuidSchema.parse(classId)
 

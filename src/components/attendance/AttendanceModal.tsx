@@ -36,10 +36,9 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
   const fetchList = useCallback(() => {
     if (!classData.id) return;
     setIsLoading(true);
-    fetch(`/api/attendance/class/${classData.id}/attendees`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && data.data?.attendees) {
+    api.get<any>(`/api/attendance/class/${classData.id}/attendees`)
+      .then(({ data }) => {
+        if (data?.success && data.data?.attendees) {
           const completed = classData.status === "completed";
           setList(
             data.data.attendees.map((a: { id: string; userId?: string | null; isGuest?: boolean; name: string; avatar?: string; checkedInAt?: string }) => ({
