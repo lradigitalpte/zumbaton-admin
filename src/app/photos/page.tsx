@@ -62,13 +62,13 @@ const PRIORITY_CARDS: ShotCard[] = [
   },
   {
     badge: "Needs Photo",
-    instructor: "Laavania",
+    instructor: "One Step Fitness Team",
     title: "Lil Steppers",
     currentFile: "kids1.png",
     currentNote: "a generic stock photo of children, not an actual Lil Steppers session.",
     shots: [
       { id: "ls-1", label: "Kids mid-dance-move, smiling, in the actual studio" },
-      { id: "ls-2", label: "Laavania leading a kid-friendly pose, front-on" },
+      { id: "ls-2", label: "Instructor leading a kid-friendly pose, front-on" },
       { id: "ls-3", label: "Full group in a fun formation" },
       { id: "ls-4", label: "One candid moment — laughing, high-five, mid-song" },
     ],

@@ -4,6 +4,7 @@ import { UuidSchema, DateTimeSchema } from './common'
 // Transaction type - aligned with TOKEN_ENGINE_PLAN.md
 export const TransactionTypeSchema = z.enum([
   'purchase',
+  'booking-consume',
   'booking-hold',
   'booking-release',
   'attendance-consume',

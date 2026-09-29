@@ -8,6 +8,7 @@ export type TransactionType =
   | 'purchase' 
   | 'booking-hold' 
   | 'booking-release' 
+  | 'booking-consume'
   | 'attendance-consume'
   | 'no-show-consume'
   | 'late-cancel-consume'

@@ -5,7 +5,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createBooking, createBatchBooking, getUserBookings } from '@/services/booking.service'
 import { UuidSchema } from '@/api/schemas'
 import { ApiError } from '@/lib/api-error'
+import { getAuthenticatedUser, hasRequiredRole } from '@/middleware/rbac'
 import { z } from 'zod'
+
+// Members may only read or book for themselves; staff and above may act for anyone.
+async function assertCanActForUser(request: NextRequest, userId: string) {
+  const actor = await getAuthenticatedUser(request)
+  if (!actor) {
+    throw new ApiError('AUTHENTICATION_ERROR', 'Authentication required', 401)
+  }
+  if (actor.id !== userId && !hasRequiredRole(actor.role, 'staff')) {
+    throw new ApiError('AUTHORIZATION_ERROR', 'You can only manage your own bookings', 403)
+  }
+}
 
 // Extended booking schema with userId
 const CreateBookingSchema = z.object({
@@ -36,7 +48,8 @@ export async function GET(request: NextRequest) {
 
     // Validate userId
     UuidSchema.parse(userId)
-    
+    await assertCanActForUser(request, userId)
+
     const result = await getUserBookings({
       userId,
       status,
@@ -63,6 +76,7 @@ export async function POST(request: NextRequest) {
     if (body.classIds && Array.isArray(body.classIds)) {
       // Batch booking
       const validatedData = BatchBookingSchema.parse(body)
+      await assertCanActForUser(request, validatedData.userId)
       const result = await createBatchBooking(validatedData)
       return NextResponse.json({
         success: true,
@@ -71,6 +85,7 @@ export async function POST(request: NextRequest) {
     } else if (body.classId) {
       // Single booking
       const validatedData = CreateBookingSchema.parse(body)
+      await assertCanActForUser(request, validatedData.userId)
       const result = await createBooking(validatedData)
       return NextResponse.json({
         success: true,

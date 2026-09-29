@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useTutorDashboard } from "@/hooks/useTutor";
 import { useAuth } from "@/context/AuthContext";
-import QRAttendanceModal from "@/components/attendance/QRAttendanceModal";
+import ClassAttendeesModal from "@/components/attendance/ClassAttendeesModal";
 
 interface TodayClass {
   id: string;
@@ -89,7 +89,7 @@ export default function TutorDashboardPage() {
         const result = await response.json();
 
         if (response.ok && result.success) {
-          // Transform attendees to the format expected by QRAttendanceModal
+          // Transform attendees to the format expected by ClassAttendeesModal
           // The API now returns ALL enrolled students, not just checked-in ones
           const attendees = (result.data.attendees || []).map((attendee: any) => ({
             id: attendee.userId || attendee.id,
@@ -441,7 +441,7 @@ export default function TutorDashboardPage() {
 
       {/* QR Attendance Modal */}
       {selectedClass && (
-        <QRAttendanceModal
+        <ClassAttendeesModal
           isOpen={!!selectedClass}
           onClose={() => setSelectedClass(null)}
           classInfo={{

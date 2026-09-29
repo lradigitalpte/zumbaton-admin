@@ -62,7 +62,7 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
     id: 'attendance',
     target: '[data-onboarding="attendance-menu"]',
     title: 'Attendance Tracking ✅',
-    content: 'Track class attendance, check-in students, and manage no-shows. Use QR codes for quick check-ins!',
+    content: 'Track class attendance and record no-shows. Bookings are marked attended automatically after class.',
     position: 'right',
     action: {
       type: 'navigate',

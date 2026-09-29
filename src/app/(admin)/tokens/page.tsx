@@ -29,6 +29,7 @@ const mapTransactionType = (apiType: TransactionType): DisplayTransactionType =>
     'purchase': 'purchase',
     'booking-hold': 'hold',
     'booking-release': 'release',
+    'booking-consume': 'consume',
     'attendance-consume': 'consume',
     'no-show-consume': 'consume',
     'late-cancel-consume': 'consume',

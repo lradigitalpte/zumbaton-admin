@@ -245,7 +245,7 @@ export async function confirmWaitlistSpot(params: {
     throw new ApiError('VALIDATION_ERROR', 'Confirmation window has expired', 400)
   }
 
-  // Create booking (this will hold tokens)
+  // Create booking (charges the token now that they have the spot)
   try {
     const bookingResponse = await createBooking({
       userId,

@@ -724,7 +724,7 @@ export default function ClassesPage() {
 
   const handleAdminCancelAndRefund = async (booking: typeof bookingsPanel.bookings[number]) => {
     const confirmed = window.confirm(
-      `Cancel ${booking.userName}'s booking, refund the held token(s), and email them?`
+      `Cancel ${booking.userName}'s booking, refund their token(s), and email them?`
     );
     if (!confirmed) return;
 

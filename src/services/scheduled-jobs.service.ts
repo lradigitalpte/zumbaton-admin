@@ -1,7 +1,7 @@
 // Scheduled Jobs Service
 // Handles all scheduled background tasks
 
-import { processNoShows } from './attendance.service'
+import { processCompletedBookings } from './attendance.service'
 import { processExpiredPackages, processFrozenPackages } from './user-package.service'
 import { processExpiredWaitlistNotifications } from './waitlist.service'
 import { autoGenerateFutureClasses } from '@/cron/generate-future-classes'
@@ -31,9 +31,9 @@ export async function runAllScheduledJobs(): Promise<JobResult[]> {
     return await processFrozenPackages()
   }))
 
-  // Job 3: Process no-shows
-  results.push(await runJob('processNoShows', async () => {
-    return await processNoShows()
+  // Job 3: Mark bookings attended after class ends
+  results.push(await runJob('processCompletedBookings', async () => {
+    return await processCompletedBookings()
   }))
 
   // Job 4: Process expired waitlist notifications
@@ -110,7 +110,7 @@ export async function runFrozenPackagesJob(): Promise<JobResult> {
 }
 
 export async function runNoShowsJob(): Promise<JobResult> {
-  return runJob('processNoShows', processNoShows)
+  return runJob('processCompletedBookings', processCompletedBookings)
 }
 
 export async function runWaitlistExpiryJob(): Promise<JobResult> {
@@ -868,8 +868,8 @@ export function getJobSchedule() {
         cron: '0 0 * * *',
       },
       {
-        name: 'processNoShows',
-        description: 'Marks confirmed bookings as no-show after class ends',
+        name: 'processCompletedBookings',
+        description: 'Marks confirmed bookings as attended after class ends (tokens were spent at booking)',
         frequency: 'Every hour',
         cron: '0 * * * *',
       },

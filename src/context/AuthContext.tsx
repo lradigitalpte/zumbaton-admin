@@ -366,18 +366,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!isMounted) return
 
         if (event === 'SIGNED_IN' && session?.user) {
-          const userData = await mapSupabaseUserToUser(session.user)
-          if (userData && ADMIN_ROLES.includes(userData.role)) {
-            setUser(userData)
+          const appRole = session.user.app_metadata?.role
+          const userRole = session.user.user_metadata?.role
+          const metadataRole =
+            appRole && ADMIN_ROLES.includes(appRole as User['role'])
+              ? (appRole as User['role'])
+              : userRole && ADMIN_ROLES.includes(userRole as User['role'])
+                ? (userRole as User['role'])
+                : null
+
+          if (metadataRole) {
+            const userName =
+              (session.user.user_metadata?.name as string | undefined) ||
+              session.user.email?.split('@')[0] ||
+              'User'
+            setUser({
+              id: session.user.id,
+              email: session.user.email || '',
+              name: userName,
+              role: metadataRole,
+            })
             setIsLoading(false)
           } else {
-            // User might be deactivated or not have admin role
-            if (!userData) {
-              console.warn('[Auth] User account may be deactivated, signing out...')
-              supabase.auth.signOut()
+            const userData = await mapSupabaseUserToUser(session.user)
+            if (userData && ADMIN_ROLES.includes(userData.role)) {
+              setUser(userData)
+              setIsLoading(false)
+            } else {
+              if (!userData) {
+                console.warn('[Auth] User account may be deactivated, signing out...')
+                supabase.auth.signOut()
+              }
+              setUser(null)
+              setIsLoading(false)
             }
-            setUser(null)
-            setIsLoading(false)
           }
         } else if (event === 'SIGNED_OUT') {
           setUser(null)

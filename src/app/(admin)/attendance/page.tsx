@@ -246,19 +246,6 @@ export default function AttendancePage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* QR Code Check-In Button – only for today */}
-          {selectedSession && isViewingToday && (
-            <button
-              onClick={() => router.push(`/attendance/qr/${selectedSession.id}`)}
-              className="flex items-center gap-2 rounded-xl bg-linear-to-r from-brand-500 to-brand-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-brand-500/25 transition-all hover:shadow-xl hover:shadow-brand-500/30"
-            >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-              </svg>
-              QR Check-In
-            </button>
-          )}
-
           {/* Quick Check-In Toggle – only for today */}
           <button
             onClick={() => isViewingToday && setShowQuickCheckIn(!showQuickCheckIn)}
@@ -500,26 +487,7 @@ export default function AttendancePage() {
                     />
                   </div>
                 </div>
-
-                {/* QR Check-In Button – only for today */}
-                {isViewingToday && (
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      router.push(`/attendance/qr/${session.id}`);
-                    }}
-                    className={`mt-4 flex items-center justify-center gap-2 rounded-xl py-2 text-sm font-medium transition-all cursor-pointer ${
-                      isSelected
-                        ? "bg-white/20 text-white hover:bg-white/30"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                    }`}
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                    </svg>
-                    QR Check-In
-                  </div>
-                )}
+
               </button>
             );
           })}
@@ -552,17 +520,7 @@ export default function AttendancePage() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                {/* QR Check-In Button */}
-                <button
-                  onClick={() => router.push(`/attendance/qr/${selectedSession.id}`)}
-                  className="flex items-center gap-2 rounded-xl bg-linear-to-r from-brand-500 to-brand-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-brand-500/25 transition-all hover:shadow-xl hover:shadow-brand-500/30"
-                >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                  </svg>
-                  QR Check-In
-                </button>
+              <div className="flex flex-wrap items-center gap-3">
 
                 {/* Bulk Check-In – only when viewing today */}
                 {isViewingToday && selectedSession.attendees.some((a) => a.status === "pending") && (

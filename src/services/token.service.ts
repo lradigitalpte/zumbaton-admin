@@ -2,17 +2,15 @@
 // Handles all token-related operations with Supabase
 // All operations are server-side only for security
 
-import { supabase, getSupabaseAdminClient, TABLES, isSupabaseError, SUPABASE_ERRORS } from '@/lib/supabase'
+import { supabase, getSupabaseAdminClient, TABLES } from '@/lib/supabase'
 import { getUsablePackageExpiryCutoff } from '@/lib/token-expiry-utils'
+import { isPackageCompatibleWithClass } from '@/lib/user-age-utils'
 import { ApiError } from '@/lib/api-error'
 import type {
-  Package,
-  UserPackage,
   TokenBalance,
   TokenTransaction,
   TransactionType,
 } from '@/api/schemas'
-import type { SupabaseClient } from '@supabase/supabase-js'
 
 // Token selection strategy
 export type TokenSelectionStrategy = 'oldest-first' | 'expiring-first'
@@ -25,31 +23,28 @@ interface TokenOperationResult {
   transactionId: string | undefined
 }
 
-interface HoldTokensParams {
+interface ChargeBookingTokensParams {
   userId: string
   tokensNeeded: number
-  bookingId: string | null
-  classType?: string
+  /** Class age group ('adult' | 'kid' | 'all') used to pick a compatible package. */
+  ageGroup?: string | null
   strategy?: TokenSelectionStrategy
 }
 
-interface ConsumeTokensParams {
+interface RefundBookingTokensParams {
   userId: string
-  userPackageId: string | null
-  bookingId: string
-  tokensToConsume: number
-  transactionType: TransactionType
+  userPackageId: string
+  bookingId: string | null
+  tokensToRefund: number
   description?: string
   performedBy?: string
 }
 
-interface ReleaseTokensParams {
+interface RecordBookingChargesParams {
   userId: string
   userPackageId: string
-  bookingId: string | null
-  tokensToRelease: number
-  description?: string
-  adminClient?: SupabaseClient
+  tokensBefore: number
+  charges: { bookingId: string; tokens: number; description: string }[]
 }
 
 // Get user's available token balance
@@ -101,26 +96,26 @@ export async function getUserTokenBalance(
   }
 }
 
-// Get available packages for holding tokens
+// Get packages that can pay for a booking, best candidate first
 async function getAvailablePackages(
   userId: string,
-  classType?: string,
+  ageGroup?: string | null,
   strategy: TokenSelectionStrategy = 'expiring-first'
-): Promise<UserPackage[]> {
+): Promise<Record<string, any>[]> {
+  const adminClient = getSupabaseAdminClient()
   const expiryCutoff = getUsablePackageExpiryCutoff()
 
-  let query = supabase
+  let query = adminClient
     .from(TABLES.USER_PACKAGES)
     .select(`
       *,
-      package:packages(*)
+      package:packages(package_type)
     `)
     .eq('user_id', userId)
     .eq('status', 'active')
     .gte('expires_at', expiryCutoff)
-    .gt('tokens_remaining', 0) // has tokens
+    .gt('tokens_remaining', 0)
 
-  // Order by strategy
   if (strategy === 'expiring-first') {
     query = query.order('expires_at', { ascending: true })
   } else {
@@ -133,252 +128,146 @@ async function getAvailablePackages(
     throw new ApiError('SERVER_ERROR', 'Failed to fetch packages', 500, error)
   }
 
-  // Filter by class type if specified
-  let packages = data || []
-  if (classType && classType !== 'all') {
-    packages = packages.filter((pkg: UserPackage & { package: Package }) => {
-      // First check package_type compatibility (adult/kid restriction)
-      const packageType = pkg.package?.packageType || 'adult'
-      const normalizedClassType = classType.toLowerCase()
-      
-      // 'all' packages can be used for any class type
-      if (packageType === 'all') {
-        // Still check classTypes array for additional restrictions
-        const classTypes = pkg.package?.classTypes || ['all']
-        return classTypes.includes('all') || classTypes.includes(classType as 'zumba')
-      }
-      
-      // Adult packages can only be used for adult classes
-      if (packageType === 'adult') {
-        if (normalizedClassType !== 'adult') {
-          return false
-        }
-        // Also check classTypes array
-        const classTypes = pkg.package?.classTypes || ['all']
-        return classTypes.includes('all') || classTypes.includes(classType as 'zumba')
-      }
-      
-      // Kid packages can only be used for kid classes
-      if (packageType === 'kid') {
-        if (normalizedClassType !== 'kid') {
-          return false
-        }
-        // Also check classTypes array
-        const classTypes = pkg.package?.classTypes || ['all']
-        return classTypes.includes('all') || classTypes.includes(classType as 'zumba')
-      }
-      
-      // Fallback: check classTypes array only
-      const classTypes = pkg.package?.classTypes || ['all']
-      return classTypes.includes('all') || classTypes.includes(classType as 'zumba')
-    })
-  }
-
-  // Filter to only packages with available tokens (remaining - held > 0)
-  packages = packages.filter((pkg: UserPackage) => 
-    pkg.tokensRemaining - pkg.tokensHeld > 0
-  )
-
-  return packages
+  return (data || []).filter((pkg) => {
+    const available = (pkg.tokens_remaining || 0) - (pkg.tokens_held || 0)
+    const packageType = (pkg.package as { package_type?: string } | null)?.package_type || 'adult'
+    return available > 0 && isPackageCompatibleWithClass(packageType, ageGroup)
+  })
 }
 
-// Hold tokens for a booking (does not consume yet)
-export async function holdTokens(params: HoldTokensParams): Promise<TokenOperationResult> {
-  const { userId, tokensNeeded, bookingId, classType, strategy } = params
+// Deduct tokens when a booking is made. Tokens are spent at booking time;
+// cancelling by 23:59 the day before the class refunds them.
+// The ledger rows are written by recordBookingCharges once the booking rows exist.
+export async function chargeTokensForBooking(params: ChargeBookingTokensParams): Promise<{
+  userPackageId: string
+  tokensBefore: number
+  tokensAfter: number
+}> {
+  const { userId, tokensNeeded, ageGroup, strategy } = params
+  const adminClient = getSupabaseAdminClient()
 
-  // Get available packages
-  const packages = await getAvailablePackages(userId, classType, strategy)
+  const packages = await getAvailablePackages(userId, ageGroup, strategy)
+  const candidates = packages.filter(
+    (pkg) => (pkg.tokens_remaining || 0) - (pkg.tokens_held || 0) >= tokensNeeded
+  )
 
-  if (packages.length === 0) {
-    throw new ApiError('VALIDATION_ERROR', 'No tokens available', 400)
-  }
-
-  // Find package with enough available tokens
-  let selectedPackage: UserPackage | null = null
-  for (const pkg of packages) {
-    const available = pkg.tokensRemaining - pkg.tokensHeld
-    if (available >= tokensNeeded) {
-      selectedPackage = pkg
-      break
-    }
-  }
-
-  if (!selectedPackage) {
+  if (candidates.length === 0) {
     throw new ApiError('VALIDATION_ERROR', 'Insufficient tokens available', 400)
   }
 
-  // Hold tokens (increment tokens_held)
-  const { data, error } = await supabase
-    .from(TABLES.USER_PACKAGES)
-    .update({
-      tokens_held: selectedPackage.tokensHeld + tokensNeeded,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', selectedPackage.id)
-    .eq('tokens_held', selectedPackage.tokensHeld) // optimistic lock
-    .select()
-    .single()
+  for (const pkg of candidates) {
+    const tokensBefore = pkg.tokens_remaining as number
+    const tokensAfter = tokensBefore - tokensNeeded
 
-  if (error) {
-    if (isSupabaseError(error, SUPABASE_ERRORS.CHECK_VIOLATION)) {
-      throw new ApiError('CONFLICT_ERROR', 'Tokens were modified by another request', 409)
+    // Optimistic lock: only succeeds if nobody else changed the balance meanwhile
+    const { data, error } = await adminClient
+      .from(TABLES.USER_PACKAGES)
+      .update({
+        tokens_remaining: tokensAfter,
+        status: tokensAfter <= 0 ? 'depleted' : 'active',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', pkg.id)
+      .eq('tokens_remaining', tokensBefore)
+      .select('id')
+
+    if (error) {
+      throw new ApiError('SERVER_ERROR', 'Failed to charge tokens', 500, error)
     }
-    throw new ApiError('SERVER_ERROR', 'Failed to hold tokens', 500, error)
+
+    if (data && data.length > 0) {
+      return { userPackageId: pkg.id as string, tokensBefore, tokensAfter }
+    }
   }
 
-  // Record transaction
-  const transaction = await recordTransaction({
-    userId,
-    userPackageId: selectedPackage.id,
-    bookingId,
-    transactionType: 'booking-hold',
-    tokensChange: -tokensNeeded, // negative = held
-    tokensBefore: selectedPackage.tokensRemaining,
-    tokensAfter: selectedPackage.tokensRemaining, // remaining doesn't change, only held
-    description: `Tokens held for booking ${bookingId}`,
-  })
+  throw new ApiError('CONFLICT_ERROR', 'Your token balance changed while booking. Please try again.', 409)
+}
 
-  // Get new balance
-  const balance = await getUserTokenBalance(userId)
-
-  return {
-    success: true,
-    userPackageId: selectedPackage.id,
-    tokensChange: tokensNeeded,
-    newBalance: balance.availableTokens,
-    transactionId: transaction.id,
+// Write one 'booking-consume' ledger row per booking charged by chargeTokensForBooking
+export async function recordBookingCharges(params: RecordBookingChargesParams): Promise<void> {
+  let balance = params.tokensBefore
+  for (const charge of params.charges) {
+    await recordTransaction({
+      userId: params.userId,
+      userPackageId: params.userPackageId,
+      bookingId: charge.bookingId,
+      transactionType: 'booking-consume',
+      tokensChange: -charge.tokens,
+      tokensBefore: balance,
+      tokensAfter: balance - charge.tokens,
+      description: charge.description,
+    })
+    balance -= charge.tokens
   }
 }
 
-// Consume tokens (actually deduct them)
-export async function consumeTokens(params: ConsumeTokensParams): Promise<TokenOperationResult> {
-  const {
-    userId,
-    userPackageId,
-    bookingId,
-    tokensToConsume,
-    transactionType,
-    description,
-    performedBy,
-  } = params
-
-  // Use admin client to bypass RLS
+// Give tokens back to the package a booking was paid from.
+// Pass recordLedger: false only to undo a charge whose ledger row was never written
+// (booking insert failed right after chargeTokensForBooking).
+export async function refundBookingTokens(
+  params: RefundBookingTokensParams & { recordLedger?: boolean }
+): Promise<TokenOperationResult> {
+  const { userId, userPackageId, bookingId, tokensToRefund, description, performedBy, recordLedger = true } = params
   const adminClient = getSupabaseAdminClient()
 
-  // If userPackageId provided, deduct from that specific package's held tokens
-  if (userPackageId) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const { data: pkg, error: fetchError } = await adminClient
       .from(TABLES.USER_PACKAGES)
-      .select('*')
+      .select('id, tokens_remaining, status, expires_at')
       .eq('id', userPackageId)
       .single()
 
-    // If package exists, deduct from its held tokens
-    if (!fetchError && pkg) {
-      const newRemaining = pkg.tokens_remaining - tokensToConsume
-      const newHeld = Math.max(0, pkg.tokens_held - tokensToConsume)
-
-      // Update package
-      const { error: updateError } = await adminClient
-        .from(TABLES.USER_PACKAGES)
-        .update({
-          tokens_remaining: newRemaining,
-          tokens_held: newHeld,
-          status: newRemaining <= 0 ? 'depleted' : 'active',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userPackageId)
-
-      if (updateError) {
-        throw new ApiError('SERVER_ERROR', 'Failed to consume tokens', 500, updateError)
-      }
-
-      // Record transaction
-      const transaction = await recordTransaction({
-        userId,
-        userPackageId,
-        bookingId,
-        transactionType,
-        tokensChange: -tokensToConsume,
-        tokensBefore: pkg.tokens_remaining,
-        tokensAfter: newRemaining,
-        description: description || `Tokens consumed for ${transactionType}`,
-        performedBy,
-      })
-
-      const balance = await getUserTokenBalance(userId, adminClient)
-
-      return {
-        success: true,
-        userPackageId,
-        tokensChange: tokensToConsume,
-        newBalance: balance.availableTokens,
-        transactionId: transaction.id,
-      }
+    if (fetchError || !pkg) {
+      throw new ApiError('NOT_FOUND_ERROR', 'User package not found', 404)
     }
-    
-    // Package not found - this shouldn't happen if booking exists
-    console.error(`[TokenService] Package ${userPackageId} not found for booking ${bookingId}`)
-    throw new ApiError('NOT_FOUND_ERROR', 'Booking package not found', 404)
+
+    const tokensBefore = pkg.tokens_remaining as number
+    const tokensAfter = tokensBefore + tokensToRefund
+    // A depleted package becomes usable again; an expired one stays expired
+    const isExpired = pkg.status === 'expired' || new Date(pkg.expires_at as string) < new Date()
+
+    const { data: updated, error: updateError } = await adminClient
+      .from(TABLES.USER_PACKAGES)
+      .update({
+        tokens_remaining: tokensAfter,
+        status: isExpired ? pkg.status : 'active',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userPackageId)
+      .eq('tokens_remaining', tokensBefore)
+      .select('id')
+
+    if (updateError) {
+      throw new ApiError('SERVER_ERROR', 'Failed to refund tokens', 500, updateError)
+    }
+    if (!updated || updated.length === 0) continue // balance changed underneath us, retry
+
+    const transaction = recordLedger
+      ? await recordTransaction({
+          userId,
+          userPackageId,
+          bookingId,
+          transactionType: 'refund',
+          tokensChange: tokensToRefund,
+          tokensBefore,
+          tokensAfter,
+          description: description || `Tokens refunded for cancelled booking ${bookingId}`,
+          performedBy,
+        })
+      : undefined
+
+    const balance = await getUserTokenBalance(userId, adminClient)
+
+    return {
+      success: true,
+      userPackageId,
+      tokensChange: tokensToRefund,
+      newBalance: balance.availableTokens,
+      transactionId: transaction?.id,
+    }
   }
 
-  // No userPackageId provided - shouldn't happen for valid bookings
-  throw new ApiError('VALIDATION_ERROR', 'No package ID provided for token consumption', 400)
-}
-
-// Release held tokens (for cancellations)
-export async function releaseTokens(params: ReleaseTokensParams): Promise<TokenOperationResult> {
-  const { userId, userPackageId, bookingId, tokensToRelease, description, adminClient } = params
-  const db = adminClient || supabase
-
-  // Get current package state
-  const { data: pkg, error: fetchError } = await db
-    .from(TABLES.USER_PACKAGES)
-    .select('*')
-    .eq('id', userPackageId)
-    .single()
-
-  if (fetchError || !pkg) {
-    throw new ApiError('NOT_FOUND_ERROR', 'User package not found', 404)
-  }
-
-  const newHeld = Math.max(0, pkg.tokens_held - tokensToRelease)
-
-  // Update package
-  const { error: updateError } = await db
-    .from(TABLES.USER_PACKAGES)
-    .update({
-      tokens_held: newHeld,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', userPackageId)
-
-  if (updateError) {
-    throw new ApiError('SERVER_ERROR', 'Failed to release tokens', 500, updateError)
-  }
-
-  // Record transaction
-  const transaction = await recordTransaction({
-    userId,
-    userPackageId,
-    bookingId,
-    transactionType: 'booking-release',
-    tokensChange: tokensToRelease, // positive = released
-    tokensBefore: pkg.tokens_remaining,
-    tokensAfter: pkg.tokens_remaining, // remaining doesn't change
-    description: description || `Tokens released for cancelled booking ${bookingId}`,
-  })
-
-  // Get new balance
-  const balance = await getUserTokenBalance(userId, adminClient)
-
-  return {
-    success: true,
-    userPackageId,
-    tokensChange: tokensToRelease,
-    newBalance: balance.availableTokens,
-    transactionId: transaction.id,
-  }
+  throw new ApiError('CONFLICT_ERROR', 'Token balance changed during refund. Please try again.', 409)
 }
 
 // Record a token transaction (audit log)
