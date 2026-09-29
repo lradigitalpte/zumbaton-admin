@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useTutorDashboard } from "@/hooks/useTutor";
 import { useAuth } from "@/context/AuthContext";
 import ClassAttendeesModal from "@/components/attendance/ClassAttendeesModal";
+import { api } from "@/lib/api-client";
 
 interface TodayClass {
   id: string;
@@ -85,10 +86,8 @@ export default function TutorDashboardPage() {
     const fetchAttendees = async () => {
       setIsLoadingAttendees(true);
       try {
-        const response = await fetch(`/api/attendance/class/${selectedClass.id}/attendees`);
-        const result = await response.json();
-
-        if (response.ok && result.success) {
+        const { data: result, error: requestError } = await api.get<any>(`/api/attendance/class/${selectedClass.id}/attendees`);
+        if (!requestError && result?.success) {
           // Transform attendees to the format expected by ClassAttendeesModal
           // The API now returns ALL enrolled students, not just checked-in ones
           const attendees = (result.data.attendees || []).map((attendee: any) => ({
@@ -100,7 +99,7 @@ export default function TutorDashboardPage() {
           // Always set attendees array (even if empty) so component knows to use real data
           setRealAttendees(attendees);
         } else {
-          console.error("Failed to fetch attendees:", result.error);
+          console.error("Failed to fetch attendees:", requestError || result?.error);
           // Set empty array to indicate we tried to fetch but got no data
           setRealAttendees([]);
         }

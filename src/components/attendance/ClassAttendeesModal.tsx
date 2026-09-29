@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { api } from "@/lib/api-client";
 
 // Read-only list of who is booked into a class. There is no QR check-in:
 // bookings are marked attended automatically after class, and staff record
@@ -47,16 +48,12 @@ export default function ClassAttendeesModal({
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchInternalAttendees = useCallback(async () => {
-    const response = await fetch(`/api/attendance/class/${classInfo.id}/attendees`, {
+    const response = await api.get<any>(`/api/attendance/class/${classInfo.id}/attendees`, {
       cache: "no-store",
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch attendees (${response.status})`);
-    }
-
-    const result = await response.json();
-    if (!result?.success) {
+    const result = response.data;
+    if (response.error || !result?.success) {
       throw new Error(result?.error?.message || "Failed to fetch attendees");
     }
 
