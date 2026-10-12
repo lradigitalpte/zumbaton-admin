@@ -867,6 +867,7 @@ const CHECKOUT_REMINDER_MIN_AGE_MS = 60 * 60 * 1000
 const CHECKOUT_REMINDER_MAX_AGE_MS = 48 * 60 * 60 * 1000
 const CHECKOUT_REMINDER_CLASS_LEAD_MS = 3 * 60 * 60 * 1000
 const CHECKOUT_REMINDER_MAX_PER_RUN = 25
+const CHECKOUT_REMINDER_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1000
 
 export async function sendCheckoutReminders(): Promise<Record<string, unknown>> {
   const { getSupabaseAdminClient } = await import('@/lib/supabase')
@@ -960,6 +961,21 @@ export async function sendCheckoutReminders(): Promise<Record<string, unknown>> 
         continue
       }
 
+      // Never email the same customer more than once per cooldown window, even for a new checkout
+      let recentQuery = supabase
+        .from('payments')
+        .select('id', { count: 'exact', head: true })
+        .not('metadata->>checkout_reminder_sent_at', 'is', null)
+        .gt('metadata->>checkout_reminder_sent_at', new Date(now - CHECKOUT_REMINDER_COOLDOWN_MS).toISOString())
+      recentQuery = latest.user_id
+        ? recentQuery.eq('user_id', latest.user_id)
+        : recentQuery.ilike('metadata->>guest_email', group.email)
+      const { count: recentlyReminded } = await recentQuery
+      if ((recentlyReminded || 0) > 0) {
+        await skip(group.payments, 'reminded_recently')
+        continue
+      }
+
       // Trial / class checkout: only remind while the class is still bookable
       if (latest.is_trial_booking && latest.class_id) {
         const { data: cls } = await supabase
@@ -1015,6 +1031,21 @@ export async function sendCheckoutReminders(): Promise<Record<string, unknown>> 
           })
         : undefined
 
+      // Claim before sending: if the send succeeds but a later write fails, or runs overlap,
+      // we'd rather miss a reminder than email the customer twice
+      const sentAt = new Date().toISOString()
+      const { data: claimed } = await supabase
+        .from('payments')
+        .update({ metadata: { ...meta, checkout_reminder_sent_at: sentAt } })
+        .eq('id', latest.id)
+        .eq('status', 'pending')
+        .is('metadata->>checkout_reminder_sent_at', null)
+        .select('id')
+      if (!claimed || claimed.length === 0) {
+        skipped++
+        continue
+      }
+
       const result = await sendAdminEmail('checkout-reminder', {
         customerEmail: group.email,
         customerName: group.name,
@@ -1025,12 +1056,14 @@ export async function sendCheckoutReminders(): Promise<Record<string, unknown>> 
       })
 
       if (!result.success) {
+        // Release the claim so a later run can retry
         console.error(`[Cron: CheckoutReminders] Email failed for ${latest.id}:`, result.error)
+        await supabase.from('payments').update({ metadata: meta }).eq('id', latest.id)
         skipped++
         continue
       }
 
-      await markPayments(group.payments, { checkout_reminder_sent_at: new Date().toISOString() })
+      await markPayments(group.payments.slice(1), { checkout_reminder_sent_at: sentAt })
       sent++
     } catch (err) {
       console.error(`[Cron: CheckoutReminders] Unexpected error for ${latest.id}:`, err)
