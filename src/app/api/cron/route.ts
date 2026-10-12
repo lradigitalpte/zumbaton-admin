@@ -13,6 +13,7 @@ import {
   markCompletedClasses,
   runAutoGenerateClassesJob,
   runSyncPendingPaymentsJob,
+  runCheckoutRemindersJob,
   runProcessLeadOutreachJob,
   getJobSchedule,
 } from '@/services/scheduled-jobs.service'
@@ -93,7 +94,11 @@ export async function POST(request: NextRequest) {
         results = [await runAutoGenerateClassesJob()]
         break
       case 'sync-pending-payments':
-        results = [await runSyncPendingPaymentsJob()]
+        // Reminders piggyback on the existing 15-min sync schedule (no extra scheduler entry needed)
+        results = [await runSyncPendingPaymentsJob(), await runCheckoutRemindersJob()]
+        break
+      case 'checkout-reminders':
+        results = [await runCheckoutRemindersJob()]
         break
       case 'process-lead-outreach':
         results = [await runProcessLeadOutreachJob()]

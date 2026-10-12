@@ -2,8 +2,9 @@
  * Admin Pending Payments API
  * GET /api/payments/pending
  *
- * Returns all payments with status 'pending' or 'in_progress', enriched
- * with the user's name/email. Used by the Token Transactions page so admins
+ * Returns all payments with status 'pending' or 'in_progress' (unfinished
+ * checkouts), enriched with the user's name/email and whether they paid on a
+ * later attempt. Used by the Token Transactions page so admins
  * can see stuck payments and manually sync them.
  * Requires admin authentication.
  */
@@ -73,6 +74,19 @@ export async function GET(_request: NextRequest) {
       }
     }
 
+    // Latest succeeded payment per user — lets admins spot abandoned attempts the customer later retried and paid
+    const latestPaidAt: Record<string, string> = {}
+    if (userIds.length > 0) {
+      const { data: paid } = await adminClient
+        .from(TABLES.PAYMENTS)
+        .select('user_id, created_at')
+        .eq('status', 'succeeded')
+        .in('user_id', userIds)
+      for (const row of (paid || []) as { user_id: string; created_at: string }[]) {
+        if (!latestPaidAt[row.user_id] || row.created_at > latestPaidAt[row.user_id]) latestPaidAt[row.user_id] = row.created_at
+      }
+    }
+
     const enriched = payments.map((p: {
       id: string
       user_id: string
@@ -114,6 +128,8 @@ export async function GET(_request: NextRequest) {
         discountAmountCents: p.discount_amount_cents ?? 0,
         createdAt: p.created_at,
         updatedAt: p.updated_at,
+        paidOnLaterAttempt: !!latestPaidAt[p.user_id] && latestPaidAt[p.user_id] > p.created_at,
+        reminderSentAt: ((p.metadata as { checkout_reminder_sent_at?: string } | null)?.checkout_reminder_sent_at) ?? null,
       }
     })
 

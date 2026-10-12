@@ -25,8 +25,7 @@ const PRIORITY_CARDS: ShotCard[] = [
     instructor: "Coach Robert",
     title: "Zumba Step",
     currentFile: "hero2.jpeg",
-    currentNote:
-      "a generic landscape stock photo, and the exact same file used on Thunderbolt · Resistance & Dance below.",
+    currentNote: "a generic landscape stock photo; still needs a dedicated Zumba Step shoot.",
     shots: [
       { id: "zs-1", label: "Full group mid-step-routine, steppers in frame, formation synced" },
       { id: "zs-2", label: "Robert front-and-center, cueing the class" },
@@ -37,14 +36,14 @@ const PRIORITY_CARDS: ShotCard[] = [
   {
     badge: "Needs Photo",
     instructor: "Coach Fizah",
-    title: "Thunderbolt · Resistance & Dance",
-    currentFile: "hero2.jpeg",
-    currentNote: "same duplicate file as Zumba Step above, on a completely different class.",
+    title: "Pilates Flow",
+    currentFile: "951E5D9F + 477E6FED (detail gallery)",
+    currentNote: "Both client JPEGs on class detail; 951E5D9F is the card thumbnail.",
     shots: [
-      { id: "tr-1", label: "Resistance band stretched mid-rep, visible tension" },
-      { id: "tr-2", label: "Fizah demonstrating band form, front-on" },
-      { id: "tr-3", label: "Floor-based full-body movement, group mid-set" },
-      { id: "tr-4", label: "Close-up on effort/strain during a resistance hold" },
+      { id: "pf-1", label: "Floor Pilates sequence, group in aligned posture" },
+      { id: "pf-2", label: "Fizah cueing breath and core engagement, front-on" },
+      { id: "pf-3", label: "Controlled stretch or mobility transition mid-flow" },
+      { id: "pf-4", label: "Close-up on precise alignment during a stabilising hold" },
     ],
   },
   {

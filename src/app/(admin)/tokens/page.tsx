@@ -585,7 +585,7 @@ export default function TokenTransactionsPage() {
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">
               {pendingPayments.length}
             </span>
-            <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">Pending Payment{pendingPayments.length !== 1 ? 's' : ''}</span>
+            <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">Unfinished Checkout{pendingPayments.length !== 1 ? 's' : ''}</span>
           </div>
         )}
       </div>
@@ -598,9 +598,14 @@ export default function TokenTransactionsPage() {
               <svg className="h-5 w-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300">
-                Pending Payments — paid on HitPay but not yet confirmed in system?
-              </h3>
+              <div>
+                <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                  Unfinished Checkouts — no payment received yet
+                </h3>
+                <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                  Usually the customer left HitPay without paying. Sync double-checks with HitPay; customers get one automatic reminder email.
+                </p>
+              </div>
             </div>
             <button
               onClick={() => refetchPending()}
@@ -656,6 +661,14 @@ export default function TokenTransactionsPage() {
                           <div>
                             <p className="text-sm text-gray-900 dark:text-white">{pp.packageName}</p>
                             <p className="text-xs text-gray-500 dark:text-gray-400">{pp.tokenCount} tokens</p>
+                            {pp.paidOnLaterAttempt && (
+                              <p className="mt-1 inline-block rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                Paid on a later attempt — safe to delete
+                              </p>
+                            )}
+                            {!pp.paidOnLaterAttempt && pp.reminderSentAt && (
+                              <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Reminder emailed {formatDate(pp.reminderSentAt)}</p>
+                            )}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-center">

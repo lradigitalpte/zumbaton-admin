@@ -66,7 +66,7 @@ export default function PackagesPage() {
 
   const openNewPackagePanel = () => {
     setEditingPackage(null);
-    setFormData({ name: "", description: "", tokens: "", price: "", validityDays: "", packageType: "adult", ageRequirement: "all", isFeatured: false, isUnlimited: false });
+    setFormData({ name: "", description: "", tokens: "", price: "", validityDays: "30", packageType: "adult", ageRequirement: "all", isFeatured: false, isUnlimited: false });
     setShowPanel(true);
   };
 
