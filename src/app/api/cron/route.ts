@@ -21,6 +21,9 @@ import { processLeadOutreachQueue } from '@/services/lead-outreach.service'
 import { ApiError } from '@/lib/api-error'
 import { getAuthenticatedUser, hasRequiredRole } from '@/middleware/rbac'
 
+// Vercel function time limit for scheduled jobs (seconds)
+export const maxDuration = 60
+
 // GET /api/cron - Get job schedule info
 export async function GET() {
   try {

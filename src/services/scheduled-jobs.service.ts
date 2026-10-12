@@ -584,14 +584,18 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
     return { skipped: true, reason: 'HITPAY_API_KEY not configured' }
   }
 
-  // Fetch payments that are still pending but were created more than 5 minutes ago
+  // Fetch payments that are still pending, created between 7 days and 5 minutes ago.
+  // Older abandoned checkouts are left alone so each run stays short on serverless
+  // (the webhook still confirms any late payment; admins can Sync old rows manually).
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   const { data: pendingPayments, error } = await supabase
     .from('payments')
     .select('id, user_id, class_id, package_id, is_trial_booking, metadata, amount_cents, currency, hitpay_payment_request_id, promo_type, discount_percent, discount_amount_cents, packages(*)')
     .eq('status', 'pending')
     .not('hitpay_payment_request_id', 'is', null)
     .lt('created_at', fiveMinutesAgo)
+    .gt('created_at', sevenDaysAgo)
 
   if (error) {
     throw new Error(`Failed to fetch pending payments: ${error.message}`)
