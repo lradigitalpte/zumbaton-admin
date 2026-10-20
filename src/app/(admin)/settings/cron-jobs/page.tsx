@@ -44,6 +44,15 @@ const CRON_JOBS: CronJob[] = [
     apiParam: "class-reminders",
   },
   {
+    name: "sendStreakReminders",
+    displayName: "Week Streak Reminders",
+    description: "Emails members on Friday if their week streak will break unless they come in. One email per member per week.",
+    frequency: "Friday at 9:00 AM Singapore",
+    cron: "0 1 * * 5",
+    category: "notifications",
+    apiParam: "streak-reminders",
+  },
+  {
     name: "sendTokenExpiryWarnings",
     displayName: "Token Expiry Warnings",
     description: "Warns users whose token packages expire in 3 days",

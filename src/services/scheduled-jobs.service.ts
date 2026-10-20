@@ -6,6 +6,7 @@ import { processExpiredPackages, processFrozenPackages } from './user-package.se
 import { processExpiredWaitlistNotifications } from './waitlist.service'
 import { autoGenerateFutureClasses } from '@/cron/generate-future-classes'
 import { sendAdminEmail } from '@/lib/admin-email'
+import { singaporeWeekBounds } from '@/lib/week-streak'
 const UNLIMITED_TOKEN_BALANCE = 2147483647
 
 // Job results interface
@@ -1078,6 +1079,161 @@ export async function sendCheckoutReminders(): Promise<Record<string, unknown>> 
   return { sent, skipped, skipReasons, customers: groups.size }
 }
 
+function chunkIds(ids: string[], size = 100): string[][] {
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += size) chunks.push(ids.slice(i, i + size))
+  return chunks
+}
+
+// Friday nudge: members with a live week streak who have not attended
+// and have no class booked this Singapore week. Not part of job=all.
+export async function sendStreakReminders(): Promise<JobResult> {
+  return runJob('sendStreakReminders', async () => {
+    const { getSupabaseAdminClient } = await import('@/lib/supabase')
+    const { getWebAppUrl } = await import('@/lib/email-url')
+    const admin = getSupabaseAdminClient()
+    const { weekStart, startIso, endIso } = singaporeWeekBounds()
+    const bookUrl = `${getWebAppUrl().replace(/\/$/, '')}/book-classes`
+
+    const { data: statsRows, error: statsError } = await admin
+      .from('user_stats')
+      .select('user_id, streak_current, last_streak_reminder_week')
+      .gt('streak_current', 0)
+
+    if (statsError) {
+      throw new Error(`Failed to load streaks: ${statsError.message}`)
+    }
+
+    const due = (statsRows || []).filter((row) => {
+      const reminded = row.last_streak_reminder_week
+        ? String(row.last_streak_reminder_week).slice(0, 10)
+        : null
+      return !reminded || reminded < weekStart
+    })
+
+    if (due.length === 0) {
+      return { sent: 0, skipped: 0, weekStart }
+    }
+
+    const streakByUser = new Map(due.map((row) => [row.user_id as string, row.streak_current as number]))
+    const userIds = [...streakByUser.keys()]
+
+    const profiles = new Map<string, { email: string; name: string }>()
+    for (const ids of chunkIds(userIds)) {
+      const { data, error } = await admin
+        .from('user_profiles')
+        .select('id, email, name, is_active')
+        .in('id', ids)
+        .eq('is_active', true)
+
+      if (error) throw new Error(`Failed to load members: ${error.message}`)
+
+      for (const profile of data || []) {
+        if (profile.email && profile.name) {
+          profiles.set(profile.id, { email: profile.email, name: profile.name })
+        }
+      }
+    }
+
+    const optedOut = new Set<string>()
+    for (const ids of chunkIds(userIds)) {
+      const { data, error } = await admin
+        .from('user_notification_preferences')
+        .select('user_id, email_enabled')
+        .in('user_id', ids)
+
+      if (error) throw new Error(`Failed to load email preferences: ${error.message}`)
+
+      for (const pref of data || []) {
+        if (pref.email_enabled === false) optedOut.add(pref.user_id)
+      }
+    }
+
+    const covered = new Set<string>()
+    const { data: classes, error: classError } = await admin
+      .from('classes')
+      .select('id')
+      .gte('scheduled_at', startIso)
+      .lt('scheduled_at', endIso)
+
+    if (classError) throw new Error(`Failed to load this week's classes: ${classError.message}`)
+
+    const classIds = (classes || []).map((row) => row.id as string)
+    if (classIds.length > 0) {
+      for (const ids of chunkIds(classIds)) {
+        const { data: bookings, error: bookingError } = await admin
+          .from('bookings')
+          .select('user_id, status')
+          .in('class_id', ids)
+          .in('status', ['attended', 'confirmed'])
+          .not('user_id', 'is', null)
+
+        if (bookingError) throw new Error(`Failed to load this week's bookings: ${bookingError.message}`)
+
+        for (const booking of bookings || []) {
+          if (booking.user_id && streakByUser.has(booking.user_id)) {
+            covered.add(booking.user_id)
+          }
+        }
+      }
+    }
+
+    const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
+    const webAppUrl = getWebAppUrl().replace(/\/$/, '')
+    let sent = 0
+    let skipped = 0
+
+    for (const [userId, streakWeeks] of streakByUser) {
+      const profile = profiles.get(userId)
+      if (!profile || optedOut.has(userId) || covered.has(userId)) {
+        skipped++
+        continue
+      }
+
+      try {
+        const response = await fetch(`${webAppUrl}/api/email/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'streak-reminder',
+            secret: emailApiSecret,
+            data: {
+              userEmail: profile.email,
+              userName: profile.name,
+              streakWeeks,
+              bookUrl,
+            },
+          }),
+        })
+        const body = await response.json().catch(() => null)
+        if (!response.ok || !body?.success) {
+          console.error(`[Cron: StreakReminders] Email rejected for ${profile.email}`, body)
+          skipped++
+          continue
+        }
+
+        const { error: markError } = await admin
+          .from('user_stats')
+          .update({
+            last_streak_reminder_week: weekStart,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('user_id', userId)
+
+        if (markError) {
+          console.error(`[Cron: StreakReminders] Sent to ${profile.email} but failed to record dedupe`, markError)
+        }
+        sent++
+      } catch (err) {
+        console.error(`[Cron: StreakReminders] Failed for ${profile.email}:`, err)
+        skipped++
+      }
+    }
+
+    return { sent, skipped, weekStart, candidates: due.length }
+  })
+}
+
 export function getJobSchedule() {
   return {
     jobs: [
@@ -1116,6 +1272,12 @@ export function getJobSchedule() {
         description: 'Sends reminders (email + in-app) for classes starting in 1 hour, to members and trial guests',
         frequency: 'Every 15 minutes',
         cron: '*/15 * * * *',
+      },
+      {
+        name: 'sendStreakReminders',
+        description: 'Emails members whose week streak will break on Sunday if they do not come in. Skips anyone who already attended or has a class booked this week.',
+        frequency: 'Friday at 9:00am Singapore (01:00 UTC). Not included in job=all.',
+        cron: '0 1 * * 5',
       },
       {
         name: 'markCompletedClasses',

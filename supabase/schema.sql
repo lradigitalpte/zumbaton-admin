@@ -243,6 +243,7 @@ CREATE TABLE IF NOT EXISTS user_stats (
   streak_current INTEGER DEFAULT 0,
   streak_longest INTEGER DEFAULT 0,
   last_class_at TIMESTAMPTZ,
+  last_streak_reminder_week DATE,
   member_since TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

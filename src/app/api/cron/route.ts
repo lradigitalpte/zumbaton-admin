@@ -10,6 +10,7 @@ import {
   runWaitlistExpiryJob,
   sendTokenExpiryWarnings,
   sendClassReminders,
+  sendStreakReminders,
   markCompletedClasses,
   runAutoGenerateClassesJob,
   runSyncPendingPaymentsJob,
@@ -89,6 +90,9 @@ export async function POST(request: NextRequest) {
         break
       case 'class-reminders':
         results = [await sendClassReminders()]
+        break
+      case 'streak-reminders':
+        results = [await sendStreakReminders()]
         break
       case 'mark-completed-classes':
         results = [await markCompletedClasses()]
