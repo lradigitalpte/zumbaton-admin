@@ -25,15 +25,23 @@ import { getAuthenticatedUser, hasRequiredRole } from '@/middleware/rbac'
 // Vercel function time limit for scheduled jobs (seconds)
 export const maxDuration = 60
 
-// GET /api/cron - Get job schedule info
-export async function GET() {
+// GET /api/cron — schedule info, or run a job when ?job=… and Authorization is set (cron-job.org often uses GET)
+export async function GET(request: NextRequest) {
   try {
-    const schedule = getJobSchedule()
+    const { searchParams } = new URL(request.url)
+    const job = searchParams.get('job')
 
-    return NextResponse.json({
-      success: true,
-      data: schedule,
-    })
+    if (!job) {
+      const schedule = getJobSchedule()
+      return NextResponse.json({
+        success: true,
+        data: schedule,
+        hint: 'To run a job, use POST or GET with ?job=<name> and header Authorization: Bearer <CRON_SECRET>',
+      })
+    }
+
+    await authorizeCronRequest(request)
+    return await runCronJobs(job)
   } catch (error) {
     return handleApiError(error)
   }
@@ -62,6 +70,68 @@ async function authorizeCronRequest(request: NextRequest): Promise<void> {
   throw new ApiError('AUTHENTICATION_ERROR', 'Invalid cron secret', 401)
 }
 
+async function runCronJobs(job: string | null) {
+  let results
+
+  switch (job) {
+    case 'expired-packages':
+      results = [await runExpiredPackagesJob()]
+      break
+    case 'frozen-packages':
+      results = [await runFrozenPackagesJob()]
+      break
+    case 'no-shows':
+      results = [await runNoShowsJob()]
+      break
+    case 'waitlist-expiry':
+      results = [await runWaitlistExpiryJob()]
+      break
+    case 'token-warnings':
+      results = [await sendTokenExpiryWarnings()]
+      break
+    case 'class-reminders':
+      results = [await sendClassReminders()]
+      break
+    case 'streak-reminders':
+      results = [await sendStreakReminders()]
+      break
+    case 'mark-completed-classes':
+      results = [await markCompletedClasses()]
+      break
+    case 'generate-future-classes':
+      results = [await runAutoGenerateClassesJob()]
+      break
+    case 'sync-pending-payments':
+      results = [await runSyncPendingPaymentsJob(), await runCheckoutRemindersJob()]
+      break
+    case 'checkout-reminders':
+      results = [await runCheckoutRemindersJob()]
+      break
+    case 'process-lead-outreach':
+      results = [await runProcessLeadOutreachJob()]
+      break
+    case 'all':
+    default:
+      results = await runAllScheduledJobs()
+      break
+  }
+
+  const summary = {
+    totalJobs: results.length,
+    successful: results.filter((r) => r.success).length,
+    failed: results.filter((r) => !r.success).length,
+    totalDuration: results.reduce((acc, r) => acc + r.duration, 0),
+  }
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      results,
+      summary,
+    },
+  })
+}
+
 // POST /api/cron - Run scheduled jobs
 export async function POST(request: NextRequest) {
   try {
@@ -70,66 +140,7 @@ export async function POST(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const job = searchParams.get('job')
 
-    let results
-
-    switch (job) {
-      case 'expired-packages':
-        results = [await runExpiredPackagesJob()]
-        break
-      case 'frozen-packages':
-        results = [await runFrozenPackagesJob()]
-        break
-      case 'no-shows':
-        results = [await runNoShowsJob()]
-        break
-      case 'waitlist-expiry':
-        results = [await runWaitlistExpiryJob()]
-        break
-      case 'token-warnings':
-        results = [await sendTokenExpiryWarnings()]
-        break
-      case 'class-reminders':
-        results = [await sendClassReminders()]
-        break
-      case 'streak-reminders':
-        results = [await sendStreakReminders()]
-        break
-      case 'mark-completed-classes':
-        results = [await markCompletedClasses()]
-        break
-      case 'generate-future-classes':
-        results = [await runAutoGenerateClassesJob()]
-        break
-      case 'sync-pending-payments':
-        // Reminders piggyback on the existing 15-min sync schedule (no extra scheduler entry needed)
-        results = [await runSyncPendingPaymentsJob(), await runCheckoutRemindersJob()]
-        break
-      case 'checkout-reminders':
-        results = [await runCheckoutRemindersJob()]
-        break
-      case 'process-lead-outreach':
-        results = [await runProcessLeadOutreachJob()]
-        break
-      case 'all':
-      default:
-        results = await runAllScheduledJobs()
-        break
-    }
-
-    const summary = {
-      totalJobs: results.length,
-      successful: results.filter(r => r.success).length,
-      failed: results.filter(r => !r.success).length,
-      totalDuration: results.reduce((acc, r) => acc + r.duration, 0),
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        results,
-        summary,
-      },
-    })
+    return await runCronJobs(job)
   } catch (error) {
     return handleApiError(error)
   }

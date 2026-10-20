@@ -46,8 +46,9 @@ const CRON_JOBS: CronJob[] = [
   {
     name: "sendStreakReminders",
     displayName: "Week Streak Reminders",
-    description: "Emails members on Friday if their week streak will break unless they come in. One email per member per week.",
-    frequency: "Friday at 9:00 AM Singapore",
+    description:
+      "Emails members on Friday if their week streak will break unless they come in. One email per member per week. cron-job.org: POST or GET with Authorization: Bearer CRON_SECRET; increase request timeout to 90s.",
+    frequency: "Friday at 9:00 AM Singapore (0 1 * * 5 UTC)",
     cron: "0 1 * * 5",
     category: "notifications",
     apiParam: "streak-reminders",

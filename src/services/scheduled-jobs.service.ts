@@ -1180,57 +1180,74 @@ export async function sendStreakReminders(): Promise<JobResult> {
 
     const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
     const webAppUrl = getWebAppUrl().replace(/\/$/, '')
+    const emailUrl = `${webAppUrl}/api/email/send`
     let sent = 0
     let skipped = 0
 
-    for (const [userId, streakWeeks] of streakByUser) {
+    const toEmail = [...streakByUser.entries()].filter(([userId]) => {
       const profile = profiles.get(userId)
       if (!profile || optedOut.has(userId) || covered.has(userId)) {
         skipped++
-        continue
+        return false
       }
+      return true
+    })
 
-      try {
-        const response = await fetch(`${webAppUrl}/api/email/send`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'streak-reminder',
-            secret: emailApiSecret,
-            data: {
-              userEmail: profile.email,
-              userName: profile.name,
-              streakWeeks,
-              bookUrl,
-            },
-          }),
-        })
-        const body = await response.json().catch(() => null)
-        if (!response.ok || !body?.success) {
-          console.error(`[Cron: StreakReminders] Email rejected for ${profile.email}`, body)
-          skipped++
-          continue
-        }
+    const EMAIL_BATCH = 8
+    const EMAIL_TIMEOUT_MS = 20_000
 
-        const { error: markError } = await admin
-          .from('user_stats')
-          .update({
-            last_streak_reminder_week: weekStart,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('user_id', userId)
+    for (let i = 0; i < toEmail.length; i += EMAIL_BATCH) {
+      const batch = toEmail.slice(i, i + EMAIL_BATCH)
+      await Promise.all(
+        batch.map(async ([userId, streakWeeks]) => {
+          const profile = profiles.get(userId)!
+          try {
+            const response = await fetch(emailUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              signal: AbortSignal.timeout(EMAIL_TIMEOUT_MS),
+              body: JSON.stringify({
+                type: 'streak-reminder',
+                secret: emailApiSecret,
+                data: {
+                  userEmail: profile.email,
+                  userName: profile.name,
+                  streakWeeks,
+                  bookUrl,
+                },
+              }),
+            })
+            const body = await response.json().catch(() => null)
+            if (!response.ok || !body?.success) {
+              console.error(`[Cron: StreakReminders] Email rejected for ${profile.email}`, body)
+              skipped++
+              return
+            }
 
-        if (markError) {
-          console.error(`[Cron: StreakReminders] Sent to ${profile.email} but failed to record dedupe`, markError)
-        }
-        sent++
-      } catch (err) {
-        console.error(`[Cron: StreakReminders] Failed for ${profile.email}:`, err)
-        skipped++
-      }
+            const { error: markError } = await admin
+              .from('user_stats')
+              .update({
+                last_streak_reminder_week: weekStart,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('user_id', userId)
+
+            if (markError) {
+              console.error(
+                `[Cron: StreakReminders] Sent to ${profile.email} but failed to record dedupe`,
+                markError,
+              )
+            }
+            sent++
+          } catch (err) {
+            console.error(`[Cron: StreakReminders] Failed for ${profile.email}:`, err)
+            skipped++
+          }
+        }),
+      )
     }
 
-    return { sent, skipped, weekStart, candidates: due.length }
+    return { sent, skipped, weekStart, candidates: due.length, webAppUrl: emailUrl }
   })
 }
 
