@@ -1,6 +1,7 @@
 // Cron Job API Route
 // Endpoint for running scheduled jobs (can be called by Vercel Cron or similar)
 
+import { after } from 'next/server'
 import { NextRequest, NextResponse } from 'next/server'
 import {
   runAllScheduledJobs,
@@ -40,34 +41,63 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    await authorizeCronRequest(request)
-    return await runCronJobs(job)
+    return await executeCronJob(request, job)
   } catch (error) {
     return handleApiError(error)
   }
 }
 
-async function authorizeCronRequest(request: NextRequest): Promise<void> {
+type CronAuth = 'secret' | 'admin' | 'dev'
+
+async function authorizeCronRequest(request: NextRequest): Promise<CronAuth> {
   const authHeader = request.headers.get('authorization')
   const cronSecret = process.env.CRON_SECRET
 
   // Supabase pg_cron / external scheduler
   if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
-    return
+    return 'secret'
   }
 
   // Settings UI: logged-in admin running a job manually
   const user = await getAuthenticatedUser(request)
   if (user && hasRequiredRole(user.role, 'admin')) {
-    return
+    return 'admin'
   }
 
   // Local dev when CRON_SECRET is not configured
   if (!cronSecret) {
-    return
+    return 'dev'
   }
 
   throw new ApiError('AUTHENTICATION_ERROR', 'Invalid cron secret', 401)
+}
+
+/** External schedulers (cron-job.org) use short HTTP timeouts; run heavy jobs in after(). */
+async function executeCronJob(request: NextRequest, job: string) {
+  const auth = await authorizeCronRequest(request)
+
+  if (job === 'streak-reminders' && auth === 'secret') {
+    after(async () => {
+      try {
+        const result = await sendStreakReminders()
+        console.log('[Cron] streak-reminders completed', JSON.stringify(result))
+      } catch (err) {
+        console.error('[Cron] streak-reminders failed', err)
+      }
+    })
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        accepted: true,
+        job: 'streak-reminders',
+        message:
+          'Streak reminders started in the background (cron-job.org will see success immediately). Check Vercel logs for sendStreakReminders.',
+      },
+    })
+  }
+
+  return runCronJobs(job)
 }
 
 async function runCronJobs(job: string | null) {
@@ -135,12 +165,13 @@ async function runCronJobs(job: string | null) {
 // POST /api/cron - Run scheduled jobs
 export async function POST(request: NextRequest) {
   try {
-    await authorizeCronRequest(request)
-
     const { searchParams } = new URL(request.url)
     const job = searchParams.get('job')
-
-    return await runCronJobs(job)
+    if (!job) {
+      await authorizeCronRequest(request)
+      return runCronJobs(null)
+    }
+    return await executeCronJob(request, job)
   } catch (error) {
     return handleApiError(error)
   }

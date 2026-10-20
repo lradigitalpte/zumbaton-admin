@@ -1150,30 +1150,22 @@ export async function sendStreakReminders(): Promise<JobResult> {
     }
 
     const covered = new Set<string>()
-    const { data: classes, error: classError } = await admin
-      .from('classes')
-      .select('id')
-      .gte('scheduled_at', startIso)
-      .lt('scheduled_at', endIso)
-
-    if (classError) throw new Error(`Failed to load this week's classes: ${classError.message}`)
-
-    const classIds = (classes || []).map((row) => row.id as string)
-    if (classIds.length > 0) {
-      for (const ids of chunkIds(classIds)) {
+    if (userIds.length > 0) {
+      for (const ids of chunkIds(userIds)) {
         const { data: bookings, error: bookingError } = await admin
           .from('bookings')
-          .select('user_id, status')
-          .in('class_id', ids)
+          .select('user_id, classes!inner(scheduled_at)')
+          .in('user_id', ids)
           .in('status', ['attended', 'confirmed'])
-          .not('user_id', 'is', null)
+          .gte('classes.scheduled_at', startIso)
+          .lt('classes.scheduled_at', endIso)
 
-        if (bookingError) throw new Error(`Failed to load this week's bookings: ${bookingError.message}`)
+        if (bookingError) {
+          throw new Error(`Failed to load this week's bookings: ${bookingError.message}`)
+        }
 
         for (const booking of bookings || []) {
-          if (booking.user_id && streakByUser.has(booking.user_id)) {
-            covered.add(booking.user_id)
-          }
+          if (booking.user_id) covered.add(booking.user_id as string)
         }
       }
     }
