@@ -1,30 +1,48 @@
 "use client";
 
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
+import { useState } from "react";
 import { StaffNotificationPreferences } from "@/components/settings/StaffNotificationPreferences";
 import { AlertEmailSettings } from "@/components/settings/AlertEmailSettings";
 
-export default function NotificationSettingsPage() {
-  return (
-    <div className="space-y-6">
-      <PageBreadCrumb pageTitle="Notification Settings" />
+const tabs = [
+  { id: "recipients" as const, label: "Recipients", caption: "Who gets the studio copies of payments, bookings, and trials." },
+  { id: "mine" as const, label: "Your alerts", caption: "Email and in-app alerts for your own account." },
+];
 
-      <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-amber-500 to-orange-600 text-white shadow-lg">
-          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-          </svg>
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Notification Settings</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Alerts and personal notification preferences
-          </p>
-        </div>
+export default function NotificationSettingsPage() {
+  const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("recipients");
+  const current = tabs.find((item) => item.id === tab) ?? tabs[0];
+
+  return (
+    <div className="min-w-0 space-y-5">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">Notifications</h1>
+        <p className="mt-1 max-w-xl text-sm text-neutral-500">{current.caption}</p>
       </div>
 
-      <AlertEmailSettings />
-      <StaffNotificationPreferences />
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setTab(item.id)}
+            className={`rounded-full px-4 py-2 text-xs font-semibold ${
+              tab === item.id
+                ? "bg-neutral-950 text-white dark:bg-white dark:text-neutral-950"
+                : "bg-neutral-100 text-neutral-600 dark:bg-white/10 dark:text-white"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <div className={tab === "recipients" ? "" : "hidden"}>
+        <AlertEmailSettings />
+      </div>
+      <div className={tab === "mine" ? "" : "hidden"}>
+        <StaffNotificationPreferences />
+      </div>
     </div>
   );
 }

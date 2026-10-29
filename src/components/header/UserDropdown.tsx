@@ -102,7 +102,7 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
         className="flex items-center text-gray-700 dark:text-gray-400 dropdown-toggle"
       >
         {avatarUrl ? (
-          <div className="mr-3 h-11 w-11 rounded-full overflow-hidden border-2 border-gray-200 dark:border-gray-700">
+          <div className="h-9 w-9 overflow-hidden rounded-full border border-neutral-200 md:mr-3 md:h-11 md:w-11 dark:border-white/10">
             <Image
               src={avatarUrl}
               alt={`${displayName}'s avatar`}
@@ -122,15 +122,15 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
             </span>
           </div>
         ) : (
-          <span className="mr-3 flex items-center justify-center h-11 w-11 rounded-full bg-brand-500 text-white font-semibold text-lg">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-950 text-sm font-semibold text-[#E4F56C] md:mr-3 md:h-11 md:w-11 md:text-lg">
             {initials}
           </span>
         )}
 
-        <span className="block mr-1 font-medium text-theme-sm">{displayName}</span>
+        <span className="mr-1 hidden font-medium text-theme-sm md:block">{displayName}</span>
 
         <svg
-          className={`stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
+          className={`hidden stroke-gray-500 transition-transform duration-200 dark:stroke-gray-400 md:block ${
             isOpen ? "rotate-180" : ""
           }`}
           width="18"
@@ -152,27 +152,27 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
       <Dropdown
         isOpen={isOpen}
         onClose={closeDropdown}
-        className="absolute right-0 mt-[17px] flex w-[260px] flex-col rounded-2xl border border-gray-200 bg-white p-3 shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark"
+        className="absolute right-0 mt-[17px] flex w-[260px] flex-col rounded-[22px] border border-neutral-200 bg-white p-3 shadow-[0_10px_30px_rgba(16,24,40,0.12)] dark:!border-white/10 dark:!bg-[#232323]"
       >
         <div>
-          <span className="block font-medium text-gray-700 text-theme-sm dark:text-gray-400">
+          <span className="block text-sm font-semibold text-neutral-950 dark:text-white">
             {displayName}
           </span>
-          <span className="mt-0.5 block text-theme-xs text-gray-500 dark:text-gray-400">
+          <span className="mt-0.5 block text-xs text-neutral-500">
             {displayEmail}
           </span>
         </div>
 
-        <ul className="flex flex-col gap-1 pt-4 pb-3 border-b border-gray-200 dark:border-gray-800">
+        <ul className="flex flex-col gap-1 border-b border-neutral-200 py-3 dark:border-white/10">
           <li>
             <DropdownItem
               onItemClick={closeDropdown}
               tag="a"
               href={profileRoute}
-              className="flex items-center gap-3 px-3 py-2 font-medium text-gray-700 rounded-lg group text-theme-sm hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
+              className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-neutral-800 hover:bg-[#E4F56C] hover:text-neutral-950 dark:text-white"
             >
               <svg
-                className="fill-gray-500 group-hover:fill-gray-700 dark:fill-gray-400 dark:group-hover:fill-gray-300"
+                className="fill-current"
                 width="24"
                 height="24"
                 viewBox="0 0 24 24"
@@ -194,10 +194,10 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
               onItemClick={closeDropdown}
               tag="a"
               href={settingsRoute}
-              className="flex items-center gap-3 px-3 py-2 font-medium text-gray-700 rounded-lg group text-theme-sm hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
+              className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-neutral-800 hover:bg-[#E4F56C] hover:text-neutral-950 dark:text-white"
             >
               <svg
-                className="fill-gray-500 group-hover:fill-gray-700 dark:fill-gray-400 dark:group-hover:fill-gray-300"
+                className="fill-current"
                 width="24"
                 height="24"
                 viewBox="0 0 24 24"
@@ -220,10 +220,10 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
                 closeDropdown();
                 restartOnboarding();
               }}
-              className="flex items-center gap-3 px-3 py-2 font-medium text-gray-700 rounded-lg group text-theme-sm hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
+              className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-neutral-800 hover:bg-[#E4F56C] hover:text-neutral-950 dark:text-white"
             >
               <svg
-                className="fill-gray-500 group-hover:fill-gray-700 dark:fill-gray-400 dark:group-hover:fill-gray-300"
+                className="fill-current"
                 width="24"
                 height="24"
                 viewBox="0 0 24 24"

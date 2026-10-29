@@ -3,6 +3,7 @@ import Button from "@/components/ui/button/Button";
 import { ChevronLeftIcon } from "@/icons";
 import Link from "next/link";
 import BrandLogo from "@/components/common/BrandLogo";
+import { studioBack, studioButton, studioError, studioLead, studioLink, studioOtp, studioTitle } from "./studio";
 import { useRouter } from "next/navigation";
 import React, { useState, useRef, useEffect } from "react";
 
@@ -83,11 +84,11 @@ export default function MFAVerificationForm() {
   const isComplete = code.every(digit => digit !== "");
 
   return (
-    <div className="flex flex-col flex-1 lg:w-1/2 w-full">
+    <div className="flex h-full w-full flex-1 flex-col overflow-y-auto px-6 py-8 lg:w-1/2">
       <div className="w-full max-w-md sm:pt-10 mx-auto mb-5">
         <Link
           href="/signin"
-          className="inline-flex items-center text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+          className={studioBack}
         >
           <ChevronLeftIcon />
           Back to sign in
@@ -101,24 +102,20 @@ export default function MFAVerificationForm() {
               alt="One Step Fitness Logo"
               width={400}
               height={133}
-              className="h-32 w-auto"
+              className="h-16 w-auto"
               priority
             />
           </div>
 
           <div className="mb-5 sm:mb-8">
-            <h1 className="mb-2 font-semibold text-gray-800 text-title-sm dark:text-white/90 sm:text-title-md">
-              Two-Factor Authentication
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Enter the 6-digit code from your authenticator app or SMS.
-            </p>
+            <h1 className={studioTitle}>Two-factor check</h1>
+            <p className={studioLead}>Enter the 6-digit code from your authenticator app or SMS.</p>
           </div>
 
           {/* MFA Icon */}
           <div className="flex justify-center mb-6">
-            <div className="w-20 h-20 rounded-full bg-brand-50 dark:bg-brand-900/20 flex items-center justify-center">
-              <svg className="w-10 h-10 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#E4F56C] text-neutral-950">
+              <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
             </div>
@@ -127,15 +124,15 @@ export default function MFAVerificationForm() {
           <form onSubmit={handleSubmit}>
             <div className="space-y-6">
               {error && (
-                <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                <div className={studioError}>
                   {error}
                 </div>
               )}
 
               {/* Code Input */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 text-center">
-                  Verification Code
+                <label className="mb-3 block text-center text-sm font-medium text-neutral-800 dark:text-white/90">
+                  Verification code
                 </label>
                 <div className="flex justify-center gap-2 sm:gap-3">
                   {code.map((digit, index) => (
@@ -148,19 +145,15 @@ export default function MFAVerificationForm() {
                       value={digit}
                       onChange={(e) => handleChange(index, e.target.value)}
                       onKeyDown={(e) => handleKeyDown(index, e)}
-                      className="w-12 h-14 sm:w-14 sm:h-16 text-center text-xl font-semibold rounded-lg border border-gray-300 bg-white dark:bg-gray-800 dark:border-gray-600 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all text-gray-900 dark:text-white"
+                      className={studioOtp}
                     />
                   ))}
                 </div>
               </div>
 
               <div>
-                <Button 
-                  className="w-full" 
-                  size="sm" 
-                  disabled={isSubmitting || !isComplete}
-                >
-                  {isSubmitting ? "Verifying..." : "Verify Code"}
+                <Button className={studioButton} size="sm" disabled={isSubmitting || !isComplete}>
+                  {isSubmitting ? "Verifying…" : "Verify code"}
                 </Button>
               </div>
 
@@ -168,13 +161,13 @@ export default function MFAVerificationForm() {
               <div className="text-center">
                 {resendTimer > 0 ? (
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Resend code in <span className="font-medium text-brand-500">{resendTimer}s</span>
+                    Resend code in <span className="font-semibold text-neutral-950 dark:text-[#E4F56C]">{resendTimer}s</span>
                   </p>
                 ) : (
                   <button
                     type="button"
                     onClick={handleResend}
-                    className="text-sm text-brand-500 hover:text-brand-600 dark:text-brand-400"
+                    className="text-sm font-semibold text-neutral-950 underline decoration-[#E4F56C] decoration-2 underline-offset-4 disabled:opacity-40 dark:text-white"
                   >
                     Resend verification code
                   </button>
@@ -189,13 +182,13 @@ export default function MFAVerificationForm() {
                 <div className="flex flex-col gap-2">
                   <button
                     type="button"
-                    className="w-full px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
+                    className="w-full rounded-full border border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-800 dark:border-white/10 dark:text-white"
                   >
                     Use backup code
                   </button>
                   <button
                     type="button"
-                    className="w-full px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
+                    className="w-full rounded-full border border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-800 dark:border-white/10 dark:text-white"
                   >
                     Send code via SMS
                   </button>
@@ -209,7 +202,7 @@ export default function MFAVerificationForm() {
               Need help?{" "}
               <Link
                 href="/signin"
-                className="text-brand-500 hover:text-brand-600 dark:text-brand-400"
+                className={studioLink}
               >
                 Contact Support
               </Link>

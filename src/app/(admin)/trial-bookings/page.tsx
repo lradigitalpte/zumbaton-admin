@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
+import { useState, useEffect, useMemo, type CSSProperties } from "react";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/components/ui/Toast";
@@ -10,7 +9,7 @@ import { getWebAppUrl } from "@/lib/email-url";
 import { InvoicePreviewModal, type PreviewInvoice } from "@/components/invoices/InvoicePreviewModal";
 import Pagination from "@/components/tables/Pagination";
 import { Modal } from "@/components/ui/modal";
-import Button from "@/components/ui/button/Button";
+import StudioDate from "@/components/ui/StudioDate";
 
 interface TrialBooking {
   id: string;
@@ -268,19 +267,19 @@ export default function TrialBookingsPage() {
 
   const getStatusBadge = (status: string) => {
     const styles = {
-      draft: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 border-2 border-yellow-300 dark:border-yellow-700",
-      confirmed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-      attended: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-      cancelled: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-      "cancelled-late": "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
-      "no-show": "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400",
-      needs_scheduling: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-300",
-      pending_payment: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300 border border-orange-300",
+      draft: "bg-[#E4F56C]/50 text-neutral-950",
+      confirmed: "bg-[#E4F56C] text-neutral-950",
+      attended: "bg-neutral-950 text-white",
+      cancelled: "bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white/50",
+      "cancelled-late": "bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white/50",
+      "no-show": "bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white/50",
+      needs_scheduling: "bg-neutral-950 text-[#E4F56C]",
+      pending_payment: "border border-neutral-950 text-neutral-950 dark:border-white dark:text-white",
     };
 
     return (
       <span
-        className={`px-2 py-1 rounded-full text-xs font-medium ${
+        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
           styles[status as keyof typeof styles] || styles.confirmed
         }`}
       >
@@ -358,11 +357,11 @@ export default function TrialBookingsPage() {
     return 'trial';
   };
 
-  const BOOKING_TYPE_CONFIG: Record<BookingType, { label: string; badge: string; rowBorder: string; avatar: string }> = {
-    'trial':      { label: 'Trial',      badge: 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700',       rowBorder: 'border-l-4 border-blue-400', avatar: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
-    'duo-trial':  { label: 'Duo Trial',  badge: 'bg-lime-100 text-lime-700 border-lime-300 dark:bg-lime-900/30 dark:text-lime-400 dark:border-lime-700',         rowBorder: 'border-l-4 border-lime-500', avatar: 'bg-lime-100 text-lime-700 dark:bg-lime-900/40 dark:text-lime-300' },
-    'zumfamilia': { label: 'ZumFamilia', badge: 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700', rowBorder: 'border-l-4 border-emerald-500', avatar: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
-    'zumfiesta':  { label: 'ZumFiesta',  badge: 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-700',  rowBorder: 'border-l-4 border-orange-500', avatar: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' },
+  const BOOKING_TYPE_CONFIG: Record<BookingType, { label: string; badge: string }> = {
+    trial: { label: "Trial", badge: "bg-neutral-100 text-neutral-950 dark:bg-white/10 dark:text-white" },
+    "duo-trial": { label: "Duo Trial", badge: "bg-[#E4F56C] text-neutral-950" },
+    zumfamilia: { label: "ZumFamilia", badge: "bg-neutral-950 text-[#E4F56C]" },
+    zumfiesta: { label: "ZumFiesta", badge: "border border-neutral-950 text-neutral-950 dark:border-white dark:text-white" },
   };
 
   const getInitials = (name: string): string =>
@@ -570,69 +569,54 @@ export default function TrialBookingsPage() {
     }
   };
 
-  return (
-    <div className="space-y-6">
-      <PageBreadCrumb pageTitle="Trial Bookings" />
+  const statusOptions = [
+    { value: "all", label: "All statuses" },
+    { value: "pending_payment", label: "Awaiting payment" },
+    { value: "draft", label: "Draft" },
+    { value: "needs_scheduling", label: "Needs class" },
+    { value: "confirmed", label: "Confirmed" },
+    { value: "attended", label: "Attended" },
+    { value: "cancelled", label: "Cancelled" },
+    { value: "no-show", label: "No show" },
+  ];
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+  return (
+    <div className="min-w-0 space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Guest Bookings
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">
+            Trials{" "}
+            <span className="inline-flex h-7 w-9 translate-y-[-1px] items-center justify-center rounded-full bg-[#E4F56C] align-middle text-neutral-950">
+              <User className="h-3.5 w-3.5" />
+            </span>
           </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+          <p className="mt-1 text-sm text-neutral-500 dark:text-white/50">
             Paid trials, customers awaiting a class, and confirmed guest bookings in one place
           </p>
         </div>
         <button
           onClick={handleRefresh}
           disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-950 hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white"
         >
-          <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+          <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           Refresh
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 space-y-3">
-        {/* Row 1: Search + Status + Age + Date */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search by name, email, or phone..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
-              />
-            </div>
+      <div className="space-y-4 rounded-[28px] border border-neutral-200/80 bg-white p-4 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 sm:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            <input
+              type="text"
+              placeholder="Search by name, email, or phone..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-12 w-full rounded-full border border-neutral-200 bg-neutral-50 py-2.5 pl-11 pr-4 text-sm text-neutral-950 placeholder:text-neutral-400 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
+            />
           </div>
-          <select
-            value={statusFilter}
-            onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
-            className="sm:w-44 px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
-          >
-            <option value="all">All Statuses</option>
-            <option value="pending_payment">Awaiting payment</option>
-            <option value="draft">Draft</option>
-            <option value="needs_scheduling">Paid · Needs class</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="attended">Attended</option>
-            <option value="cancelled">Cancelled</option>
-            <option value="no-show">No Show</option>
-          </select>
-          <select
-            value={ageGroupFilter}
-            onChange={(e) => { setAgeGroupFilter(e.target.value); setCurrentPage(1); }}
-            className="sm:w-36 px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
-          >
-            <option value="all">All Ages</option>
-            <option value="kid">Kids</option>
-            <option value="adult">Adults</option>
-          </select>
-          <div className="sm:min-w-[200px]">
+          <div className="lg:w-64">
             <DateRangePicker
               value={{ from: dateFrom, to: dateTo }}
               onChange={(from, to) => { setDateFrom(from); setDateTo(to); setCurrentPage(1); }}
@@ -641,6 +625,44 @@ export default function TrialBookingsPage() {
               className="w-full"
             />
           </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {statusOptions.map((status) => (
+            <button
+              key={status.value}
+              type="button"
+              onClick={() => { setStatusFilter(status.value); setCurrentPage(1); }}
+              className={`rounded-full px-3.5 py-2 text-xs font-semibold ${
+                statusFilter === status.value
+                  ? "bg-neutral-950 text-white"
+                  : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70"
+              }`}
+            >
+              {status.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {[
+            { value: "all", label: "All ages" },
+            { value: "kid", label: "Kids" },
+            { value: "adult", label: "Adults" },
+          ].map((age) => (
+            <button
+              key={age.value}
+              type="button"
+              onClick={() => { setAgeGroupFilter(age.value); setCurrentPage(1); }}
+              className={`rounded-full px-3.5 py-2 text-xs font-semibold ${
+                ageGroupFilter === age.value
+                  ? "bg-[#E4F56C] text-neutral-950"
+                  : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70"
+              }`}
+            >
+              {age.label}
+            </button>
+          ))}
         </div>
 
         {/* Row 2: Booking type tabs */}
@@ -652,14 +674,14 @@ export default function TrialBookingsPage() {
               <button
                 key={type}
                 onClick={() => { setBookingTypeFilter(type); setCurrentPage(1); }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                className={`flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold ${
                   isActive
-                    ? 'bg-gray-900 text-white border-gray-900 dark:bg-white dark:text-gray-900 dark:border-white'
-                    : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600'
+                    ? "bg-neutral-950 text-white"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70"
                 }`}
               >
-                {type === 'all' ? 'All Types' : BOOKING_TYPE_CONFIG[type as BookingType].label}
-                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${isActive ? 'bg-white/20 text-white dark:bg-black/20 dark:text-black' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>
+                {type === "all" ? "All types" : BOOKING_TYPE_CONFIG[type as BookingType].label}
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${isActive ? "bg-[#E4F56C] text-neutral-950" : "bg-white text-neutral-500 dark:bg-neutral-950 dark:text-white/70"}`}>
                   {count}
                 </span>
               </button>
@@ -683,18 +705,16 @@ export default function TrialBookingsPage() {
               <button
                 key={key}
                 onClick={() => { setPaymentFilter(key); setCurrentPage(1); }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                className={`flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold ${
                   isActive
-                    ? key === 'paid'
-                      ? 'bg-green-600 text-white border-green-600'
-                      : key === 'unpaid'
-                        ? 'bg-orange-600 text-white border-orange-600'
-                        : 'bg-gray-900 text-white border-gray-900 dark:bg-white dark:text-gray-900 dark:border-white'
-                    : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600'
+                    ? key === "paid"
+                      ? "bg-[#E4F56C] text-neutral-950"
+                      : "bg-neutral-950 text-white"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70"
                 }`}
               >
                 {label}
-                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${isActive ? (key === "paid" ? "bg-neutral-950 text-[#E4F56C]" : "bg-[#E4F56C] text-neutral-950") : "bg-white text-neutral-500 dark:bg-neutral-950 dark:text-white/70"}`}>
                   {count}
                 </span>
               </button>
@@ -704,82 +724,76 @@ export default function TrialBookingsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-          <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">Total</div>
-          <div className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{total}</div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="rounded-[28px] border border-neutral-200/80 bg-white p-4 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Total</div>
+          <div className="mt-2 text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white">{total}</div>
         </div>
-        <button type="button" onClick={() => { setStatusFilter("pending_payment"); setCurrentPage(1); }} className="text-left bg-orange-50 dark:bg-orange-900/20 rounded-xl border-2 border-orange-300 dark:border-orange-700 p-4 transition hover:border-orange-500">
-          <div className="text-xs text-orange-700 dark:text-orange-300 uppercase tracking-wide font-bold">Awaiting payment</div>
-          <div className="text-2xl font-bold text-orange-700 dark:text-orange-300 mt-1">{bookings.filter((b) => b.status === "pending_payment").length}</div>
-          <div className="text-[10px] text-orange-600 mt-0.5">From /start — not confirmed paid yet</div>
+        <button type="button" onClick={() => { setStatusFilter("pending_payment"); setCurrentPage(1); }} className="rounded-[28px] border border-neutral-950 bg-neutral-950 p-4 text-left text-white shadow-[0_10px_30px_rgba(16,24,40,0.14)]">
+          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">Awaiting payment</div>
+          <div className="mt-2 text-3xl font-semibold tracking-tight text-[#E4F56C]">{bookings.filter((b) => b.status === "pending_payment").length}</div>
+          <div className="mt-1 text-[11px] text-white/45">From /start — not confirmed paid yet</div>
         </button>
-        <button type="button" onClick={() => { setStatusFilter("needs_scheduling"); setCurrentPage(1); }} className="text-left bg-amber-50 dark:bg-amber-900/20 rounded-xl border-2 border-amber-300 dark:border-amber-700 p-4 transition hover:border-amber-500">
-          <div className="text-xs text-amber-700 dark:text-amber-300 uppercase tracking-wide font-bold">Paid · Needs class</div>
-          <div className="text-2xl font-bold text-amber-700 dark:text-amber-300 mt-1">{bookings.filter((b) => b.status === "needs_scheduling").length}</div>
-          <div className="text-[10px] text-amber-600 mt-0.5">Click to follow up</div>
+        <button type="button" onClick={() => { setStatusFilter("needs_scheduling"); setCurrentPage(1); }} className="rounded-[28px] border border-[#d5e45c] bg-[#E4F56C] p-4 text-left text-neutral-950 shadow-[0_10px_30px_rgba(16,24,40,0.06)]">
+          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-950/60">Paid · Needs class</div>
+          <div className="mt-2 text-3xl font-semibold tracking-tight">{bookings.filter((b) => b.status === "needs_scheduling").length}</div>
+          <div className="mt-1 text-[11px] text-neutral-950/60">Click to follow up</div>
         </button>
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-800 p-4">
-          <div className="text-xs text-yellow-600 dark:text-yellow-400 uppercase tracking-wide font-medium">Draft ⚠️</div>
-          <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">
-            {bookings.filter((b) => b.status === "draft").length}
-          </div>
-          <div className="text-[10px] text-yellow-500 mt-0.5">Needs follow-up</div>
+        <div className="rounded-[28px] border border-neutral-200/80 bg-white p-4 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Draft</div>
+          <div className="mt-2 text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white">{bookings.filter((b) => b.status === "draft").length}</div>
+          <div className="mt-1 text-[11px] text-neutral-400">Needs follow-up</div>
         </div>
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-          <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">Confirmed</div>
-          <div className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">
-            {bookings.filter((b) => b.status === "confirmed").length}
-          </div>
+        <div className="rounded-[28px] border border-neutral-200/80 bg-white p-4 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Confirmed</div>
+          <div className="mt-2 text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white">{bookings.filter((b) => b.status === "confirmed").length}</div>
         </div>
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-          <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium">Attended</div>
-          <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
-            {bookings.filter((b) => b.status === "attended").length}
-          </div>
+        <div className="rounded-[28px] border border-neutral-950 bg-neutral-950 p-4 text-white shadow-[0_10px_30px_rgba(16,24,40,0.14)]">
+          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">Attended</div>
+          <div className="mt-2 text-3xl font-semibold tracking-tight">{bookings.filter((b) => b.status === "attended").length}</div>
         </div>
       </div>
 
       {/* Monthly Booking Stats */}
       {monthlyStats.length > 0 && (
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Bookings by Month</h3>
-            <span className="text-[10px] text-gray-400 uppercase tracking-wide">all time · {allBookingsForStats.length} total</span>
+        <div className="rounded-[28px] border border-neutral-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Bookings by month</h3>
+            <span className="text-[11px] uppercase tracking-[0.14em] text-neutral-400">all time · {allBookingsForStats.length}</span>
           </div>
-          <div className="flex gap-3 overflow-x-auto pb-1">
+          <div
+            className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:[grid-template-columns:repeat(var(--months),minmax(0,1fr))]"
+            style={{ "--months": monthlyStats.length } as CSSProperties}
+          >
             {monthlyStats.map((m) => {
               const isCurrentMonth = m.key === currentMonthKey;
-              const maxTotal = Math.max(...monthlyStats.map((x) => x.total), 1);
-              const paidPct = m.total > 0 ? Math.round((m.paid / m.total) * 100) : 0;
+              const peak = Math.max(...monthlyStats.map((month) => month.total), 1);
+              const volume = Math.max(8, Math.round((m.total / peak) * 100));
+              const shortMonth = new Date(`${m.key}-01T00:00:00`).toLocaleDateString("en-SG", { month: "short" });
               return (
                 <div
                   key={m.key}
-                  className={`shrink-0 w-28 rounded-lg border p-3 ${
+                  className={`flex min-h-[148px] min-w-0 flex-col rounded-[22px] p-3 ${
                     isCurrentMonth
-                      ? "border-amber-400 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700"
-                      : "border-gray-200 dark:border-gray-700"
+                      ? "bg-[#E4F56C] text-neutral-950"
+                      : "bg-neutral-50 dark:bg-white/5"
                   }`}
                 >
-                  <div className={`text-[10px] font-black uppercase tracking-widest mb-1.5 ${isCurrentMonth ? "text-amber-600 dark:text-amber-400" : "text-gray-500 dark:text-gray-400"}`}>
-                    {m.label}{isCurrentMonth && " ·now"}
+                  <div className="flex items-center justify-between gap-1">
+                    <span className={`truncate text-[11px] font-semibold uppercase tracking-[0.12em] ${isCurrentMonth ? "text-neutral-950/60" : "text-neutral-400"}`}>
+                      {shortMonth}{isCurrentMonth ? " · now" : ""}
+                    </span>
                   </div>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-white leading-none mb-1.5">{m.total}</div>
-                  {/* Stacked bar */}
-                  <div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden mb-2">
-                    <div className="h-full flex">
-                      <div className="h-full bg-green-500 transition-all" style={{ width: `${paidPct}%` }} />
-                      <div className="h-full bg-yellow-400 transition-all" style={{ width: `${m.total > 0 ? Math.round((m.draft / m.total) * 100) : 0}%` }} />
-                    </div>
+                  <div className={`mt-2 text-3xl font-semibold leading-none tracking-tight ${isCurrentMonth ? "" : "text-neutral-950 dark:text-white"}`}>{m.total}</div>
+                  <div className={`mt-auto h-1.5 overflow-hidden rounded-full ${isCurrentMonth ? "bg-neutral-950/15" : "bg-neutral-200 dark:bg-white/10"}`}>
+                    <div className={`h-full rounded-full ${isCurrentMonth ? "bg-neutral-950" : "bg-[#E4F56C]"}`} style={{ width: `${volume}%` }} />
                   </div>
-                  <div className="flex flex-col gap-0.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] text-green-600 dark:text-green-400 font-semibold">✓ {m.paid} paid</span>
-                      {m.attended > 0 && <span className="text-[9px] text-blue-500 font-semibold">{m.attended} att.</span>}
-                    </div>
-                    {m.draft > 0 && <span className="text-[9px] text-yellow-600 dark:text-yellow-400 font-semibold">⚠ {m.draft} draft</span>}
-                    {m.needsScheduling > 0 && <span className="text-[9px] text-amber-700 dark:text-amber-300 font-bold">! {m.needsScheduling} needs class</span>}
-                  </div>
+                  <p className={`mt-2 text-[11px] leading-snug ${isCurrentMonth ? "text-neutral-950/70" : "text-neutral-500"}`}>
+                    {m.paid} paid
+                    {m.attended > 0 ? ` · ${m.attended} att.` : ""}
+                    {m.draft > 0 ? ` · ${m.draft} draft` : ""}
+                    {m.needsScheduling > 0 ? ` · ${m.needsScheduling} need class` : ""}
+                  </p>
                 </div>
               );
             })}
@@ -789,15 +803,14 @@ export default function TrialBookingsPage() {
 
       {/* Bookings List */}
       {loading ? (
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-10 text-center">
-          <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-amber-500 mx-auto" />
-          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+        <div className="rounded-[28px] border border-neutral-200/80 bg-white p-12 text-center dark:border-white/10 dark:bg-gray-800">
+          <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-neutral-950 border-t-transparent" />
+          <p className="mt-3 text-sm text-neutral-500">Loading…</p>
         </div>
       ) : !Array.isArray(bookings) || bookings.length === 0 ? (
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-10 text-center">
-          <User className="w-9 h-9 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-          <p className="text-sm text-gray-500 dark:text-gray-400">No bookings found</p>
-          {searchQuery && <p className="text-xs text-gray-400 mt-1">Try adjusting your search or filters</p>}
+        <div className="rounded-[28px] border border-neutral-200/80 bg-white p-12 text-center dark:border-white/10 dark:bg-gray-800">
+          <p className="text-sm font-semibold text-neutral-950 dark:text-white">No bookings found</p>
+          {searchQuery && <p className="mt-1 text-xs text-neutral-400">Try adjusting your search or filters</p>}
         </div>
       ) : (
         <>
@@ -825,7 +838,6 @@ export default function TrialBookingsPage() {
                 const isPendingPayment = booking.status === "pending_payment";
                 const isKid = isKidBooking(booking);
                 const isZumFamilia = type === "zumfamilia";
-                const isDuo = type === "duo-trial";
                 const primaryName = getPrimaryContactName(booking);
                 const primaryEmail = getPrimaryContactEmail(booking);
                 const primaryPhone = getPrimaryContactPhone(booking);
@@ -835,88 +847,77 @@ export default function TrialBookingsPage() {
                 return (
                   <div
                     key={booking.id}
-                    className={`rounded-xl border bg-white dark:bg-gray-900 shadow-sm hover:shadow-md transition-shadow p-4 sm:p-5 ${config.rowBorder} ${
-                      isDraft ? "border-yellow-200 dark:border-yellow-800 bg-yellow-50/40 dark:bg-yellow-900/10" :
-                      isUnscheduled ? "border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20" :
-                      isPendingPayment ? "border-orange-200 dark:border-orange-800 bg-orange-50/60 dark:bg-orange-950/20" :
-                      "border-gray-200 dark:border-gray-800"
+                    className={`relative min-w-0 rounded-[28px] border bg-white p-4 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:bg-gray-800 sm:p-5 ${
+                      openDropdownId === booking.id ? "z-50" : ""
+                    } ${
+                      isDraft ? "border-[#d5e45c]" :
+                      isUnscheduled ? "border-neutral-950 dark:border-[#E4F56C]" :
+                      isPendingPayment ? "border-neutral-950/40" :
+                      "border-neutral-200/80 dark:border-white/10"
                     }`}
                   >
-                    <div className="flex flex-col lg:flex-row lg:items-start gap-4 lg:gap-5">
-                      {/* Guest — name, badges, contact, secondary info */}
-                      <div className="flex-1 min-w-0 flex gap-3">
-                        <div className={`hidden sm:flex shrink-0 w-11 h-11 rounded-full items-center justify-center text-sm font-black ${config.avatar}`}>
+                    <div className="grid w-full min-w-0 grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,200px)] lg:gap-4 lg:pr-[120px]">
+                      <div className="flex min-w-0 gap-4">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-sm font-semibold text-[#E4F56C]">
                           {getInitials(primaryName)}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border leading-none ${config.badge}`}>{config.label}</span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${config.badge}`}>{config.label}</span>
                             {getStatusBadge(booking.status)}
-                            {isKid && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 border border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700 leading-none">{isZumFamilia ? "Child" : "Kid"}</span>}
+                            {isKid && <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold text-neutral-950 dark:bg-white/10 dark:text-white">{isZumFamilia ? "Child" : "Kid"}</span>}
                           </div>
-                          <p className="font-semibold text-gray-900 dark:text-white leading-tight truncate">{primaryName}</p>
-                          <p className="text-gray-400 dark:text-gray-500 text-xs truncate">{primaryEmail}</p>
-                          <p className="text-gray-400 dark:text-gray-500 text-xs">
-                            {primaryPhone && <span>{primaryPhone}</span>}
-                            {booking.guestDateOfBirth && <span className="ml-1.5">· Age {calculateAge(booking.guestDateOfBirth)}</span>}
+                          <p className="mt-2 truncate text-lg font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{primaryName}</p>
+                          <p className="truncate text-sm text-neutral-500 dark:text-white/50">{primaryEmail}</p>
+                          <p className="text-sm text-neutral-500 dark:text-white/50">
+                            {primaryPhone}
+                            {booking.guestDateOfBirth ? ` · Age ${calculateAge(booking.guestDateOfBirth)}` : ""}
                           </p>
-                          {isZumFamilia && <p className="text-emerald-600 dark:text-emerald-400 font-medium mt-0.5 text-[10px]">Child: {booking.guestName}{booking.guestDateOfBirth ? ` (${calculateAge(booking.guestDateOfBirth)} yrs)` : ""}</p>}
+                          {isZumFamilia && <p className="mt-1 text-xs font-semibold text-neutral-950 dark:text-white">Child: {booking.guestName}{booking.guestDateOfBirth ? ` (${calculateAge(booking.guestDateOfBirth)} yrs)` : ""}</p>}
                           {p2 && (
-                            <p className="text-lime-600 dark:text-lime-400 font-bold mt-0.5 text-[10px]">
-                              P2 (2nd Guest): {p2.name || "—"}{p2.phone ? ` · ${p2.phone}` : ""}
+                            <p className="mt-2 max-w-full rounded-2xl bg-[#E4F56C]/50 px-3 py-1 text-xs font-semibold leading-snug text-neutral-950">
+                              2nd guest: {p2.name || "—"}{p2.phone ? ` · ${p2.phone}` : ""}
                               {p2.dateOfBirth ? ` · Age ${calculateAge(p2.dateOfBirth)}` : ""}
                               {p2.gender ? ` · ${p2.gender.charAt(0).toUpperCase() + p2.gender.slice(1)}` : ""}
                             </p>
                           )}
-                          <p className="text-[10px] text-gray-300 dark:text-gray-600 mt-1">Booked {formatDate(booking.bookedAt)}</p>
+                          <p className="mt-2 text-[11px] uppercase tracking-[0.12em] text-neutral-400">Booked {formatDate(booking.bookedAt)}</p>
                         </div>
                       </div>
 
-                      <div className="hidden lg:block w-px self-stretch bg-gray-100 dark:bg-gray-800" />
-
-                      {/* Class & Time */}
-                      <div className="lg:w-56 shrink-0 text-xs">
-                        <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-gray-500 font-semibold mb-1">Class &amp; Time</p>
-                        {booking.class ? (
-                          <>
-                            <p className="font-semibold text-gray-900 dark:text-white uppercase leading-tight">{booking.class.title}</p>
-                            {booking.class.instructorName && <p className="text-gray-400 dark:text-gray-500">{booking.class.instructorName}</p>}
-                            {isZumFamilia && booking.payment?.metadata?.package_label && (
-                              <p className="text-emerald-600 dark:text-emerald-400 font-medium text-[10px]">{booking.payment.metadata.package_label}</p>
-                            )}
-                            <p className="text-gray-600 dark:text-gray-300 mt-0.5">{getDisplayScheduleTime(booking)}</p>
-                          </>
-                        ) : (
-                          isUnscheduled ? (
-                            <div><p className="font-bold text-amber-700 dark:text-amber-300">Class not selected</p><p className="text-xs text-amber-600">Staff follow-up required</p></div>
+                      <div className="flex h-full min-w-0 flex-col justify-center rounded-[22px] bg-neutral-50 px-4 py-3 dark:bg-white/5">
+                          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Class</p>
+                          {booking.class ? (
+                            <>
+                              <p className="mt-1 truncate font-semibold uppercase leading-tight text-neutral-950 dark:text-white">{booking.class.title}</p>
+                              {booking.class.instructorName && <p className="truncate text-sm text-neutral-500">{booking.class.instructorName}</p>}
+                              {isZumFamilia && booking.payment?.metadata?.package_label && (
+                                <p className="text-xs font-semibold text-neutral-950 dark:text-white">{booking.payment.metadata.package_label}</p>
+                              )}
+                              <p className="mt-1 text-sm leading-snug text-neutral-950 dark:text-white">{getDisplayScheduleTime(booking)}</p>
+                            </>
+                          ) : isUnscheduled ? (
+                            <div className="mt-1"><p className="font-semibold text-neutral-950 dark:text-white">Class not selected</p><p className="text-xs text-neutral-500">Staff follow-up required</p></div>
                           ) : isPendingPayment ? (
-                            <div><p className="font-bold text-orange-700 dark:text-orange-300">Awaiting payment</p><p className="text-xs text-orange-600">Not confirmed on HitPay yet</p></div>
-                          ) : <span className="text-gray-400 italic">—</span>
-                        )}
+                            <div className="mt-1"><p className="font-semibold text-neutral-950 dark:text-white">Awaiting payment</p><p className="text-xs text-neutral-500">Not confirmed on HitPay yet</p></div>
+                          ) : <span className="text-sm text-neutral-400">—</span>}
+                        </div>
+                      <div className="flex h-full min-w-0 flex-col justify-center rounded-[22px] bg-neutral-950 px-4 py-3 text-white">
+                          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/45">Payment</p>
+                          {booking.payment ? (
+                            <>
+                              <p className="mt-1 text-xl font-semibold tracking-tight">{booking.payment.currency} {(booking.payment.amountCents / 100).toFixed(2)}</p>
+                              <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${isPaymentPaid(booking) ? "bg-[#E4F56C] text-neutral-950" : "bg-white/15 text-white"}`}>{booking.payment.status}</span>
+                            </>
+                          ) : (
+                            <p className="mt-2 text-sm text-white/50">No payment</p>
+                          )}
                       </div>
 
-                      <div className="hidden lg:block w-px self-stretch bg-gray-100 dark:bg-gray-800" />
-
-                      {/* Payment */}
-                      <div className="lg:w-32 shrink-0 text-xs">
-                        <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-gray-500 font-semibold mb-1">Payment</p>
-                        {booking.payment ? (
-                          <>
-                            <p className="font-semibold text-gray-900 dark:text-white">{booking.payment.currency} {(booking.payment.amountCents / 100).toFixed(2)}</p>
-                            <p className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${isPaymentPaid(booking) ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"}`}>{booking.payment.status}</p>
-                          </>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </div>
-
-                      <div className="hidden lg:block w-px self-stretch bg-gray-100 dark:bg-gray-800" />
-
-                      {/* Actions — dropdown */}
-                      <div className="lg:w-40 shrink-0 flex lg:justify-end">
-                        <div className="relative">
+                      <div className="flex items-center justify-end lg:absolute lg:right-5 lg:top-5 lg:w-[104px]">
+                        <div className="relative flex w-full flex-col items-stretch gap-2">
                           {isUnscheduled && (
-                            <a href={`/leads?search=${encodeURIComponent(primaryEmail || primaryPhone || primaryName)}`} className="inline-flex rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-700">
+                            <a href={`/leads?search=${encodeURIComponent(primaryEmail || primaryPhone || primaryName)}`} className="inline-flex justify-center rounded-full bg-[#E4F56C] px-2 py-2 text-center text-[11px] font-semibold leading-tight text-neutral-950 hover:bg-[#d5e45c]">
                               Schedule in Leads
                             </a>
                           )}
@@ -924,7 +925,7 @@ export default function TrialBookingsPage() {
                             <button
                               onClick={() => handleSyncPayment(booking)}
                               disabled={isBusy}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white hover:bg-orange-700 disabled:opacity-50"
+                              className="inline-flex items-center justify-center gap-1.5 rounded-full bg-neutral-950 px-3 py-2 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-50"
                               title="Re-check this payment against HitPay"
                             >
                               {syncingPaymentId === booking.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
@@ -934,7 +935,7 @@ export default function TrialBookingsPage() {
                           <button
                             onClick={() => setOpenDropdownId(openDropdownId === booking.id ? null : booking.id)}
                             disabled={isBusy}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50"
+                            className="flex w-full items-center justify-center gap-1 rounded-full border border-neutral-200 bg-white px-2.5 py-2 text-xs font-semibold text-neutral-950 hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white"
                           >
                             {isBusy
                               ? <Loader2 className="w-3 h-3 animate-spin" />
@@ -945,18 +946,18 @@ export default function TrialBookingsPage() {
                           {openDropdownId === booking.id && (
                             <>
                               {/* backdrop to close */}
-                              <div className="fixed inset-0 z-10" onClick={() => setOpenDropdownId(null)} />
-                              <div className="absolute right-0 top-full mt-1 z-20 w-48 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden">
+                              <div className="fixed inset-0 z-40" onClick={() => setOpenDropdownId(null)} />
+                              <div className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-[22px] border border-neutral-200/80 bg-white p-1.5 shadow-[0_18px_50px_rgba(16,24,40,0.16)] dark:border-white/10 dark:bg-neutral-950">
                                 {/* View */}
                                 <button onClick={() => { setSelectedBooking(booking); setDetailsModalOpen(true); setOpenDropdownId(null); }}
-                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                  className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-medium text-neutral-950 hover:bg-neutral-100 dark:text-white dark:hover:bg-white/10">
                                   <Eye className="w-3.5 h-3.5 text-gray-500" /> View Details
                                 </button>
 
                                 {/* Add 2nd Guest / Companion — needs a real booking row, not a virtual one */}
                                 {!isUnscheduled && !isPendingPayment && (
                                   <button onClick={() => { handleOpenCompanionModal(booking); setOpenDropdownId(null); }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-lime-700 dark:text-lime-400 hover:bg-lime-50 dark:hover:bg-lime-900/20 transition-colors font-semibold border-t border-b border-gray-100 dark:border-gray-800">
+                                    className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-[#E4F56C] dark:text-white dark:hover:bg-[#E4F56C] dark:hover:text-neutral-950">
                                     <UserPlus className="w-3.5 h-3.5" /> + Add 2nd Guest
                                   </button>
                                 )}
@@ -966,7 +967,7 @@ export default function TrialBookingsPage() {
                                     <button
                                       onClick={() => { handleSendBookingLink(booking); setOpenDropdownId(null); }}
                                       disabled={sendingLinkPaymentId === booking.paymentId}
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors font-semibold border-t border-gray-100 dark:border-gray-800 disabled:opacity-50">
+                                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-100 disabled:opacity-50 dark:text-white dark:hover:bg-white/10">
                                       {sendingLinkPaymentId === booking.paymentId
                                         ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                         : <Send className="w-3.5 h-3.5" />}
@@ -974,7 +975,7 @@ export default function TrialBookingsPage() {
                                     </button>
                                     <button
                                       onClick={() => { handleCopyBookingLink(booking); setOpenDropdownId(null); }}
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors font-semibold border-b border-gray-100 dark:border-gray-800">
+                                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-100 dark:text-white dark:hover:bg-white/10">
                                       <Copy className="w-3.5 h-3.5" />
                                       Copy booking link
                                     </button>
@@ -985,7 +986,7 @@ export default function TrialBookingsPage() {
                                   <button
                                     onClick={() => { handleViewInvoice(booking); setOpenDropdownId(null); }}
                                     disabled={resendingInvoicePaymentId === booking.paymentId}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50">
+                                    className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-medium text-neutral-950 hover:bg-neutral-100 dark:text-white dark:hover:bg-white/10 disabled:opacity-50">
                                     {resendingInvoicePaymentId === booking.paymentId
                                       ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                       : <FileText className="w-3.5 h-3.5 text-emerald-600" />}
@@ -997,32 +998,32 @@ export default function TrialBookingsPage() {
                                   <>
                                     <a href={`mailto:${primaryEmail}?subject=Complete Your Booking&body=Hi ${primaryName},%0D%0A%0D%0AWe noticed your booking wasn't completed. We'd love to help!%0D%0A%0D%0AThank you!`}
                                       onClick={() => setOpenDropdownId(null)}
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-medium text-neutral-950 hover:bg-neutral-100 dark:text-white dark:hover:bg-white/10">
                                       <Mail className="w-3.5 h-3.5 text-green-600" /> Email Guest
                                     </a>
                                     {primaryPhone && (
                                       <a href={`tel:${primaryPhone}`} onClick={() => setOpenDropdownId(null)}
-                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                        className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-medium text-neutral-950 hover:bg-neutral-100 dark:text-white dark:hover:bg-white/10">
                                         <Phone className="w-3.5 h-3.5 text-blue-600" /> Call Guest
                                       </a>
                                     )}
                                     {booking.payment?.hitpayPaymentRequestId && (
                                       <button onClick={() => { handleSyncPayment(booking); setOpenDropdownId(null); }}
-                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                        className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-medium text-neutral-950 hover:bg-neutral-100 dark:text-white dark:hover:bg-white/10">
                                         <RefreshCw className="w-3.5 h-3.5 text-indigo-600" /> Sync Payment
                                       </button>
                                     )}
                                     <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
                                     <button onClick={() => { handleStatusUpdate(booking.id, "confirmed"); setOpenDropdownId(null); }}
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors font-semibold">
+                                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-[#E4F56C] dark:text-white dark:hover:bg-[#E4F56C] dark:hover:text-neutral-950">
                                       <CheckCircle className="w-3.5 h-3.5" /> Confirm Booking
                                     </button>
                                     <button onClick={() => { setCancelBookingId(booking.id); setCancelReason(""); setCancelModalOpen(true); setOpenDropdownId(null); }}
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors">
+                                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-medium text-neutral-950 hover:bg-neutral-100 dark:text-white dark:hover:bg-white/10">
                                       <XCircle className="w-3.5 h-3.5" /> Cancel
                                     </button>
                                     <button onClick={() => { handleDeleteClick(booking.id, booking.guestName); setOpenDropdownId(null); }}
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50">
                                       <Trash2 className="w-3.5 h-3.5" /> Delete
                                     </button>
                                   </>
@@ -1032,15 +1033,15 @@ export default function TrialBookingsPage() {
                                   <>
                                     <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
                                     <button onClick={() => { handleStatusUpdate(booking.id, "attended"); setOpenDropdownId(null); }}
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors font-semibold">
+                                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-[#E4F56C] dark:text-white dark:hover:bg-[#E4F56C] dark:hover:text-neutral-950">
                                       <CheckCircle className="w-3.5 h-3.5" /> Mark Attended
                                     </button>
                                     <button onClick={() => { handleStatusUpdate(booking.id, "no-show"); setOpenDropdownId(null); }}
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-medium text-neutral-950 hover:bg-neutral-100 dark:text-white dark:hover:bg-white/10">
                                       <XCircle className="w-3.5 h-3.5" /> No Show
                                     </button>
                                     <button onClick={() => { handleDeleteClick(booking.id, booking.guestName); setOpenDropdownId(null); }}
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50">
                                       <Trash2 className="w-3.5 h-3.5" /> Delete
                                     </button>
                                   </>
@@ -1050,7 +1051,7 @@ export default function TrialBookingsPage() {
                                   <>
                                     <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
                                     <button onClick={() => { handleDeleteClick(booking.id, booking.guestName); setOpenDropdownId(null); }}
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50">
                                       <Trash2 className="w-3.5 h-3.5" /> Delete
                                     </button>
                                   </>
@@ -1066,8 +1067,8 @@ export default function TrialBookingsPage() {
               })}
           </div>
 
-          <div className="flex items-center justify-between bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 px-4 py-3 mt-3">
-            <p className="text-xs text-gray-500 dark:text-gray-400">
+          <div className="mt-3 flex items-center justify-between rounded-[28px] border border-neutral-200/80 bg-white px-5 py-4 dark:border-white/10 dark:bg-gray-800">
+            <p className="text-sm text-neutral-500">
               Showing {Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, total)}–{Math.min(currentPage * ITEMS_PER_PAGE, total)} of {total} booking{total !== 1 ? "s" : ""}
             </p>
             {totalPages > 1 && (
@@ -1084,45 +1085,34 @@ export default function TrialBookingsPage() {
           setDetailsModalOpen(false);
           setSelectedBooking(null);
         }}
-        className="max-w-[640px] w-full"
+        className="my-auto w-[min(860px,calc(100vw-2rem))] max-h-[calc(100vh-2.5rem)] overflow-y-auto !rounded-[28px] !border-neutral-200/80"
       >
-        <div className="p-6">
-          <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+        <div className="p-5 sm:p-6">
+          <h4 className="mb-4 pr-10 text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">
             Booking Details
           </h4>
           {selectedBooking && (
-            <div className="space-y-4 text-sm">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div><span className="font-medium">Flow:</span>{" "}
-                  {isDuoTrialBooking(selectedBooking)
-                    ? "Duo Trial (1-for-1)"
-                    : isZumFamiliaBooking(selectedBooking)
-                      ? "ZumFamilia"
-                      : "Trial Booking"}
-                </div>
-                <div><span className="font-medium">Status:</span> {selectedBooking.status}</div>
-                <div><span className="font-medium">Primary Contact:</span> {getPrimaryContactName(selectedBooking)}</div>
-                <div><span className="font-medium">Primary Email:</span> {getPrimaryContactEmail(selectedBooking)}</div>
-                <div><span className="font-medium">Primary Phone:</span> {getPrimaryContactPhone(selectedBooking) || "N/A"}</div>
-                <div><span className="font-medium">{isKidBooking(selectedBooking) ? "Child Name:" : "Guest Name:"}</span> {selectedBooking.guestName}</div>
-                <div><span className="font-medium">Date of Birth:</span> {selectedBooking.guestDateOfBirth || "N/A"}</div>
-                <div><span className="font-medium">Class:</span> {selectedBooking.class?.title || "N/A"}</div>
-                <div>
-                  <span className="font-medium">Class Time:</span>{" "}
-                  <span className={isZumFamiliaBooking(selectedBooking)
-                    ? "inline-flex items-center px-2.5 py-1 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-300 dark:border-amber-700 font-semibold"
-                    : ""}>
-                    {getDisplayScheduleTime(selectedBooking)}
-                  </span>
-                </div>
-                <div>
-                  <span className="font-medium">Booked On:</span>{" "}
-                  <span className="text-gray-900 dark:text-white font-medium">
-                    {selectedBooking.bookedAt ? formatDateTime(selectedBooking.bookedAt) : "N/A"}
-                  </span>
-                </div>
-                <div><span className="font-medium">Payment:</span> {selectedBooking.payment ? `${(selectedBooking.payment.amountCents / 100).toFixed(2)} ${selectedBooking.payment.currency}` : "No payment"}</div>
-                <div><span className="font-medium">Payment Status:</span> {selectedBooking.payment?.status || "N/A"}</div>
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                {[
+                  ["Flow", isDuoTrialBooking(selectedBooking) ? "Duo Trial (1-for-1)" : isZumFamiliaBooking(selectedBooking) ? "ZumFamilia" : "Trial Booking", false],
+                  ["Status", selectedBooking.status, false],
+                  ["Primary Contact", getPrimaryContactName(selectedBooking), false],
+                  ["Primary Email", getPrimaryContactEmail(selectedBooking), false],
+                  ["Primary Phone", getPrimaryContactPhone(selectedBooking) || "N/A", false],
+                  [isKidBooking(selectedBooking) ? "Child Name" : "Guest Name", selectedBooking.guestName, false],
+                  ["Date of Birth", selectedBooking.guestDateOfBirth || "N/A", false],
+                  ["Class", selectedBooking.class?.title || "N/A", false],
+                  ["Class Time", getDisplayScheduleTime(selectedBooking), true],
+                  ["Booked On", selectedBooking.bookedAt ? formatDateTime(selectedBooking.bookedAt) : "N/A", true],
+                  ["Payment", selectedBooking.payment ? `${(selectedBooking.payment.amountCents / 100).toFixed(2)} ${selectedBooking.payment.currency}` : "No payment", false],
+                  ["Payment Status", selectedBooking.payment?.status || "N/A", false],
+                ].map(([label, value, wide]) => (
+                  <div key={String(label)} className={`min-w-0 rounded-2xl bg-neutral-50 px-3 py-2.5 dark:bg-white/5 ${wide ? "col-span-2" : ""}`}>
+                    <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-neutral-400">{label}</p>
+                    <p className="mt-0.5 break-words font-medium text-neutral-950 dark:text-white">{value}</p>
+                  </div>
+                ))}
               </div>
 
               {/* 2nd Guest (Companion) Box */}
@@ -1130,12 +1120,12 @@ export default function TrialBookingsPage() {
                 const bookingP2 = selectedBooking ? getParticipant2(selectedBooking) : null;
                 if (bookingP2) {
                   return (
-                    <div className="rounded-lg border border-lime-300 dark:border-lime-700 p-3.5 bg-lime-50 dark:bg-lime-950/40 space-y-2">
-                      <div className="font-bold text-lime-900 dark:text-lime-300 flex items-center justify-between text-xs uppercase tracking-wide">
-                        <span className="flex items-center gap-1.5"><UserPlus className="w-4 h-4" /> 2nd Guest (1-for-1 Companion) Details</span>
-                        <span className="rounded bg-lime-200 dark:bg-lime-900/60 text-lime-900 dark:text-lime-200 px-2 py-0.5 text-[10px]">Attached</span>
+                    <div className="space-y-2 rounded-[22px] bg-[#E4F56C] px-4 py-3 text-neutral-950">
+                      <div className="flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.14em]">
+                        <span className="flex items-center gap-1.5"><UserPlus className="w-4 h-4" /> 2nd Guest</span>
+                        <span className="shrink-0 rounded-full bg-neutral-950 px-2 py-0.5 text-[10px] text-[#E4F56C]">Attached</span>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs md:grid-cols-4">
                         <div><span className="font-semibold text-gray-900 dark:text-white">Companion Name:</span> {bookingP2.name}</div>
                         <div><span className="font-semibold text-gray-900 dark:text-white">Companion Phone:</span> {bookingP2.phone || "N/A"}</div>
                         <div>
@@ -1157,22 +1147,22 @@ export default function TrialBookingsPage() {
               })()}
 
               {selectedBooking.cancellationReason && (
-                <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-800/50">
-                  <div className="font-medium mb-2 flex items-center gap-2">
+                <div className="rounded-[22px] bg-neutral-950 p-4 text-white">
+                  <div className="mb-2 flex items-center gap-2 font-medium">
                     <span>Waiver / Booking Notes</span>
                     {/PENDING/.test(selectedBooking.cancellationReason) ? (
-                      <span className="rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                      <span className="rounded-full bg-[#E4F56C] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-950">
                         Not signed yet
                       </span>
                     ) : (
-                      <span className="rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                      <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
                         Signed
                       </span>
                     )}
                   </div>
-                  <p className="text-gray-700 dark:text-gray-300 break-words text-xs">{selectedBooking.cancellationReason}</p>
+                  <p className="break-words text-xs text-white/80">{selectedBooking.cancellationReason}</p>
                   {/PENDING/.test(selectedBooking.cancellationReason) && (
-                    <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                    <p className="mt-2 text-xs text-[#E4F56C]">
                       Guest agreed to the waiver before paying but hasn&apos;t completed NRIC + signature. Collect this at check-in.
                     </p>
                   )}
@@ -1180,8 +1170,8 @@ export default function TrialBookingsPage() {
               )}
 
               {isZumFamiliaBooking(selectedBooking) && (
-                <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-800/50">
-                  <div className="font-medium mb-2">ZumFamilia Extras</div>
+                <div className="rounded-[22px] bg-neutral-50 p-4 dark:bg-white/5">
+                  <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">ZumFamilia Extras</div>
                   <div><span className="font-medium">Package:</span> {selectedBooking.payment?.metadata?.package_label || selectedBooking.payment?.metadata?.package_option || "N/A"}</div>
                   <div><span className="font-medium">Custom Schedule:</span> {selectedBooking.payment?.metadata?.custom_schedule || "N/A"}</div>
                   <div><span className="font-medium">Notes:</span> {selectedBooking.payment?.metadata?.notes || "N/A"}</div>
@@ -1189,28 +1179,28 @@ export default function TrialBookingsPage() {
               )}
             </div>
           )}
-          <div className="flex justify-between items-center mt-6">
-            <Button
-              size="sm"
-              className="bg-lime-600 hover:bg-lime-700 text-white flex items-center gap-1.5 border-0 font-medium"
+          <div className="mt-6 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#E4F56C] px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-[#d5e45c]"
               onClick={() => {
                 setDetailsModalOpen(false);
                 if (selectedBooking) handleOpenCompanionModal(selectedBooking);
               }}
             >
-              <UserPlus className="w-4 h-4" />
-              + Add / Edit 2nd Guest
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
+              <UserPlus className="h-4 w-4" />
+              Add / Edit 2nd Guest
+            </button>
+            <button
+              type="button"
+              className="rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-50"
               onClick={() => {
                 setDetailsModalOpen(false);
                 setSelectedBooking(null);
               }}
             >
               Close
-            </Button>
+            </button>
           </div>
         </div>
       </Modal>
@@ -1223,43 +1213,44 @@ export default function TrialBookingsPage() {
           setCancelReason("");
           setCancelBookingId(null);
         }}
-        className="max-w-[480px] w-full"
+        className="max-w-[480px] w-full !rounded-[28px] !border-neutral-200/80"
       >
         <div className="p-6">
-          <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+          <h4 className="mb-2 text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">
             Cancel Booking
           </h4>
-          <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed mb-4">
+          <p className="mb-4 text-sm text-neutral-500">
             Add a reason for cancelling so you can track follow-up.
           </p>
-          
+
           <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="mb-2 block text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">
               Cancellation reason
             </label>
             <textarea
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
               placeholder="e.g. Called - not interested, Emailed - no response..."
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none"
+              className="w-full resize-none rounded-[22px] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
               rows={3}
             />
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <Button
-              size="sm"
-              variant="outline"
+          <div className="flex items-center justify-end gap-3">
+            <button
+              type="button"
+              className="rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-50"
               onClick={() => {
                 setCancelModalOpen(false);
                 setCancelReason("");
                 setCancelBookingId(null);
               }}
             >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
+              Keep booking
+            </button>
+            <button
+              type="button"
+              className="rounded-full bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
               onClick={() => {
                 if (cancelBookingId) {
                   handleStatusUpdate(
@@ -1272,10 +1263,9 @@ export default function TrialBookingsPage() {
                   setCancelBookingId(null);
                 }
               }}
-              className="bg-orange-600 hover:bg-orange-700 text-white border-0"
             >
               Confirm Cancellation
-            </Button>
+            </button>
           </div>
         </div>
       </Modal>
@@ -1288,37 +1278,39 @@ export default function TrialBookingsPage() {
           setDeleteBookingId(null);
           setDeleteBookingName("");
         }}
-        className="max-w-[420px] w-full"
+        className="max-w-[420px] w-full !rounded-[28px] !border-neutral-200/80"
       >
         <div className="p-6">
-          <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-[#E4F56C]">
+            <Trash2 className="h-5 w-5" />
+          </div>
+          <h4 className="mb-2 text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">
             Delete Booking
           </h4>
-          <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed mb-6">
-            Are you sure you want to delete the booking for <strong className="text-gray-900 dark:text-white">{deleteBookingName}</strong>? 
-            This cannot be undone.
+          <p className="mb-6 text-sm leading-relaxed text-neutral-500">
+            Delete the booking for <strong className="text-neutral-950 dark:text-white">{deleteBookingName}</strong>? This cannot be undone.
           </p>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <Button
-              size="sm"
-              variant="outline"
+          <div className="flex items-center justify-end gap-3">
+            <button
+              type="button"
+              className="rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-50"
               onClick={() => {
                 setDeleteModalOpen(false);
                 setDeleteBookingId(null);
                 setDeleteBookingName("");
               }}
             >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
+              Keep booking
+            </button>
+            <button
+              type="button"
               onClick={handleDelete}
               disabled={deletingId !== null}
-              className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white border-0"
+              className="rounded-full bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
             >
               {deletingId ? "Deleting..." : "Delete Booking"}
-            </Button>
+            </button>
           </div>
         </div>
       </Modal>
@@ -1330,16 +1322,18 @@ export default function TrialBookingsPage() {
           setCompanionModalOpen(false);
           setCompanionBooking(null);
         }}
-        className="max-w-[500px] w-full"
+        className="max-w-[500px] w-full !rounded-[28px] !border-neutral-200/80"
       >
         <form onSubmit={handleAddCompanionSubmit} className="p-6">
-          <div className="flex items-center gap-2 mb-2 text-lime-700 dark:text-lime-400">
-            <UserPlus className="w-5 h-5" />
-            <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Add 2nd Guest (1-for-1 Companion)
+          <div className="mb-2 flex items-center gap-2">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E4F56C] text-neutral-950">
+              <UserPlus className="h-4 w-4" />
+            </span>
+            <h4 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">
+              Add 2nd Guest
             </h4>
           </div>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-4">
+          <p className="mb-4 text-sm text-neutral-500">
             Attaching a 2nd participant for <strong>{companionBooking?.guestName}</strong>&apos;s booking on{" "}
             <strong>{companionBooking?.class?.title || "Class"}</strong>.
           </p>
@@ -1355,7 +1349,7 @@ export default function TrialBookingsPage() {
                 placeholder="e.g. Sarah Tan"
                 value={companionForm.guestName}
                 onChange={(e) => setCompanionForm({ ...companionForm, guestName: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-lime-500 text-sm"
+                className="h-12 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm text-neutral-950 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
               />
             </div>
 
@@ -1369,7 +1363,7 @@ export default function TrialBookingsPage() {
                 placeholder="e.g. 91234567"
                 value={companionForm.guestPhone}
                 onChange={(e) => setCompanionForm({ ...companionForm, guestPhone: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-lime-500 text-sm"
+                className="h-12 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm text-neutral-950 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
               />
             </div>
 
@@ -1378,27 +1372,40 @@ export default function TrialBookingsPage() {
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Date of Birth
                 </label>
-                <input
-                  type="date"
+                <StudioDate
+                  block
+                  clearable
+                  ariaLabel="Date of birth"
+                  placeholder="Date of birth"
                   value={companionForm.guestDateOfBirth}
-                  onChange={(e) => setCompanionForm({ ...companionForm, guestDateOfBirth: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-lime-500 text-sm"
+                  onChange={(value) => setCompanionForm({ ...companionForm, guestDateOfBirth: value })}
                 />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Gender
                 </label>
-                <select
-                  value={companionForm.gender}
-                  onChange={(e) => setCompanionForm({ ...companionForm, gender: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-lime-500 text-sm"
-                >
-                  <option value="female">Female</option>
-                  <option value="male">Male</option>
-                  <option value="other">Other</option>
-                  <option value="prefer_not_to_say">Prefer not to say</option>
-                </select>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {[
+                    { value: "female", label: "Female" },
+                    { value: "male", label: "Male" },
+                    { value: "other", label: "Other" },
+                    { value: "prefer_not_to_say", label: "Prefer not to say" },
+                  ].map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setCompanionForm({ ...companionForm, gender: option.value })}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                        companionForm.gender === option.value
+                          ? "bg-neutral-950 text-white"
+                          : "bg-neutral-100 text-neutral-600"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -1411,7 +1418,7 @@ export default function TrialBookingsPage() {
                 placeholder="e.g. companion@email.com (optional)"
                 value={companionForm.guestEmail}
                 onChange={(e) => setCompanionForm({ ...companionForm, guestEmail: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-lime-500 text-sm"
+                className="h-12 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm text-neutral-950 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
               />
               <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
                 If left blank, a guest placeholder email will be auto-generated.
@@ -1419,26 +1426,24 @@ export default function TrialBookingsPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-100 dark:border-gray-800 mt-6">
-            <Button
+          <div className="mt-6 flex items-center justify-end gap-3">
+            <button
               type="button"
-              size="sm"
-              variant="outline"
+              className="rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-50"
               onClick={() => {
                 setCompanionModalOpen(false);
                 setCompanionBooking(null);
               }}
             >
               Cancel
-            </Button>
-            <Button
+            </button>
+            <button
               type="submit"
-              size="sm"
               disabled={submittingCompanion}
-              className="bg-lime-600 hover:bg-lime-700 text-white border-0 font-medium"
+              className="rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40"
             >
-              {submittingCompanion ? "Saving..." : "Add Companion Booking"}
-            </Button>
+              {submittingCompanion ? "Saving..." : "Add Companion"}
+            </button>
           </div>
         </form>
       </Modal>

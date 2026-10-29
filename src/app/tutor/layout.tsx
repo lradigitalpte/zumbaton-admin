@@ -51,7 +51,7 @@ export default function TutorLayout({
         {/* Header */}
         <AppHeader />
         {/* Page Content */}
-        <div className="p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6">{children}</div>
+        <div className="mx-auto max-w-(--breakpoint-2xl) p-3 sm:p-4 md:p-6">{children}</div>
       </div>
       {/* Tutor Onboarding Tour */}
       <TutorOnboardingTour />

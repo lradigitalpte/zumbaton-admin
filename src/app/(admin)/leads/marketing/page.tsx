@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import LeadSendComposer from "@/components/leads/LeadSendComposer";
+import StudioMenu from "@/components/ui/StudioMenu";
 import LeadSelectionBar from "@/components/leads/LeadSelectionBar";
 import LeadTemplateManager from "@/components/leads/LeadTemplateManager";
 import LeadWhatsAppManual from "@/components/leads/LeadWhatsAppManual";
@@ -63,22 +63,26 @@ const fmt = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("en-SG", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 
 const statusClass: Record<string, string> = {
-  queued: "bg-blue-100 text-blue-700",
-  processing: "bg-amber-100 text-amber-700",
-  completed: "bg-emerald-100 text-emerald-700",
-  failed: "bg-red-100 text-red-700",
-  pending: "bg-gray-100 text-gray-600",
-  sent: "bg-emerald-100 text-emerald-700",
-  delivered: "bg-teal-100 text-teal-700",
-  opened: "bg-purple-100 text-purple-700",
-  clicked: "bg-indigo-100 text-indigo-700",
-  skipped: "bg-slate-100 text-slate-600",
-  new: "bg-blue-100 text-blue-700",
-  attempted_contact: "bg-orange-100 text-orange-700",
-  contacted: "bg-amber-100 text-amber-700",
-  follow_up: "bg-purple-100 text-purple-700",
-  converted: "bg-emerald-100 text-emerald-700",
+  queued: "bg-neutral-100 text-neutral-700",
+  processing: "bg-neutral-950 text-[#E4F56C]",
+  completed: "bg-neutral-950 text-white",
+  failed: "bg-red-50 text-red-600",
+  pending: "bg-neutral-100 text-neutral-500",
+  sent: "bg-[#E4F56C] text-neutral-950",
+  delivered: "bg-[#E4F56C]/70 text-neutral-950",
+  opened: "bg-neutral-800 text-white",
+  clicked: "bg-neutral-950 text-white",
+  skipped: "bg-neutral-100 text-neutral-500",
+  new: "bg-[#E4F56C] text-neutral-950",
+  attempted_contact: "bg-neutral-100 text-neutral-700",
+  contacted: "bg-neutral-200 text-neutral-950",
+  follow_up: "bg-neutral-950 text-[#E4F56C]",
+  converted: "bg-neutral-950 text-white",
 };
+const card = "rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800";
+const field = "h-12 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm text-neutral-950 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white";
+const pillOn = "rounded-full bg-neutral-950 px-3.5 py-2 text-xs font-semibold text-white";
+const pillOff = "rounded-full bg-neutral-100 px-3.5 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70";
 
 async function downloadExport(endpoint: string, filename: string) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -147,6 +151,8 @@ export default function LeadMarketingPage() {
   const [whatsappLeadIds, setWhatsappLeadIds] = useState<string[]>([]);
   const [whatsappLeads, setWhatsappLeads] = useState<{ id: string; name: string; phone: string }[] | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<MarketingTab>("leads");
+  const [campaignPage, setCampaignPage] = useState(1);
+  const campaignPageSize = 8;
 
   const filterParams = useCallback(() => {
     const params = new URLSearchParams();
@@ -351,14 +357,13 @@ export default function LeadMarketingPage() {
   const pageAllSelected = previewLeads.length > 0 && previewLeads.every((l) => selected.has(l.id));
 
   return (
-    <div className="space-y-6">
-      <PageBreadCrumb pageTitle="Lead Marketing" />
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+    <div className="min-w-0 space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Lead Marketing</h1>
-          <p className="mt-1 text-sm text-gray-500">Segment leads, select recipients, compose from templates, then review and send.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">Lead Marketing</h1>
+          <p className="mt-1 text-sm text-neutral-500 dark:text-white/50">Segment leads, select recipients, compose from templates, then review and send.</p>
         </div>
-        <Link href="/leads" className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold">← Back to Leads CRM</Link>
+        <Link href="/leads" className="rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white">Back to Leads</Link>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -374,15 +379,11 @@ export default function LeadMarketingPage() {
               key={tab.value}
               type="button"
               onClick={() => setActiveTab(tab.value)}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
-                activeTab === tab.value
-                  ? "bg-indigo-600 text-white shadow-md"
-                  : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-              }`}
+              className={`inline-flex items-center gap-2 ${activeTab === tab.value ? pillOn : pillOff}`}
             >
               {tab.label}
               {count !== null && (
-                <span className={`rounded-full px-2 py-0.5 text-xs ${activeTab === tab.value ? "bg-white/20" : "bg-gray-100 dark:bg-gray-700"}`}>
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${activeTab === tab.value ? "bg-[#E4F56C] text-neutral-950" : "bg-white text-neutral-500 dark:bg-neutral-950 dark:text-white/70"}`}>
                   {count}
                 </span>
               )}
@@ -392,51 +393,34 @@ export default function LeadMarketingPage() {
       </div>
 
       {(campaignsError || previewError) && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+        <div className="rounded-[22px] border border-[#d5e45c] bg-[#E4F56C]/40 px-4 py-3 text-sm text-neutral-950">
           <p className="font-semibold">Database migration required</p>
           <p className="mt-1">
             {campaignsError || previewError} — run{" "}
-            <code className="rounded bg-amber-100 px-1 dark:bg-amber-900">20260723_lead_outreach_templates.sql</code>{" "}
+            <code className="rounded-full bg-neutral-950 px-2 py-0.5 text-xs text-[#E4F56C]">20260723_lead_outreach_templates.sql</code>{" "}
             in the Supabase SQL editor, then refresh this page.
           </p>
         </div>
       )}
 
       {activeTab === "leads" && (
-      <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+      <div className={`${card} p-5`}>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
           <label className="xl:col-span-2">
-            <span className="mb-1 block text-xs font-semibold uppercase text-gray-400">Search</span>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name, phone, email or campaign" className="w-full rounded-lg border px-3 py-2 text-sm dark:bg-gray-700" />
+            <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Search</span>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name, phone, email or campaign" className={field} />
           </label>
           <label>
-            <span className="mb-1 block text-xs font-semibold uppercase text-gray-400">Source</span>
-            <select value={channel} onChange={(e) => setChannel(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm dark:bg-gray-700">
-              <option value="all">All sources</option>
-              <option value="meta">Meta (FB + IG)</option>
-              <option value="tiktok">TikTok</option>
-              <option value="website">Website</option>
-              <option value="manual">Manual</option>
-            </select>
+            <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Source</span>
+            <StudioMenu value={channel} onChange={setChannel} placeholder="All sources" options={[{ value: "all", label: "All sources" }, { value: "meta", label: "Meta (FB + IG)" }, { value: "tiktok", label: "TikTok" }, { value: "website", label: "Website" }, { value: "manual", label: "Manual" }]} />
           </label>
           <label>
-            <span className="mb-1 block text-xs font-semibold uppercase text-gray-400">Status</span>
-            <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm dark:bg-gray-700">
-              <option value="all">All statuses</option>
-              <option value="new">New</option>
-              <option value="attempted_contact">Attempted contact</option>
-              <option value="contacted">Contacted</option>
-              <option value="follow_up">Follow-up</option>
-              <option value="converted">Converted</option>
-            </select>
+            <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Status</span>
+            <StudioMenu value={status} onChange={setStatus} placeholder="All statuses" options={[{ value: "all", label: "All statuses" }, { value: "new", label: "New" }, { value: "attempted_contact", label: "Attempted contact" }, { value: "contacted", label: "Contacted" }, { value: "follow_up", label: "Follow-up" }, { value: "converted", label: "Converted" }]} />
           </label>
           <label>
-            <span className="mb-1 block text-xs font-semibold uppercase text-gray-400">Visibility</span>
-            <select value={visibility} onChange={(e) => setVisibility(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm dark:bg-gray-700">
-              <option value="active">Active only</option>
-              <option value="archived">Archived</option>
-              <option value="all">All</option>
-            </select>
+            <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Visibility</span>
+            <StudioMenu value={visibility} onChange={setVisibility} placeholder="Active only" options={[{ value: "active", label: "Active only" }, { value: "archived", label: "Archived" }, { value: "all", label: "All" }]} />
           </label>
           <label className="flex flex-col justify-end gap-2">
             <span className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hasEmail} onChange={(e) => setHasEmail(e.target.checked)} /> Has email</span>
@@ -453,41 +437,41 @@ export default function LeadMarketingPage() {
               ["Unique phones", previewCounts.uniquePhones],
               ["Unique emails", previewCounts.uniqueEmails],
             ].map(([label, value]) => (
-              <div key={label} className="rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-900/50">
-                <div className="text-[10px] font-bold uppercase text-gray-400">{label}</div>
-                <div className="text-lg font-bold text-gray-900 dark:text-white">{value}</div>
+              <div key={label} className="rounded-[22px] bg-neutral-50 px-3 py-3 dark:bg-white/5">
+                <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-neutral-400">{label}</div>
+                <div className="mt-1 text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">{value}</div>
               </div>
             ))}
           </div>
         )}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button onClick={togglePage} className="rounded-lg border px-3 py-1.5 text-sm" disabled={!previewLeads.length}>
+          <button onClick={togglePage} className={pillOff} disabled={!previewLeads.length}>
             {pageAllSelected ? "Deselect page" : "Select page"}
           </button>
           <button
             onClick={selectAllMatching}
             disabled={selectingAll || !previewTotal}
-            className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50"
+            className={`${pillOn} disabled:opacity-50`}
           >
             {selectingAll ? "Selecting…" : `Select all ${previewTotal} matching`}
           </button>
           {selected.size > 0 && (
-            <button onClick={() => setSelected(new Set())} className="rounded-lg px-3 py-1.5 text-sm text-red-600">
+            <button onClick={() => setSelected(new Set())} className="rounded-full px-3.5 py-2 text-xs font-semibold text-red-600">
               Clear selection
             </button>
           )}
         </div>
 
-        <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+        <div className="mt-4 overflow-hidden rounded-[22px] border border-neutral-200/80 dark:border-white/10">
           {previewLoading ? (
-            <p className="p-8 text-center text-sm text-gray-500">Loading preview…</p>
+            <p className="p-8 text-center text-sm text-neutral-500">Loading preview…</p>
           ) : !previewLeads.length ? (
-            <p className="p-8 text-center text-sm text-gray-500">No leads match these filters.</p>
+            <p className="p-8 text-center text-sm text-neutral-500">No leads match these filters.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b bg-gray-50 text-xs uppercase text-gray-500 dark:bg-gray-900/40">
+              <table className="w-full min-w-[860px] text-left text-sm">
+                <thead className="border-b border-neutral-200 text-[11px] uppercase tracking-[0.14em] text-neutral-400 dark:border-white/10">
                   <tr>
                     <th className="w-12 px-4 py-3">
                       <input
@@ -495,7 +479,7 @@ export default function LeadMarketingPage() {
                         aria-label="Select page"
                         checked={pageAllSelected}
                         onChange={togglePage}
-                        className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+                        className="h-4 w-4 accent-neutral-950"
                       />
                     </th>
                     <th className="px-4 py-3">Name</th>
@@ -507,11 +491,11 @@ export default function LeadMarketingPage() {
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                <tbody className="divide-y divide-neutral-100 dark:divide-white/10">
                   {previewLeads.map((lead) => (
                     <tr
                       key={lead.id}
-                      className={selected.has(lead.id) ? "bg-indigo-50/80 dark:bg-indigo-950/20" : "hover:bg-gray-50 dark:hover:bg-gray-700/30"}
+                      className={selected.has(lead.id) ? "bg-[#E4F56C]/25" : "hover:bg-neutral-50 dark:hover:bg-white/5"}
                     >
                       <td className="px-4 py-3">
                         <input
@@ -519,33 +503,33 @@ export default function LeadMarketingPage() {
                           aria-label={`Select ${lead.name}`}
                           checked={selected.has(lead.id)}
                           onChange={() => toggleLead(lead.id)}
-                          className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+                          className="h-4 w-4 accent-neutral-950"
                         />
                       </td>
-                      <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{lead.name || "—"}</td>
-                      <td className="px-4 py-3 text-gray-600">{lead.phone || <span className="text-gray-400">No phone</span>}</td>
-                      <td className="px-4 py-3 text-gray-600">{lead.email || <span className="text-gray-400">No email</span>}</td>
+                      <td className="px-4 py-3 font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{lead.name || "—"}</td>
+                      <td className="px-4 py-3 text-neutral-600">{lead.phone || <span className="text-neutral-400">No phone</span>}</td>
+                      <td className="px-4 py-3 text-neutral-600">{lead.email || <span className="text-neutral-400">No email</span>}</td>
                       <td className="px-4 py-3">
-                        <div className="flex gap-1.5 text-xs">
-                          <span title={lead.canEmail ? "Can email" : "No email"} className={lead.canEmail ? "text-emerald-600" : "text-gray-300"}>✉</span>
-                          <span title={lead.canWhatsApp ? "Can WhatsApp" : "No phone"} className={lead.canWhatsApp ? "text-emerald-600" : "text-gray-300"}>💬</span>
+                        <div className="flex gap-1.5 text-[11px] font-semibold">
+                          <span title={lead.canEmail ? "Can email" : "No email"} className={`rounded-full px-2 py-0.5 ${lead.canEmail ? "bg-[#E4F56C] text-neutral-950" : "bg-neutral-100 text-neutral-400"}`}>Email</span>
+                          <span title={lead.canWhatsApp ? "Can WhatsApp" : "No phone"} className={`rounded-full px-2 py-0.5 ${lead.canWhatsApp ? "bg-neutral-950 text-white" : "bg-neutral-100 text-neutral-400"}`}>WA</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3"><span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold uppercase">{lead.source}</span></td>
-                      <td className="px-4 py-3"><span className={`rounded px-2 py-0.5 text-xs font-semibold capitalize ${statusClass[lead.status] || "bg-gray-100"}`}>{lead.status.replaceAll("_", " ")}</span></td>
+                      <td className="px-4 py-3"><span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold uppercase text-neutral-700 dark:bg-white/10 dark:text-white">{lead.source}</span></td>
+                      <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${statusClass[lead.status] || "bg-neutral-100"}`}>{lead.status.replaceAll("_", " ")}</span></td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1">
                           <button
                             disabled={!lead.canEmail || !emailStatus?.configured}
                             onClick={() => openComposer([lead.id])}
-                            className="rounded bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700 disabled:opacity-40"
+                            className="rounded-full bg-neutral-950 px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
                           >
                             Email
                           </button>
                           <button
                             disabled={!lead.canWhatsApp}
                             onClick={() => openWhatsApp([lead.id], [{ id: lead.id, name: lead.name, phone: lead.phone }])}
-                            className="rounded bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-40"
+                            className="rounded-full bg-[#E4F56C] px-2.5 py-1 text-[11px] font-semibold text-neutral-950 disabled:opacity-40"
                           >
                             WhatsApp
                           </button>
@@ -560,24 +544,24 @@ export default function LeadMarketingPage() {
         </div>
 
         {!previewLoading && previewTotal > 0 && (
-          <div className="mt-3 flex items-center justify-between text-sm text-gray-500">
+          <div className="mt-3 flex items-center justify-between text-sm text-neutral-500">
             <span>Showing {(previewPage - 1) * pageSize + 1}–{Math.min(previewPage * pageSize, previewTotal)} of {previewTotal}</span>
-            <div className="flex gap-2">
-              <button disabled={previewPage === 1} onClick={() => setPreviewPage((p) => Math.max(1, p - 1))} className="rounded-lg border px-3 py-1 disabled:opacity-40">Previous</button>
-              <span>Page {previewPage} of {previewPageCount}</span>
-              <button disabled={previewPage >= previewPageCount} onClick={() => setPreviewPage((p) => p + 1)} className="rounded-lg border px-3 py-1 disabled:opacity-40">Next</button>
+            <div className="flex items-center gap-2">
+              <button disabled={previewPage === 1} onClick={() => setPreviewPage((p) => Math.max(1, p - 1))} className="rounded-full border border-neutral-200 px-3 py-1.5 font-semibold disabled:opacity-40">Previous</button>
+              <span className="font-medium text-neutral-950 dark:text-white">Page {previewPage} of {previewPageCount}</span>
+              <button disabled={previewPage >= previewPageCount} onClick={() => setPreviewPage((p) => p + 1)} className="rounded-full border border-neutral-200 px-3 py-1.5 font-semibold disabled:opacity-40">Next</button>
             </div>
           </div>
         )}
 
-        <div className="mt-5 flex flex-wrap gap-3 border-t border-gray-100 pt-5 dark:border-gray-700">
-          <button disabled={!!exporting || !previewCounts?.uniquePhones} onClick={() => runExport("phones")} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+        <div className="mt-5 flex flex-wrap gap-2 border-t border-neutral-100 pt-5 dark:border-white/10">
+          <button disabled={!!exporting || !previewCounts?.uniquePhones} onClick={() => runExport("phones")} className="rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
             {exporting === "phones" ? "Exporting…" : `Export phones (${previewCounts?.uniquePhones || 0})`}
           </button>
-          <button disabled={!!exporting || !previewCounts?.uniqueEmails} onClick={() => runExport("emails")} className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          <button disabled={!!exporting || !previewCounts?.uniqueEmails} onClick={() => runExport("emails")} className="rounded-full bg-[#E4F56C] px-4 py-2.5 text-sm font-semibold text-neutral-950 disabled:opacity-50">
             {exporting === "emails" ? "Exporting…" : `Export emails (${previewCounts?.uniqueEmails || 0})`}
           </button>
-          <button disabled={!!exporting || !previewCounts?.total} onClick={() => runExport("full")} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold disabled:opacity-50">
+          <button disabled={!!exporting || !previewCounts?.total} onClick={() => runExport("full")} className="rounded-full border border-neutral-200 px-4 py-2.5 text-sm font-semibold disabled:opacity-50">
             {exporting === "full" ? "Exporting…" : `Export full CSV (${previewCounts?.total || 0})`}
           </button>
         </div>
@@ -596,59 +580,81 @@ export default function LeadMarketingPage() {
 
       {activeTab === "templates" && <LeadTemplateManager />}
 
-      {activeTab === "campaigns" && (
-      <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-        <div className="flex items-center justify-between">
+      {activeTab === "campaigns" && (() => {
+        const campaignPageCount = Math.max(1, Math.ceil(campaigns.length / campaignPageSize));
+        const page = Math.min(campaignPage, campaignPageCount);
+        const visibleCampaigns = campaigns.slice((page - 1) * campaignPageSize, page * campaignPageSize);
+        return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Follow-up campaigns</h2>
-            <p className="mt-1 text-xs text-gray-500">Large sends go out slowly (~10 emails/batch). Use View delivery → Retry failed or Send pending now.</p>
+            <h2 className="text-lg font-semibold text-neutral-950 dark:text-white">Follow-up campaigns</h2>
+            <p className="mt-1 text-sm text-neutral-500">Large sends go out slowly. Open a campaign to retry failed messages or send what is still pending.</p>
           </div>
-          <button onClick={loadCampaigns} className="text-sm text-indigo-600">Refresh</button>
+          <button onClick={loadCampaigns} className={pillOff}>Refresh</button>
         </div>
         {loading ? (
-          <p className="mt-4 text-sm text-gray-500">Loading campaigns…</p>
+          <div className={`${card} p-12 text-center text-sm text-neutral-500`}>Loading campaigns…</div>
         ) : !campaigns.length ? (
-          <p className="mt-4 text-sm text-gray-500">No campaigns yet. Select leads on the Leads tab and use Compose email to start a follow-up.</p>
+          <div className={`${card} p-12 text-center text-sm text-neutral-500`}>No campaigns yet. Select leads on the Leads tab and compose an email to start a follow-up.</div>
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b text-xs uppercase text-gray-400">
-                <tr>
-                  <th className="py-2">Campaign</th>
-                  <th className="py-2">Channels</th>
-                  <th className="py-2">Status</th>
-                  <th className="py-2">Sent</th>
-                  <th className="py-2">Opened</th>
-                  <th className="py-2">Failed</th>
-                  <th className="py-2">Skipped</th>
-                  <th className="py-2">Created</th>
-                  <th className="py-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {campaigns.map((c) => (
-                  <tr key={c.id}>
-                    <td className="py-3 font-medium">{c.name}</td>
-                    <td className="py-3">{c.channels?.join(", ") || "—"}</td>
-                    <td className="py-3"><span className={`rounded px-2 py-0.5 text-xs font-semibold capitalize ${statusClass[c.status] || ""}`}>{c.status}</span></td>
-                    <td className="py-3">{c.sent_count}/{c.total_count}</td>
-                    <td className="py-3">
-                      {c.channels?.includes("email")
-                        ? `${c.opened_count ?? 0}/${c.sent_count}`
-                        : "—"}
-                    </td>
-                    <td className="py-3">{c.failed_count}</td>
-                    <td className="py-3">{c.skipped_count}</td>
-                    <td className="py-3 text-xs text-gray-500">{fmt(c.created_at)}</td>
-                    <td className="py-3"><button onClick={() => openCampaign(c.id)} className="text-xs font-semibold text-indigo-600">View delivery</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="space-y-3">
+              {visibleCampaigns.map((c) => {
+                const sentPct = c.total_count > 0 ? Math.round((c.sent_count / c.total_count) * 100) : 0;
+                const openPct = c.sent_count > 0 ? Math.round(((c.opened_count ?? 0) / c.sent_count) * 100) : 0;
+                return (
+                  <article key={c.id} className={`${card} p-5`}>
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold capitalize text-neutral-700 dark:bg-white/10 dark:text-white">{c.channels?.join(", ") || "—"}</span>
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${statusClass[c.status] || "bg-neutral-100"}`}>{c.status}</span>
+                          {c.failed_count > 0 && <span className="rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600">{c.failed_count} failed</span>}
+                        </div>
+                        <h3 className="mt-2 text-lg font-semibold text-neutral-950 dark:text-white">{c.name}</h3>
+                        <p className="text-sm text-neutral-500">{fmt(c.created_at)}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:w-[420px]">
+                        <div className="rounded-2xl bg-neutral-50 px-3 py-2 dark:bg-white/5">
+                          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-neutral-400">Sent</p>
+                          <p className="mt-1 text-lg font-semibold text-neutral-950 dark:text-white">{c.sent_count}<span className="text-sm font-medium text-neutral-400">/{c.total_count}</span></p>
+                        </div>
+                        <div className="rounded-2xl bg-[#E4F56C] px-3 py-2 text-neutral-950">
+                          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-neutral-950/60">Opened</p>
+                          <p className="mt-1 text-lg font-semibold">{c.channels?.includes("email") ? `${openPct}%` : "—"}</p>
+                        </div>
+                        <div className="rounded-2xl bg-neutral-950 px-3 py-2 text-white">
+                          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/45">Failed</p>
+                          <p className="mt-1 text-lg font-semibold">{c.failed_count}</p>
+                        </div>
+                        <div className="rounded-2xl bg-neutral-50 px-3 py-2 dark:bg-white/5">
+                          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-neutral-400">Skipped</p>
+                          <p className="mt-1 text-lg font-semibold text-neutral-950 dark:text-white">{c.skipped_count}</p>
+                        </div>
+                      </div>
+                      <button onClick={() => openCampaign(c.id)} className="shrink-0 rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white">View delivery</button>
+                    </div>
+                    <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-white/10">
+                      <div className="h-full rounded-full bg-neutral-950 dark:bg-[#E4F56C]" style={{ width: `${sentPct}%` }} />
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+            <div className={`${card} flex flex-col items-center justify-between gap-3 px-5 py-4 text-sm sm:flex-row`}>
+              <span className="text-neutral-500">Showing {(page - 1) * campaignPageSize + 1}–{Math.min(page * campaignPageSize, campaigns.length)} of {campaigns.length}</span>
+              <div className="flex items-center gap-2">
+                <button disabled={page === 1} onClick={() => setCampaignPage(page - 1)} className="rounded-full border border-neutral-200 px-3 py-1.5 font-semibold disabled:opacity-40">Previous</button>
+                <span className="font-medium text-neutral-950 dark:text-white">Page {page} of {campaignPageCount}</span>
+                <button disabled={page === campaignPageCount} onClick={() => setCampaignPage(page + 1)} className="rounded-full border border-neutral-200 px-3 py-1.5 font-semibold disabled:opacity-40">Next</button>
+              </div>
+            </div>
+          </>
         )}
       </div>
-      )}
+        );
+      })()}
 
       {composerOpen && (
         <LeadSendComposer
@@ -676,12 +682,12 @@ export default function LeadMarketingPage() {
       )}
 
       {activeCampaign && (
-        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
-          <button aria-label="Close" className="fixed inset-0 bg-gray-950/55" onClick={() => setActiveCampaign(null)} />
-          <section className="relative max-h-[85vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4">
+          <button aria-label="Close" className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setActiveCampaign(null)} />
+          <section className="relative max-h-[85vh] w-full max-w-5xl overflow-y-auto rounded-[28px] border border-neutral-200/80 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-gray-800">
             <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-bold">Delivery log</h3>
+                <h3 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">Delivery log</h3>
                 <p className="mt-1 text-xs text-gray-500">
                   Sends ~10 per batch, ~1.5s apart. Cron processes pending every 2 minutes.
                 </p>
@@ -692,7 +698,7 @@ export default function LeadMarketingPage() {
                     type="button"
                     disabled={!!retryLoading}
                     onClick={() => retryCampaign("pending")}
-                    className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 disabled:opacity-50"
+                    className="rounded-full bg-[#E4F56C] px-3 py-1.5 text-xs font-semibold text-neutral-950 disabled:opacity-50"
                   >
                     {retryLoading === "pending" ? "Sending…" : `Send pending now (${pendingCount})`}
                   </button>
@@ -702,17 +708,17 @@ export default function LeadMarketingPage() {
                     type="button"
                     disabled={!!retryLoading}
                     onClick={() => retryCampaign("failed")}
-                    className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-50"
+                    className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                   >
                     {retryLoading === "failed" ? "Retrying…" : `Retry failed (${failedCount})`}
                   </button>
                 )}
-                <button onClick={() => setActiveCampaign(null)} className="text-2xl text-gray-400">×</button>
+                <button onClick={() => setActiveCampaign(null)} className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-950 text-lg text-white">×</button>
               </div>
             </header>
             {detailLoading ? <p className="text-sm text-gray-500">Loading…</p> : (
               <table className="w-full text-left text-sm">
-                <thead className="border-b text-xs uppercase text-gray-400">
+                <thead className="border-b border-neutral-200 text-[11px] uppercase tracking-[0.14em] text-neutral-400 dark:border-white/10">
                   <tr>
                     <th className="py-2">Lead</th>
                     <th className="py-2">Channel</th>
@@ -731,7 +737,7 @@ export default function LeadMarketingPage() {
                       <td className="py-2 capitalize">{m.channel}</td>
                       <td className="py-2 text-xs">{m.recipient || "—"}</td>
                       <td className="py-2">
-                        <span className={`rounded px-2 py-0.5 text-xs font-semibold ${statusClass[m.status] || ""}`}>{m.status}</span>
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusClass[m.status] || "bg-neutral-100"}`}>{m.status}</span>
                         {m.error_message && <div className="text-xs text-red-600">{m.error_message}</div>}
                       </td>
                       <td className="py-2 text-xs">{fmt(m.sent_at)}</td>

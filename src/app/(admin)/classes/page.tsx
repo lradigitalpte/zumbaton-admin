@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import DateRangePicker from "@/components/common/DateRangePicker";
-import Button from "@/components/ui/button/Button";
 import AttendanceModal from "@/components/attendance/AttendanceModal";
 import { useInvalidateEntity, createEntityKeys } from "@/hooks/useEntityQuery";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { RefreshCw, AlertCircle, Loader2 } from "lucide-react";
+import StudioMenu from "@/components/ui/StudioMenu";
+import StudioDate from "@/components/ui/StudioDate";
 import type { ClassWithAvailability, ClassListResponse } from "@/api/schemas";
 import { useCancelClass } from "@/hooks/useClasses";
 import { useRoomsList } from "@/hooks/useRooms";
@@ -135,7 +135,7 @@ function isAvatarUrl(s: string): boolean {
 }
 
 // Instructor avatar: show image if URL, else initials in a colored circle
-function InstructorAvatar({ avatarOrInitials, initials, className = "h-8 w-8", gradientClass = "bg-linear-to-br from-blue-500 to-purple-600" }: {
+function InstructorAvatar({ avatarOrInitials, initials, className = "h-8 w-8" }: {
   avatarOrInitials: string;
   initials: string;
   className?: string;
@@ -151,7 +151,7 @@ function InstructorAvatar({ avatarOrInitials, initials, className = "h-8 w-8", g
     );
   }
   return (
-    <div className={`flex items-center justify-center rounded-full text-xs font-medium text-white ${gradientClass} ${className}`}>
+    <div className={`flex items-center justify-center rounded-full bg-neutral-950 text-xs font-medium text-[#E4F56C] ${className}`}>
       {initials}
     </div>
   );
@@ -344,6 +344,8 @@ export default function ClassesPage() {
     bookings: [],
   });
   const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
+  const [refundConfirm, setRefundConfirm] = useState<(typeof bookingsPanel.bookings)[number] | null>(null);
+  const [bookingNotice, setBookingNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
   // Cancel/Delete class mutation
   const cancelClassMutation = useCancelClass();
@@ -722,22 +724,19 @@ export default function ClassesPage() {
     });
   };
 
-  const handleAdminCancelAndRefund = async (booking: typeof bookingsPanel.bookings[number]) => {
-    const confirmed = window.confirm(
-      `Cancel ${booking.userName}'s booking, refund their token(s), and email them?`
-    );
-    if (!confirmed) return;
-
+  const handleAdminCancelAndRefund = async (booking: (typeof bookingsPanel.bookings)[number]) => {
     setCancellingBookingId(booking.id);
+    setBookingNotice(null);
     const response = await api.delete(`/api/bookings/${booking.id}`, {
       userId: booking.userId,
       forceRefund: true,
       reason: 'Same-day booking is not allowed. Your booking has been cancelled and your token has been fully refunded. We apologize for the inconvenience.',
     });
     setCancellingBookingId(null);
+    setRefundConfirm(null);
 
     if (response.error) {
-      window.alert(response.error.message || 'Failed to cancel the booking');
+      setBookingNotice({ tone: "error", text: response.error.message || "Failed to cancel the booking" });
       return;
     }
 
@@ -745,7 +744,7 @@ export default function ClassesPage() {
       ...current,
       bookings: current.bookings.filter((item) => item.id !== booking.id),
     }));
-    window.alert('Booking cancelled, token(s) refunded, and cancellation email queued.');
+    setBookingNotice({ tone: "ok", text: "Booking cancelled, tokens refunded, and the email is queued." });
   };
 
   // Combine single and recurring parent classes for display
@@ -828,24 +827,23 @@ export default function ClassesPage() {
   const getStatusStyles = (status: DisplayClass["status"]) => {
     switch (status) {
       case "active":
-        return "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800";
+        return "border-transparent bg-[#E4F56C] text-neutral-950";
       case "cancelled":
-        return "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800";
+        return "border-transparent bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white/50";
       case "full":
-        return "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800";
+        return "border-transparent bg-neutral-950 text-[#E4F56C]";
       case "completed":
-        return "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800";
+        return "border-transparent bg-neutral-950 text-white";
       default:
-        return "bg-gray-50 text-gray-700 border-gray-200";
+        return "border-transparent bg-neutral-100 text-neutral-700";
     }
   };
 
   const getCapacityColor = (enrolled: number, capacity: number) => {
     const percentage = (enrolled / capacity) * 100;
-    if (percentage >= 100) return "bg-amber-500";
-    if (percentage >= 75) return "bg-emerald-500";
-    if (percentage >= 50) return "bg-blue-500";
-    return "bg-gray-300 dark:bg-gray-600";
+    if (percentage >= 100) return "bg-[#E4F56C]";
+    if (percentage >= 50) return "bg-neutral-950 dark:bg-white";
+    return "bg-neutral-300 dark:bg-white/30";
   };
 
   // Stats: use API aggregated stats (all classes in filter/date range) when available
@@ -880,17 +878,17 @@ export default function ClassesPage() {
     const type = recurrenceType || 'single';
     
     const badges = {
-      single: {
+        single: {
         label: 'Single',
-        className: 'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-900/20 dark:text-gray-400 dark:border-gray-800',
+        className: 'border-transparent bg-neutral-100 text-neutral-600 dark:bg-white/10 dark:text-white/70',
       },
       recurring: {
         label: 'Recurring',
-        className: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800',
+        className: 'border-transparent bg-neutral-950 text-white',
       },
       course: {
         label: 'Course',
-        className: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800',
+        className: 'border-transparent bg-[#E4F56C] text-neutral-950',
       },
     };
     
@@ -918,7 +916,7 @@ export default function ClassesPage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <PageBreadCrumb pageTitle="Classes Management" />
+        <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">Classes</h1>
         
         {/* Stats Skeleton */}
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -968,7 +966,7 @@ export default function ClassesPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <PageBreadCrumb pageTitle="Classes Management" />
+        <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">Classes</h1>
         <div className="flex flex-col items-center justify-center rounded-2xl border border-red-200 bg-red-50 py-16 dark:border-red-800 dark:bg-red-900/20">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
             <AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
@@ -989,78 +987,61 @@ export default function ClassesPage() {
 
   return (
     <div className="space-y-6">
-      <PageBreadCrumb pageTitle="Classes Management" />
-
-      {/* Stats Cards – all numbers reflect current filter (e.g. date range) */}
-      <p className="text-sm text-gray-500 dark:text-gray-400">
-        {hasDateFilter ? "Stats below are for the selected date range. " : ""}
-        Booked counts match the Booking Report. Use the people icon on a class to see who booked.
-      </p>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-900/30">
-              <svg className="h-6 w-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">
+            Classes{" "}
+            <span className="inline-flex h-7 w-9 translate-y-[-1px] items-center justify-center rounded-full bg-[#E4F56C] align-middle text-neutral-950">
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7V3m8 4V3M5 11h14M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Total Classes</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
-            </div>
-          </div>
+            </span>
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-neutral-500 dark:text-white/50">
+            {hasDateFilter ? "Stats below are for the selected date range. " : ""}
+            Booked counts match the Booking Report. Use the people icon on a class to see who booked.
+          </p>
         </div>
+        <Link
+          href="/classes/new"
+          className="inline-flex items-center gap-2 rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
+        >
+          <span className="text-base leading-none">+</span>
+          Add Class
+        </Link>
+      </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/30">
-              <svg className="h-6 w-6 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Active</p>
-              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.active}</p>
-            </div>
-          </div>
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <div className="rounded-[28px] border border-neutral-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+          <p className="text-sm font-medium text-neutral-500 dark:text-white/60">Total Classes</p>
+          <p className="mt-3 text-4xl font-semibold tracking-tight text-neutral-950 dark:text-white">{stats.total}</p>
         </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
-              <svg className="h-6 w-6 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-            </div>
-            <div className="min-w-0" title="Total bookings across all classes in current view">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Booked</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.totalEnrolled}<span className="text-sm font-normal text-gray-400">/{stats.totalCapacity}</span></p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 truncate">confirmed + attended + no-show</p>
-            </div>
-          </div>
+        <div className="rounded-[28px] border border-[#d5e45c] bg-[#E4F56C] p-5 text-neutral-950 shadow-[0_10px_30px_rgba(16,24,40,0.06)]">
+          <p className="text-sm font-medium">Active</p>
+          <p className="mt-3 text-4xl font-semibold tracking-tight">{stats.active}</p>
         </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-purple-100 dark:bg-purple-900/30">
-              <svg className="h-6 w-6 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-            </div>
-            <div className="min-w-0" title="Enrolled ÷ total capacity across all classes">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Fill Rate</p>
-              <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{stats.totalCapacity > 0 ? Math.round((stats.totalEnrolled / stats.totalCapacity) * 100) : 0}%</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 truncate">overall</p>
-            </div>
-          </div>
+        <div className="rounded-[28px] border border-neutral-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800" title="Total bookings across all classes in current view">
+          <p className="text-sm font-medium text-neutral-500 dark:text-white/60">Booked</p>
+          <p className="mt-3 text-4xl font-semibold tracking-tight text-neutral-950 dark:text-white">
+            {stats.totalEnrolled}
+            <span className="text-lg font-medium text-neutral-400">/{stats.totalCapacity}</span>
+          </p>
+          <p className="mt-1 text-xs text-neutral-400">confirmed + attended + no-show</p>
+        </div>
+        <div className="rounded-[28px] border border-neutral-950 bg-neutral-950 p-5 text-white shadow-[0_10px_30px_rgba(16,24,40,0.14)]" title="Enrolled ÷ total capacity across all classes">
+          <p className="text-sm font-medium text-white/60">Fill Rate</p>
+          <p className="mt-3 text-4xl font-semibold tracking-tight">
+            {stats.totalCapacity > 0 ? Math.round((stats.totalEnrolled / stats.totalCapacity) * 100) : 0}%
+          </p>
+          <p className="mt-1 text-xs text-white/50">overall</p>
         </div>
       </div>
 
       {/* Date filters: by month, by day, or custom range */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <div className="rounded-[28px] border border-neutral-200/80 bg-white p-4 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 sm:p-5">
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Show classes for</span>
+            <span className="text-sm font-medium text-neutral-700 dark:text-white/70">Show classes for</span>
             {([
               { key: "month" as const, label: "Month" },
               { key: "day" as const, label: "Day" },
@@ -1077,10 +1058,10 @@ export default function ClassesPage() {
                     setYearFilter(currentSgt.year);
                   }
                 }}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
                   dateMode === mode.key
-                    ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                    ? "bg-neutral-950 text-white"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15"
                 }`}
               >
                 {mode.label}
@@ -1090,25 +1071,22 @@ export default function ClassesPage() {
 
           {dateMode === "month" && (
             <div className="flex flex-wrap items-center gap-3">
-              <select
-                value={monthFilter}
-                onChange={(e) => setMonthFilter(e.target.value ? parseInt(e.target.value, 10) : "")}
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-              >
-                <option value="">All months</option>
-                {MONTH_OPTIONS.map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
-              <select
-                value={yearFilter}
-                onChange={(e) => setYearFilter(parseInt(e.target.value, 10))}
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-              >
-                {yearOptions.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
+              <div className="w-44">
+                <StudioMenu
+                  value={monthFilter === "" ? "all" : String(monthFilter)}
+                  onChange={(value) => setMonthFilter(value === "all" ? "" : parseInt(value, 10))}
+                  placeholder="All months"
+                  options={[{ value: "all", label: "All months" }, ...MONTH_OPTIONS.map((m) => ({ value: String(m.value), label: m.label }))]}
+                />
+              </div>
+              <div className="w-32">
+                <StudioMenu
+                  value={String(yearFilter)}
+                  onChange={(value) => setYearFilter(parseInt(value, 10))}
+                  placeholder="Year"
+                  options={yearOptions.map((y) => ({ value: String(y), label: String(y) }))}
+                />
+              </div>
               {monthFilter && (
                 <span className="text-sm text-gray-500 dark:text-gray-400">
                   {MONTH_OPTIONS.find((m) => m.value === monthFilter)?.label} {yearFilter}
@@ -1119,12 +1097,7 @@ export default function ClassesPage() {
 
           {dateMode === "day" && (
             <div className="flex flex-wrap items-center gap-3">
-              <input
-                type="date"
-                value={dayFilter}
-                onChange={(e) => setDayFilter(e.target.value)}
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-              />
+              <StudioDate ariaLabel="Class day" value={dayFilter} onChange={setDayFilter} />
               <button
                 type="button"
                 onClick={() => {
@@ -1168,7 +1141,7 @@ export default function ClassesPage() {
       </div>
 
       {/* Filters and Actions */}
-      <div className="flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 rounded-[28px] border border-neutral-200/80 bg-white p-4 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 sm:flex-row sm:items-center sm:justify-between sm:p-5">
         <div className="flex flex-wrap items-center gap-2">
           {[
             { key: "all", label: "All", count: stats.total },
@@ -1180,17 +1153,17 @@ export default function ClassesPage() {
             <button
               key={tab.key}
               onClick={() => setFilter(tab.key as typeof filter)}
-              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+              className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all ${
                 filter === tab.key
-                  ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
-                  : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+                  ? "bg-neutral-950 text-white"
+                  : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15"
               }`}
             >
               {tab.label}
               <span className={`rounded-full px-2 py-0.5 text-xs ${
                 filter === tab.key
-                  ? "bg-white/20 dark:bg-gray-900/20"
-                  : "bg-gray-200 dark:bg-gray-700"
+                  ? "bg-[#E4F56C] text-neutral-950"
+                  : "bg-white text-neutral-500 dark:bg-white/10 dark:text-white/60"
               }`}>
                 {tab.count}
               </span>
@@ -1208,37 +1181,29 @@ export default function ClassesPage() {
               placeholder="Search classes..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-500 focus:border-gray-300 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400 sm:w-64"
+              className="w-full rounded-full border border-neutral-200 bg-neutral-50 py-2 pl-10 pr-4 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-300 focus:outline-none focus:ring-0 dark:border-white/10 dark:bg-white/5 dark:text-white sm:w-56"
             />
           </div>
 
-          <div className="flex rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="flex overflow-hidden rounded-full border border-neutral-200 dark:border-white/10">
             <button
               onClick={() => setViewMode("grid")}
-              className={`p-2 ${viewMode === "grid" ? "bg-gray-100 dark:bg-gray-800" : ""}`}
+              className={`p-2 ${viewMode === "grid" ? "bg-neutral-950 text-white" : "text-neutral-500"}`}
             >
-              <svg className="h-5 w-5 text-gray-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
               </svg>
             </button>
             <button
               onClick={() => setViewMode("list")}
-              className={`p-2 ${viewMode === "list" ? "bg-gray-100 dark:bg-gray-800" : ""}`}
+              className={`p-2 ${viewMode === "list" ? "bg-neutral-950 text-white" : "text-neutral-500"}`}
             >
-              <svg className="h-5 w-5 text-gray-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
               </svg>
             </button>
           </div>
 
-          <Link href="/classes/new">
-            <Button>
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add Class
-            </Button>
-          </Link>
         </div>
       </div>
 
@@ -1248,10 +1213,10 @@ export default function ClassesPage() {
           {filteredClasses.map((cls) => (
             <div
               key={cls.id}
-              className={`group relative overflow-hidden rounded-2xl border transition-all hover:shadow-lg ${
+              className={`group relative overflow-hidden rounded-[28px] border shadow-[0_10px_30px_rgba(16,24,40,0.04)] transition-all ${
                 (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') 
-                  ? 'cursor-pointer border-blue-300 bg-blue-50/50 dark:border-blue-700 dark:bg-blue-900/20' 
-                  : 'border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'
+                  ? 'cursor-pointer border-[#E4F56C] bg-[#E4F56C]/25' 
+                  : 'border-neutral-200/80 bg-white dark:border-white/10 dark:bg-gray-800'
               }`}
               onClick={(e) => {
                 // For completed classes, show details instead of recurring panel
@@ -1570,124 +1535,104 @@ export default function ClassesPage() {
         </div>
       ) : (
         /* List View */
-        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <div className="overflow-hidden rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-800/50">
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Class</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Instructor</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Schedule</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Booked</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Tokens</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Status</th>
-                  <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-                {filteredClasses.map((cls) => (
-                  <tr 
-                    key={cls.id} 
-                    className={`transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50 ${
-                      (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') 
-                        ? 'cursor-pointer' 
-                        : ''
+            <div className="min-w-[920px]">
+              <div className="grid grid-cols-[minmax(220px,1.7fr)_150px_130px_168px_64px_108px_132px] items-center gap-3 border-b border-neutral-100 px-5 py-3 text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400 dark:border-white/10">
+                <span>Class</span>
+                <span>Instructor</span>
+                <span>Schedule</span>
+                <span>Booked</span>
+                <span>Tokens</span>
+                <span>Status</span>
+                <span className="text-right">Actions</span>
+              </div>
+              {filteredClasses.map((cls) => {
+                const fill = cls.capacity > 0 ? Math.round((cls.enrolled / cls.capacity) * 100) : 0;
+                const slots = Math.min(Math.max(cls.capacity, 1), 7);
+                const filledSlots = cls.capacity > 7 ? Math.round((fill / 100) * slots) : Math.min(cls.enrolled, slots);
+                const isFull = cls.capacity > 0 && cls.enrolled >= cls.capacity;
+                const scheduleDate = cls.recurrenceType !== "single" && cls.status !== "completed"
+                  ? cls.dayOfWeek
+                  : formatClassDate(cls.scheduledAt);
+                const iconBtn = "inline-flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-neutral-800 transition-colors hover:bg-neutral-950 hover:text-white dark:bg-white/10 dark:text-white dark:hover:bg-[#E4F56C] dark:hover:text-neutral-950";
+                return (
+                  <div
+                    key={cls.id}
+                    className={`grid grid-cols-[minmax(220px,1.7fr)_150px_130px_168px_64px_108px_132px] items-center gap-3 border-b border-neutral-100 px-5 py-4 last:border-0 dark:border-white/10 ${
+                      isFull ? "bg-[#E4F56C]/35" : "hover:bg-neutral-50 dark:hover:bg-white/5"
+                    } ${
+                      (cls.recurrenceType === "recurring" || cls.recurrenceType === "course") ? "cursor-pointer" : ""
                     }`}
                     onClick={(e) => {
-                      // For completed classes, show details instead of recurring panel
-                      if (cls.status === 'completed' && !(e.target as HTMLElement).closest('button, a')) {
+                      if (cls.status === "completed" && !(e.target as HTMLElement).closest("button, a")) {
                         openDetailsPanel(cls);
-                      } else if ((cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && 
-                          !(e.target as HTMLElement).closest('button, a')) {
+                      } else if ((cls.recurrenceType === "recurring" || cls.recurrenceType === "course") &&
+                          !(e.target as HTMLElement).closest("button, a")) {
                         openRecurringPanel(cls);
                       }
                     }}
                   >
-                    <td className="px-6 py-4">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-gray-900 dark:text-white">{cls.name}</p>
-                          {getClassTypeBadge(cls.recurrenceType)}
-                          {cls.isOutdoor && (
-                            <span className="inline-flex rounded-full border border-green-300 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
-                              Outdoors
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{cls.duration} minutes</p>
-                        {(cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') && (
-                          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                            {getRecurringInstances(cls).length} sessions
-                          </p>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{cls.name}</p>
+                        {getClassTypeBadge(cls.recurrenceType)}
+                        {cls.isOutdoor && (
+                          <span className="inline-flex rounded-full bg-[#E4F56C] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-950">
+                            Outdoors
+                          </span>
                         )}
                       </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <InstructorAvatar
-                          avatarOrInitials={cls.instructorAvatar}
-                          initials={getInitials(cls.instructor)}
-                          className="h-8 w-8"
-                        />
-                        <span className="text-sm text-gray-900 dark:text-white">{cls.instructor}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm">
-                        {cls.recurrenceType === 'single' ? (
-                          <>
-                            <p className="font-medium text-gray-900 dark:text-white">{formatClassDate(cls.scheduledAt)}</p>
-                            <p className="text-gray-500 dark:text-gray-400">{cls.time}</p>
-                          </>
-                        ) : (
-                          <>
-                            {/* For completed classes, show the actual date instead of day of week */}
-                            {cls.status === 'completed' ? (
-                              <>
-                                <p className="font-medium text-gray-900 dark:text-white">{formatClassDate(cls.scheduledAt)}</p>
-                                <p className="text-gray-500 dark:text-gray-400">{cls.time}</p>
-                              </>
-                            ) : (
-                              <>
-                                <p className="font-medium text-gray-900 dark:text-white">{cls.dayOfWeek}</p>
-                                <p className="text-gray-500 dark:text-gray-400">{cls.time}</p>
-                              </>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="w-32" title={cls.enrolled > 0 ? "Click the people icon in Actions to see names" : "No bookings"}>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-medium text-gray-900 dark:text-white">{cls.enrolled}/{cls.capacity}</span>
-                          <span className="text-gray-500 dark:text-gray-400">{Math.round((cls.enrolled / cls.capacity) * 100)}%</span>
-                        </div>
-                        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-                          <div
-                            className={`h-full rounded-full ${getCapacityColor(cls.enrolled, cls.capacity)}`}
-                            style={{ width: `${Math.min((cls.enrolled / cls.capacity) * 100, 100)}%` }}
+                      <p className="mt-1 text-xs text-neutral-400">{cls.duration} minutes</p>
+                      {(cls.recurrenceType === "recurring" || cls.recurrenceType === "course") && (
+                        <p className="mt-0.5 text-xs font-medium text-neutral-950 dark:text-white">
+                          {getRecurringInstances(cls).length} sessions
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <InstructorAvatar
+                        avatarOrInitials={cls.instructorAvatar}
+                        initials={getInitials(cls.instructor)}
+                        className="h-8 w-8 shrink-0"
+                      />
+                      <span className="truncate text-sm font-medium text-neutral-800 dark:text-white">{cls.instructor}</span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-neutral-950 dark:text-white">{cls.time}</p>
+                      <p className="text-xs text-neutral-400">{scheduleDate}</p>
+                    </div>
+                    <div title={cls.enrolled > 0 ? "Click the people icon in Actions to see names" : "No bookings"}>
+                      <div className="flex gap-1" aria-hidden>
+                        {Array.from({ length: slots }).map((_, i) => (
+                          <span
+                            key={i}
+                            className={`h-6 w-[9px] rounded-full ${
+                              i < filledSlots
+                                ? isFull
+                                  ? "bg-neutral-950"
+                                  : "bg-neutral-950 dark:bg-white"
+                                : "border border-dashed border-neutral-300 dark:border-white/25"
+                            }`}
                           />
-                        </div>
+                        ))}
                       </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-1.5">
-                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
-                          <svg className="h-3 w-3 text-amber-600 dark:text-amber-400" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.736 6.979C9.208 6.193 9.696 6 10 6c.304 0 .792.193 1.264.979a1 1 0 001.715-1.029C12.279 4.784 11.232 4 10 4s-2.279.784-2.979 1.95c-.285.475-.507 1-.67 1.55H6a1 1 0 000 2h.013a9.358 9.358 0 000 1H6a1 1 0 100 2h.351c.163.55.385 1.075.67 1.55C7.721 15.216 8.768 16 10 16s2.279-.784 2.979-1.95a1 1 0 10-1.715-1.029c-.472.786-.96.979-1.264.979-.304 0-.792-.193-1.264-.979a4.265 4.265 0 01-.264-.521H10a1 1 0 100-2H8.017a7.36 7.36 0 010-1H10a1 1 0 100-2H8.472c.08-.185.167-.36.264-.521z" />
-                          </svg>
-                        </div>
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">{cls.tokenCost}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${getStatusStyles(cls.status)}`}>
+                      <p className="mt-1.5 text-xs font-semibold text-neutral-800 dark:text-white">
+                        {cls.enrolled}/{cls.capacity}
+                        <span className="ml-1.5 font-medium text-neutral-400">{fill}%</span>
+                      </p>
+                    </div>
+                    <div>
+                      <span className="inline-flex h-8 min-w-8 items-center justify-center rounded-full bg-neutral-950 px-2 text-sm font-semibold text-[#E4F56C]">
+                        {cls.tokenCost}
+                      </span>
+                    </div>
+                    <div>
+                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize ${getStatusStyles(cls.status)}`}>
                         {cls.status}
                       </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-2">
+                    </div>
+                    <div className="flex items-center justify-end gap-1.5">
                         {/* For recurring parent cards, show "View Bookings" instead of QR */}
                         {cls.status !== 'completed' && (cls.recurrenceType === 'recurring' || cls.recurrenceType === 'course') ? (
                           <button
@@ -1696,7 +1641,7 @@ export default function ClassesPage() {
                               e.stopPropagation();
                               openBookingsPanel(cls);
                             }}
-                            className="inline-flex items-center justify-center rounded-lg p-2 text-blue-500 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400 transition-colors"
+                            className={iconBtn}
                             title="View Bookings"
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1711,7 +1656,7 @@ export default function ClassesPage() {
                               e.stopPropagation();
                               openAttendanceModal(cls);
                             }}
-                            className="inline-flex items-center justify-center rounded-lg p-2 text-blue-500 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400 transition-colors"
+                            className={iconBtn}
                             title="View Attendance"
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1726,7 +1671,7 @@ export default function ClassesPage() {
                               e.stopPropagation();
                               openAttendanceModal(cls);
                             }}
-                            className="inline-flex items-center justify-center rounded-lg p-2 text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400 transition-colors"
+                            className={iconBtn}
                             title="View Attendance"
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1738,7 +1683,7 @@ export default function ClassesPage() {
                         {cls.status !== 'completed' && (
                           <Link 
                             href={`/classes/new?id=${cls.id}`}
-                            className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors"
+                            className={iconBtn}
                             title="Edit Class"
                             onClick={(e) => e.stopPropagation()}
                           >
@@ -1754,7 +1699,7 @@ export default function ClassesPage() {
                             handleDeleteClick(cls);
                           }}
                           disabled={cancelClassMutation.isPending}
-                          className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white/10 dark:text-white/60"
                           title="Cancel Class"
                         >
                           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1762,18 +1707,17 @@ export default function ClassesPage() {
                           </svg>
                         </button>
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
 
       {/* Pagination */}
       {totalClasses > 0 && (
-        <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white px-6 py-4 dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-[28px] border border-neutral-200/80 bg-white px-5 py-4 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm text-gray-600 dark:text-gray-400">
             Showing {pageStart} to {pageEnd} of {totalClasses} classes
             {searchQuery && filteredClasses.length !== displayClasses.length && (
@@ -1784,14 +1728,14 @@ export default function ClassesPage() {
             <button
               onClick={() => setCurrentPage(1)}
               disabled={currentPage === 1 || isLoading}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="rounded-full border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-gray-800 dark:text-white"
             >
               First
             </button>
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1 || isLoading}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-gray-800 dark:text-white"
             >
               Previous
             </button>
@@ -1801,14 +1745,14 @@ export default function ClassesPage() {
             <button
               onClick={() => setCurrentPage((p) => p + 1)}
               disabled={!hasMore || isLoading}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-gray-800 dark:text-white"
             >
               Next
             </button>
             <button
               onClick={() => setCurrentPage(totalPages)}
               disabled={currentPage >= totalPages || isLoading}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="rounded-full border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-gray-800 dark:text-white"
             >
               Last
             </button>
@@ -1847,84 +1791,73 @@ export default function ClassesPage() {
 
       {/* Recurring Classes Slider Panel */}
       {recurringPanel.isOpen && recurringPanel.parentClass && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-end">
-          {/* Backdrop */}
-          <div 
-            className="fixed inset-0 bg-black/50 transition-opacity"
+        <div className="fixed inset-0 z-[100000] flex items-end justify-center sm:items-stretch sm:justify-end">
+          <button
+            type="button"
+            aria-label="Close sessions"
+            className="fixed inset-0 bg-neutral-950/55 backdrop-blur-[2px]"
             onClick={closeRecurringPanel}
           />
-          
-          {/* Panel */}
-          <div className="relative w-full sm:w-[500px] h-[80vh] sm:h-[600px] bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-l-2xl sm:rounded-tr-none shadow-2xl flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
-              <div className="flex-1">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+          <div className="relative flex h-[88vh] w-full flex-col overflow-hidden rounded-t-[28px] border border-neutral-200/80 bg-white shadow-[0_24px_80px_rgba(0,0,0,0.28)] dark:border-white/10 dark:bg-gray-800 sm:h-full sm:max-w-[480px] sm:rounded-none sm:rounded-l-[28px]">
+            <div className="flex items-start justify-between gap-4 px-6 pb-4 pt-6">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Sessions</p>
+                <h2 className="mt-1 truncate text-2xl font-semibold uppercase tracking-tight text-neutral-950 dark:text-white">
                   {recurringPanel.parentClass.name}
                 </h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  {recurringPanel.recurringClasses.length} {recurringPanel.recurringClasses.length === 1 ? 'session' : 'sessions'}
+                <p className="mt-1 text-sm text-neutral-500 dark:text-white/50">
+                  {recurringPanel.recurringClasses.length} {recurringPanel.recurringClasses.length === 1 ? "session" : "sessions"}
                 </p>
               </div>
               <button
+                type="button"
                 onClick={closeRecurringPanel}
-                className="ml-4 rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-white transition-colors hover:bg-neutral-800 dark:bg-white dark:text-neutral-950"
+                aria-label="Close"
               >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto px-5 pb-6">
               <div className="space-y-3">
                 {recurringPanel.recurringClasses.map((instance) => (
                   <div
                     key={instance.id}
-                    className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                    className="rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5"
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${getStatusStyles(instance.status)}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-3 flex flex-wrap items-center gap-2">
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${getStatusStyles(instance.status)}`}>
                             {instance.status}
                           </span>
                           {getClassTypeBadge(instance.recurrenceType)}
                         </div>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          <div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">Date</p>
-                            <p className="font-medium text-gray-900 dark:text-white">
-                              {new Date(instance.scheduledAt).toLocaleDateString('en-US', { 
-                                weekday: 'short', 
-                                month: 'short',
-                                timeZone: 'Asia/Singapore', 
-                                day: 'numeric',
-                                year: 'numeric'
-                              })}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">Time</p>
-                            <p className="font-medium text-gray-900 dark:text-white">{instance.time}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">Capacity</p>
-                            <p className="font-medium text-gray-900 dark:text-white">
-                              {instance.enrolled}/{instance.capacity}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">Tokens</p>
-                            <p className="font-medium text-gray-900 dark:text-white">{instance.tokenCost}</p>
-                          </div>
+                        <p className="text-lg font-semibold tracking-tight text-neutral-950 dark:text-white">{instance.time}</p>
+                        <p className="mt-0.5 text-sm text-neutral-500 dark:text-white/50">
+                          {new Date(instance.scheduledAt).toLocaleDateString("en-US", {
+                            weekday: "short",
+                            month: "short",
+                            timeZone: "Asia/Singapore",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </p>
+                        <div className="mt-3 flex items-center gap-2 text-sm">
+                          <span className="rounded-full bg-white px-3 py-1 font-medium text-neutral-950 dark:bg-neutral-950 dark:text-white">
+                            {instance.enrolled}/{instance.capacity} booked
+                          </span>
+                          <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-neutral-950 px-2 text-xs font-semibold text-[#E4F56C]">
+                            {instance.tokenCost}
+                          </span>
                         </div>
                       </div>
-                      <div className="flex flex-col gap-2 ml-4">
-                        <Link 
+                      <div className="flex flex-col gap-2">
+                        <Link
                           href={`/classes/new?id=${instance.id}`}
-                          className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300 transition-colors"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-neutral-700 shadow-sm transition-colors hover:bg-[#E4F56C] hover:text-neutral-950 dark:bg-white/10 dark:text-white"
                           title="Edit"
                           onClick={(e) => e.stopPropagation()}
                         >
@@ -1938,7 +1871,7 @@ export default function ClassesPage() {
                             e.stopPropagation();
                             handleDeleteClick(instance);
                           }}
-                          className="inline-flex items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-colors"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-neutral-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:bg-white/10 dark:text-white/60"
                           title="Cancel"
                         >
                           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1957,131 +1890,100 @@ export default function ClassesPage() {
 
       {/* Class Details Slider Panel */}
       {detailsPanel.isOpen && detailsPanel.classData && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-end">
-          {/* Backdrop */}
-          <div 
-            className="fixed inset-0 bg-black/50 transition-opacity"
+        <div className="fixed inset-0 z-[100000] flex items-end justify-center sm:items-stretch sm:justify-end">
+          <button
+            type="button"
+            aria-label="Close details"
+            className="fixed inset-0 bg-neutral-950/55 backdrop-blur-[2px]"
             onClick={closeDetailsPanel}
           />
-          
-          {/* Panel */}
-          <div className="relative w-full sm:w-[500px] h-[80vh] sm:h-[600px] bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-l-2xl sm:rounded-tr-none shadow-2xl flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
-              <div className="flex-1">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+          <div className="relative flex h-[88vh] w-full flex-col overflow-hidden rounded-t-[28px] border border-neutral-200/80 bg-white shadow-[0_24px_80px_rgba(0,0,0,0.28)] dark:border-white/10 dark:bg-gray-800 sm:h-full sm:max-w-[480px] sm:rounded-none sm:rounded-l-[28px]">
+            <div className="flex items-start justify-between gap-4 px-6 pb-4 pt-6">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Class details</p>
+                <h2 className="mt-1 text-2xl font-semibold uppercase tracking-tight text-neutral-950 dark:text-white">
                   {detailsPanel.classData.name}
                 </h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Class Details
-                </p>
               </div>
               <button
+                type="button"
                 onClick={closeDetailsPanel}
-                className="ml-4 rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-white transition-colors hover:bg-neutral-800 dark:bg-white dark:text-neutral-950"
+                aria-label="Close"
               >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="space-y-6">
-                {/* Status and Type */}
-                <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex-1 overflow-y-auto px-6 pb-6">
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-center gap-2">
                   {getClassTypeBadge(detailsPanel.classData.recurrenceType)}
-                  <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${getStatusStyles(detailsPanel.classData.status)}`}>
+                  <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${getStatusStyles(detailsPanel.classData.status)}`}>
                     {detailsPanel.classData.status}
                   </span>
                 </div>
 
-                {/* Description */}
                 {detailsPanel.classData.description && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{detailsPanel.classData.description}</p>
-                  </div>
+                  <p className="text-sm leading-relaxed text-neutral-600 dark:text-white/70">{detailsPanel.classData.description}</p>
                 )}
 
-                {/* Schedule Info */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date & Time</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {detailsPanel.classData.recurrenceType === 'single' 
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-[22px] bg-neutral-950 p-4 text-white">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/45">When</p>
+                    <p className="mt-2 text-lg font-semibold leading-tight">
+                      {detailsPanel.classData.recurrenceType === "single"
                         ? formatClassDate(detailsPanel.classData.scheduledAt)
-                        : detailsPanel.classData.dayOfWeek
-                      }
+                        : detailsPanel.classData.dayOfWeek}
                     </p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{detailsPanel.classData.time}</p>
+                    <p className="mt-1 text-sm text-[#E4F56C]">{detailsPanel.classData.time}</p>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Duration</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{detailsPanel.classData.duration} minutes</p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Capacity</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {detailsPanel.classData.enrolled} / {detailsPanel.classData.capacity}
+                  <div className="rounded-[22px] bg-[#E4F56C] p-4 text-neutral-950">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-950/50">Booked</p>
+                    <p className="mt-2 text-3xl font-semibold leading-none">
+                      {detailsPanel.classData.enrolled}
+                      <span className="text-lg text-neutral-950/50">/{detailsPanel.classData.capacity}</span>
                     </p>
+                    <p className="mt-2 text-sm">{detailsPanel.classData.duration} min</p>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Token Cost</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {detailsPanel.classData.tokenCost} {detailsPanel.classData.tokenCost === 1 ? 'token' : 'tokens'}
-                    </p>
+                  <div className="rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Tokens</p>
+                    <p className="mt-2 text-2xl font-semibold text-neutral-950 dark:text-white">{detailsPanel.classData.tokenCost}</p>
                   </div>
-                </div>
-
-                {/* Location/Room */}
-                {(detailsPanel.classData.roomName || detailsPanel.classData.location) && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Location</h3>
-                    <div className="flex items-center gap-2">
-                      <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        {detailsPanel.classData.roomName || detailsPanel.classData.location || "No location specified"}
-                      </p>
+                  <div className="rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Instructor</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <InstructorAvatar
+                        avatarOrInitials={detailsPanel.classData.instructorAvatar}
+                        initials={getInitials(detailsPanel.classData.instructor)}
+                        className="h-8 w-8"
+                      />
+                      <p className="truncate text-sm font-medium text-neutral-950 dark:text-white">{detailsPanel.classData.instructor}</p>
                     </div>
                   </div>
-                )}
-
-                {/* Instructor */}
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Instructor</h3>
-                  <div className="flex items-center gap-2">
-                    <InstructorAvatar
-                      avatarOrInitials={detailsPanel.classData.instructorAvatar}
-                      initials={getInitials(detailsPanel.classData.instructor)}
-                      className="h-8 w-8"
-                    />
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{detailsPanel.classData.instructor}</p>
-                  </div>
                 </div>
 
-                {/* Level and Type */}
+                {(detailsPanel.classData.roomName || detailsPanel.classData.location) && (
+                  <div className="rounded-[22px] border border-neutral-200/80 px-4 py-3 dark:border-white/10">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Location</p>
+                    <p className="mt-1 text-sm font-medium text-neutral-950 dark:text-white">
+                      {detailsPanel.classData.roomName || detailsPanel.classData.location}
+                    </p>
+                  </div>
+                )}
+
                 {(detailsPanel.classData.level || detailsPanel.classData.classType) && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-wrap gap-2">
                     {detailsPanel.classData.level && (
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Level</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 capitalize">
-                          {detailsPanel.classData.level.replace('_', ' ')}
-                        </p>
-                      </div>
+                      <span className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-medium capitalize text-neutral-700 dark:bg-white/10 dark:text-white">
+                        {detailsPanel.classData.level.replace("_", " ")}
+                      </span>
                     )}
                     {detailsPanel.classData.classType && (
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Class Type</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 capitalize">
-                          {detailsPanel.classData.classType}
-                        </p>
-                      </div>
+                      <span className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-medium capitalize text-neutral-700 dark:bg-white/10 dark:text-white">
+                        {detailsPanel.classData.classType}
+                      </span>
                     )}
                   </div>
                 )}
@@ -2093,72 +1995,76 @@ export default function ClassesPage() {
 
       {/* Bookings Panel for Recurring Classes */}
       {bookingsPanel.isOpen && bookingsPanel.parentClass && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-end">
-          {/* Backdrop */}
-          <div 
-            className="fixed inset-0 bg-black/50 transition-opacity"
+        <div className="fixed inset-0 z-[100000] flex items-end justify-center sm:items-stretch sm:justify-end">
+          <button
+            type="button"
+            aria-label="Close bookings"
+            className="fixed inset-0 bg-neutral-950/55 backdrop-blur-[2px]"
             onClick={closeBookingsPanel}
           />
-          
-          {/* Panel */}
-          <div className="relative w-full sm:w-[500px] h-[80vh] sm:h-[600px] bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-l-2xl sm:rounded-tr-none shadow-2xl flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
-              <div className="flex-1">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+          <div className="relative flex h-[88vh] w-full flex-col overflow-hidden rounded-t-[28px] border border-neutral-200/80 bg-white shadow-[0_24px_80px_rgba(0,0,0,0.28)] dark:border-white/10 dark:bg-gray-800 sm:h-full sm:max-w-[480px] sm:rounded-none sm:rounded-l-[28px]">
+            <div className="flex items-start justify-between gap-4 px-6 pb-4 pt-6">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Bookings</p>
+                <h2 className="mt-1 text-2xl font-semibold uppercase tracking-tight text-neutral-950 dark:text-white">
                   {bookingsPanel.parentClass.name}
                 </h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  {bookingsPanel.bookings.length} {bookingsPanel.bookings.length === 1 ? 'booking' : 'bookings'} across all sessions
+                <p className="mt-1 text-sm text-neutral-500 dark:text-white/50">
+                  {bookingsPanel.bookings.length} {bookingsPanel.bookings.length === 1 ? "booking" : "bookings"} across all sessions
                 </p>
               </div>
               <button
+                type="button"
                 onClick={closeBookingsPanel}
-                className="ml-4 rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-white transition-colors hover:bg-neutral-800 dark:bg-white dark:text-neutral-950"
+                aria-label="Close"
               >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+            {bookingNotice && (
+              <div className={`mx-5 mb-3 rounded-full px-4 py-2 text-center text-xs font-medium ${bookingNotice.tone === "ok" ? "bg-[#E4F56C] text-neutral-950" : "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"}`}>
+                {bookingNotice.text}
+              </div>
+            )}
+            <div className="flex-1 overflow-y-auto px-5 pb-6">
               {bookingsPanel.bookings.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className="mb-4 h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                    <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-neutral-950 text-[#E4F56C]">
+                    <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                   </div>
-                  <p className="text-gray-600 dark:text-gray-400">No bookings found</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">No students have booked this class series yet</p>
+                  <p className="font-medium text-neutral-950 dark:text-white">No bookings yet</p>
+                  <p className="mt-1 text-sm text-neutral-500">Nobody has booked this series.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {/* Group bookings by class session */}
                   {Array.from(new Set(bookingsPanel.bookings.map(b => b.classId))).map(classId => {
                     const classBookings = bookingsPanel.bookings.filter(b => b.classId === classId);
                     const firstBooking = classBookings[0];
                     const classDate = new Date(firstBooking.scheduledAt);
-                    
+
                     return (
-                      <div key={classId} className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/50">
-                        <div className="mb-3 pb-3 border-b border-gray-200 dark:border-gray-700">
-                          <h3 className="font-medium text-gray-900 dark:text-white text-sm">
+                      <div key={classId} className="rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+                        <div className="mb-3">
+                          <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">
                             {firstBooking.className}
                           </h3>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            {classDate.toLocaleDateString('en-US', { 
-                              weekday: 'long', 
-                              month: 'short', 
-                              day: 'numeric',
-                              year: 'numeric',
-                              timeZone: 'Asia/Singapore'
-                            })} at {classDate.toLocaleTimeString('en-US', {
-                              hour: '2-digit', 
-                              minute: '2-digit',
-                              timeZone: 'Asia/Singapore'
+                          <p className="mt-1 text-xs text-neutral-500 dark:text-white/50">
+                            {classDate.toLocaleDateString("en-US", {
+                              weekday: "long",
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                              timeZone: "Asia/Singapore",
+                            })}{" "}
+                            · {classDate.toLocaleTimeString("en-US", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              timeZone: "Asia/Singapore",
                             })}
                           </p>
                         </div>
@@ -2166,36 +2072,32 @@ export default function ClassesPage() {
                           {classBookings.map((booking) => (
                             <div
                               key={booking.id}
-                              className="flex items-center gap-3 rounded-lg bg-white dark:bg-gray-900 p-3 border border-gray-200 dark:border-gray-700"
+                              className="flex items-center gap-3 rounded-2xl bg-white px-3 py-2.5 dark:bg-gray-800"
                             >
-                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-xs font-medium text-white">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-xs font-semibold text-[#E4F56C]">
                                 {booking.userName
-                                  .split(' ')
+                                  .split(" ")
                                   .map(n => n[0])
-                                  .join('')
+                                  .join("")
                                   .toUpperCase()
                                   .slice(0, 2)}
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-neutral-950 dark:text-white">
                                   {booking.userName}
                                 </p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">
-                                  {booking.status === 'attended' ? (
-                                    <span className="text-emerald-600 dark:text-emerald-400">✓ Attended</span>
-                                  ) : (
-                                    <span className="text-gray-500 dark:text-gray-400">Confirmed</span>
-                                  )}
-                                </p>
+                                <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${booking.status === "attended" ? "bg-[#E4F56C] text-neutral-950" : "bg-neutral-100 text-neutral-600 dark:bg-white/10 dark:text-white/70"}`}>
+                                  {booking.status === "attended" ? "Attended" : "Confirmed"}
+                                </span>
                               </div>
-                              {booking.status === 'confirmed' && booking.userId && (
+                              {booking.status === "confirmed" && booking.userId && (
                                 <button
                                   type="button"
-                                  onClick={() => handleAdminCancelAndRefund(booking)}
+                                  onClick={() => setRefundConfirm(booking)}
                                   disabled={cancellingBookingId === booking.id}
-                                  className="shrink-0 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="shrink-0 rounded-full bg-neutral-950 px-3 py-2 text-[11px] font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                  {cancellingBookingId === booking.id ? 'Cancelling…' : 'Cancel & refund'}
+                                  {cancellingBookingId === booking.id ? "Cancelling…" : "Refund"}
                                 </button>
                               )}
                             </div>
@@ -2213,45 +2115,75 @@ export default function ClassesPage() {
 
       {/* Delete Confirmation Modal */}
       {deleteConfirm.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900">
-            <div className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
-                  <svg className="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Cancel Class</h3>
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    Are you sure you want to cancel <span className="font-medium text-gray-900 dark:text-white">{deleteConfirm.className}</span>? This action will cancel the class and refund tokens to enrolled students.
-                  </p>
-                </div>
-              </div>
-              <div className="mt-6 flex gap-3">
-                <button
-                  onClick={handleDeleteCancel}
-                  disabled={cancelClassMutation.isPending}
-                  className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteConfirm}
-                  disabled={cancelClassMutation.isPending}
-                  className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {cancelClassMutation.isPending ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Cancelling...
-                    </span>
-                  ) : (
-                    "Yes, Cancel Class"
-                  )}
-                </button>
-              </div>
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-neutral-950/55 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-[28px] border border-neutral-200/80 bg-white p-6 shadow-[0_24px_80px_rgba(0,0,0,0.28)] dark:border-white/10 dark:bg-gray-800">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-950 text-[#E4F56C]">
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <p className="mt-5 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Confirm</p>
+            <h3 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">Cancel this class</h3>
+            <p className="mt-2 text-sm leading-relaxed text-neutral-500 dark:text-white/60">
+              <span className="font-semibold uppercase text-neutral-950 dark:text-white">{deleteConfirm.className}</span> will be cancelled and tokens refunded to everyone booked.
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={handleDeleteCancel}
+                disabled={cancelClassMutation.isPending}
+                className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white"
+              >
+                Keep class
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={cancelClassMutation.isPending}
+                className="flex-1 rounded-full bg-red-600 px-4 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {cancelClassMutation.isPending ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Cancelling
+                  </span>
+                ) : (
+                  "Cancel class"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {refundConfirm && (
+        <div className="fixed inset-0 z-[100001] flex items-center justify-center bg-neutral-950/55 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-[28px] border border-neutral-200/80 bg-white p-6 shadow-[0_24px_80px_rgba(0,0,0,0.28)] dark:border-white/10 dark:bg-gray-800">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#E4F56C] text-neutral-950">
+              <span className="text-sm font-semibold">
+                {refundConfirm.userName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
+              </span>
+            </div>
+            <p className="mt-5 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Refund</p>
+            <h3 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">Cancel this booking</h3>
+            <p className="mt-2 text-sm leading-relaxed text-neutral-500 dark:text-white/60">
+              <span className="font-semibold text-neutral-950 dark:text-white">{refundConfirm.userName}</span> will be removed, their tokens refunded, and a cancellation email sent.
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setRefundConfirm(null)}
+                disabled={cancellingBookingId === refundConfirm.id}
+                className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white"
+              >
+                Keep booking
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAdminCancelAndRefund(refundConfirm)}
+                disabled={cancellingBookingId === refundConfirm.id}
+                className="flex-1 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {cancellingBookingId === refundConfirm.id ? "Cancelling" : "Refund tokens"}
+              </button>
             </div>
           </div>
         </div>

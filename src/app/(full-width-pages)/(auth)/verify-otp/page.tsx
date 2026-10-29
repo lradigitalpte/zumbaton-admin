@@ -6,9 +6,9 @@ import Link from "next/link";
 import BrandLogo from "@/components/common/BrandLogo";
 import Button from "@/components/ui/button/Button";
 import Input from "@/components/form/input/InputField";
-import Label from "@/components/form/Label";
 import { ChevronLeftIcon, EyeCloseIcon, EyeIcon } from "@/icons";
 import { useToast } from "@/components/ui/Toast";
+import { studioBack, studioButton, studioError, studioInputIcon, studioLead, studioLink, studioOtp, studioTitle } from "@/components/auth/studio";
 
 function VerifyOTPContent() {
   const router = useRouter();
@@ -187,11 +187,11 @@ function VerifyOTPContent() {
   }
 
   return (
-    <div className="flex flex-col flex-1 lg:w-1/2 w-full">
+    <div className="flex h-full w-full flex-1 flex-col overflow-y-auto px-6 py-8 lg:w-1/2">
       <div className="w-full max-w-md sm:pt-10 mx-auto mb-5">
         <Link
           href="/signin"
-          className="inline-flex items-center text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+          className={studioBack}
         >
           <ChevronLeftIcon />
           Back to sign in
@@ -205,24 +205,21 @@ function VerifyOTPContent() {
               alt="One Step Fitness Logo"
               width={400}
               height={133}
-              className="h-32 w-auto"
+              className="h-16 w-auto"
               priority
             />
           </div>
 
           <div className="mb-5 sm:mb-8">
-            <h1 className="mb-2 font-semibold text-gray-800 text-title-sm dark:text-white/90 sm:text-title-md">
-              Reset Your Password
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              We've sent a 6-digit verification code to <strong>{email}</strong>. Enter the code and your new password below.
+            <h1 className={studioTitle}>Reset your password</h1>
+            <p className={studioLead}>
+              We sent a 6-digit code to <strong className="text-neutral-950 dark:text-white">{email}</strong>. Enter it with your new password.
             </p>
           </div>
 
-          {/* Code Icon */}
-          <div className="flex justify-center mb-6">
-            <div className="w-20 h-20 rounded-full bg-brand-50 dark:bg-brand-900/20 flex items-center justify-center">
-              <svg className="w-10 h-10 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="mb-6 flex justify-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#E4F56C] text-neutral-950">
+              <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
             </div>
@@ -231,15 +228,15 @@ function VerifyOTPContent() {
           <form onSubmit={handleSubmit}>
             <div className="space-y-6">
               {error && (
-                <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                <div className={studioError}>
                   {error}
                 </div>
               )}
 
               {/* Code Input */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 text-center">
-                  Verification Code
+                <label className="mb-3 block text-center text-sm font-medium text-neutral-800 dark:text-white/90">
+                  Verification code
                 </label>
                 <div className="flex justify-center gap-2 sm:gap-3">
                   {code.map((digit, index) => (
@@ -252,7 +249,7 @@ function VerifyOTPContent() {
                       value={digit}
                       onChange={(e) => handleChange(index, e.target.value)}
                       onKeyDown={(e) => handleKeyDown(index, e)}
-                      className="w-12 h-14 sm:w-14 sm:h-16 text-center text-2xl font-bold border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-800 dark:text-white transition-colors"
+                      className={studioOtp}
                       disabled={isSubmitting}
                     />
                   ))}
@@ -262,11 +259,10 @@ function VerifyOTPContent() {
               {/* Password Fields */}
               <div className="space-y-4">
                 <div>
-                  <Label>
-                    New Password <span className="text-error-500">*</span>
-                  </Label>
+                  <label className="mb-2 block text-sm font-medium text-neutral-800 dark:text-white/90">New password</label>
                   <div className="relative">
                     <Input
+                      className={studioInputIcon}
                       type={showPassword ? "text" : "password"}
                       placeholder="Enter new password"
                       value={password}
@@ -283,19 +279,19 @@ function VerifyOTPContent() {
                   </div>
                   {password && (
                     <div className="mt-2 text-xs space-y-1">
-                      <div className={passwordChecks.length ? "text-green-600 dark:text-green-400" : "text-gray-500"}>
+                      <div className={passwordChecks.length ? "text-neutral-950 dark:text-white" : "text-neutral-400"}>
                         {passwordChecks.length ? "✓" : "○"} At least 8 characters
                       </div>
-                      <div className={passwordChecks.uppercase ? "text-green-600 dark:text-green-400" : "text-gray-500"}>
+                      <div className={passwordChecks.uppercase ? "text-neutral-950 dark:text-white" : "text-neutral-400"}>
                         {passwordChecks.uppercase ? "✓" : "○"} One uppercase letter
                       </div>
-                      <div className={passwordChecks.lowercase ? "text-green-600 dark:text-green-400" : "text-gray-500"}>
+                      <div className={passwordChecks.lowercase ? "text-neutral-950 dark:text-white" : "text-neutral-400"}>
                         {passwordChecks.lowercase ? "✓" : "○"} One lowercase letter
                       </div>
-                      <div className={passwordChecks.number ? "text-green-600 dark:text-green-400" : "text-gray-500"}>
+                      <div className={passwordChecks.number ? "text-neutral-950 dark:text-white" : "text-neutral-400"}>
                         {passwordChecks.number ? "✓" : "○"} One number
                       </div>
-                      <div className={passwordChecks.special ? "text-green-600 dark:text-green-400" : "text-gray-500"}>
+                      <div className={passwordChecks.special ? "text-neutral-950 dark:text-white" : "text-neutral-400"}>
                         {passwordChecks.special ? "✓" : "○"} One special character
                       </div>
                     </div>
@@ -303,11 +299,10 @@ function VerifyOTPContent() {
                 </div>
 
                 <div>
-                  <Label>
-                    Confirm Password <span className="text-error-500">*</span>
-                  </Label>
+                  <label className="mb-2 block text-sm font-medium text-neutral-800 dark:text-white/90">Confirm password</label>
                   <div className="relative">
                     <Input
+                      className={studioInputIcon}
                       type={showConfirmPassword ? "text" : "password"}
                       placeholder="Confirm new password"
                       value={confirmPassword}
@@ -340,7 +335,7 @@ function VerifyOTPContent() {
                   <button
                     type="button"
                     onClick={handleResend}
-                    className="text-sm text-brand-500 hover:text-brand-600 dark:text-brand-400 font-medium"
+                    className="text-sm font-semibold text-neutral-950 underline decoration-[#E4F56C] decoration-2 underline-offset-4 dark:text-white"
                     disabled={isSubmitting}
                   >
                     Resend code
@@ -350,13 +345,13 @@ function VerifyOTPContent() {
 
               {/* Submit */}
               <div>
-                <Button 
-                  className="w-full" 
-                  size="sm" 
-                  type="submit" 
+                <Button
+                  className={studioButton}
+                  size="sm"
+                  type="submit"
                   disabled={!isComplete || !isPasswordValid || password !== confirmPassword || !password || !confirmPassword || isSubmitting}
                 >
-                  {isSubmitting ? "Updating Password..." : "Reset Password"}
+                  {isSubmitting ? "Updating…" : "Reset password"}
                 </Button>
               </div>
             </div>
@@ -364,10 +359,7 @@ function VerifyOTPContent() {
 
           <div className="mt-5">
             <p className="text-sm font-normal text-center text-gray-700 dark:text-gray-400">
-              <Link
-                href="/forgot-password"
-                className="text-brand-500 hover:text-brand-600 dark:text-brand-400"
-              >
+              <Link href="/forgot-password" className={studioLink}>
                 Change email address
               </Link>
             </p>

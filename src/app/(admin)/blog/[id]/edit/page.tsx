@@ -2,7 +2,6 @@
 
 import { use } from "react";
 import { useRouter } from "next/navigation";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import { BlogEditorForm, blogRowToForm, formToPayload } from "@/components/blog/BlogEditorForm";
 import { useBlogMutations, useBlogPost } from "@/hooks/useBlogPosts";
 import { useToast } from "@/components/ui/Toast";
@@ -31,14 +30,14 @@ export default function EditBlogPostPage({ params }: { params: Promise<{ id: str
   };
 
   if (isLoading) {
-    return <div className="p-8 text-center text-gray-500">Loading post…</div>;
+    return <div className="h-40 animate-pulse rounded-[28px] border border-neutral-200/80 bg-white dark:border-white/10 dark:bg-gray-800" />;
   }
 
   if (error || !post) {
     return (
-      <div className="p-8 text-center">
-        <p className="text-red-600">Post not found.</p>
-        <button type="button" className="mt-4 text-brand-600" onClick={() => router.push("/blog")}>
+      <div className="rounded-[28px] border border-neutral-200/80 bg-white px-6 py-12 text-center dark:border-white/10 dark:bg-gray-800">
+        <p className="text-sm text-neutral-500">This post could not be found.</p>
+        <button type="button" className="mt-4 rounded-full bg-neutral-950 px-4 py-2 text-xs font-semibold text-white" onClick={() => router.push("/blog")}>
           Back to blog
         </button>
       </div>
@@ -46,21 +45,20 @@ export default function EditBlogPostPage({ params }: { params: Promise<{ id: str
   }
 
   return (
-    <div>
-      <PageBreadCrumb pageTitle="Edit blog post" />
-      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div className="min-w-0 space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{post.title}</h2>
-          <p className="text-sm text-gray-500">Status: {post.status}</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">{post.title}</h1>
+          <p className="mt-1 text-sm text-neutral-500">{post.status === "published" ? "Published on the website" : "Draft, not on the website yet"}</p>
         </div>
         {post.status === "published" ? (
           <a
             href={`${process.env.NEXT_PUBLIC_WEB_APP_URL || "https://onestepfitness.sg"}/blog/${post.slug}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm font-medium text-brand-600 hover:underline"
+            className="rounded-full bg-neutral-950 px-4 py-2 text-center text-xs font-semibold text-white dark:bg-white dark:text-neutral-950"
           >
-            View on website →
+            View on website
           </a>
         ) : null}
       </div>

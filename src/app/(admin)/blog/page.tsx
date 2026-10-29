@@ -3,19 +3,20 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
-import Button from "@/components/ui/button/Button";
 import { useBlogMutations, useBlogPosts } from "@/hooks/useBlogPosts";
 import { useToast } from "@/components/ui/Toast";
 import type { BlogPostRow } from "@/lib/blog-utils";
-import { FileText, Pencil, Plus, Trash2 } from "lucide-react";
+
+const card = "rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800";
+const metric = "flex min-h-[148px] flex-col rounded-[28px] p-5 text-left sm:p-6";
 
 function formatDate(iso: string | null) {
-  if (!iso) return "—";
+  if (!iso) return "Not dated";
   return new Intl.DateTimeFormat("en-SG", {
     day: "numeric",
     month: "short",
     year: "numeric",
+    timeZone: "Asia/Singapore",
   }).format(new Date(iso));
 }
 
@@ -24,139 +25,138 @@ export default function BlogListPage() {
   const [filter, setFilter] = useState<"all" | "published" | "draft">("all");
   const { data: allPosts = [], isLoading, refetch } = useBlogPosts();
   const { deletePost } = useBlogMutations();
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BlogPostRow | null>(null);
 
   const counts = useMemo(
     () => ({
-      published: allPosts.filter((p) => p.status === "published").length,
-      draft: allPosts.filter((p) => p.status === "draft").length,
+      published: allPosts.filter((post) => post.status === "published").length,
+      draft: allPosts.filter((post) => post.status === "draft").length,
     }),
     [allPosts]
   );
 
   const posts = useMemo(() => {
     if (filter === "all") return allPosts;
-    return allPosts.filter((p) => p.status === filter);
+    return allPosts.filter((post) => post.status === filter);
   }, [allPosts, filter]);
 
-  const handleDelete = async (post: BlogPostRow) => {
-    if (!confirm(`Delete "${post.title}"? This cannot be undone.`)) return;
-    setDeletingId(post.id);
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
     try {
-      await deletePost.mutateAsync(post.id);
+      await deletePost.mutateAsync(deleteTarget.id);
       showToast("Post deleted", "success");
+      setDeleteTarget(null);
       refetch();
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Delete failed", "error");
-    } finally {
-      setDeletingId(null);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Delete failed", "error");
     }
   };
 
-  return (
-    <div>
-      <PageBreadCrumb pageTitle="Blog" />
+  const filters = [
+    { key: "all" as const, label: "All posts", value: allPosts.length, caption: "Published and drafts" },
+    { key: "published" as const, label: "Published", value: counts.published, caption: "Live on the website" },
+    { key: "draft" as const, label: "Drafts", value: counts.draft, caption: "Not on the website yet" },
+  ];
 
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+  return (
+    <div className="min-w-0 space-y-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Blog posts</h2>
-          <p className="text-sm text-gray-500">
-            Create and publish articles for the public website.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">Blog</h1>
+          <p className="mt-1 max-w-xl text-sm text-neutral-500">Articles for the public website. Published posts are live. Drafts stay in the admin.</p>
         </div>
-        <Link href="/blog/new">
-          <Button className="inline-flex items-center gap-2">
-            <Plus className="h-4 w-4" /> New post
-          </Button>
+        <Link href="/blog/new" className="rounded-full bg-[#E4F56C] px-4 py-2 text-center text-xs font-semibold text-neutral-950">
+          New post
         </Link>
       </div>
 
-      <div className="mb-4 flex gap-2">
-        {(["all", "published", "draft"] as const).map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setFilter(key)}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium capitalize ${
-              filter === key
-                ? "bg-brand-500 text-white"
-                : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-            }`}
-          >
-            {key}
-            {key === "published" ? ` (${counts.published})` : ""}
-            {key === "draft" ? ` (${counts.draft})` : ""}
-          </button>
-        ))}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {filters.map((item) => {
+          const selected = filter === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setFilter(item.key)}
+              className={`${metric} ${selected ? "border border-[#d5e45c] bg-[#E4F56C] text-neutral-950" : "border border-neutral-200/80 bg-white text-neutral-950 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 dark:text-white"}`}
+            >
+              <p className={`text-sm font-medium ${selected ? "" : "text-neutral-600 dark:text-white/70"}`}>{item.label}</p>
+              <p className="mt-4 text-4xl font-semibold leading-none tracking-tight">{isLoading ? "—" : item.value}</p>
+              <p className={`mt-2 text-xs ${selected ? "text-neutral-950/60" : "text-neutral-400"}`}>{item.caption}</p>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        {isLoading ? (
-          <div className="p-8 text-center text-gray-500">Loading posts…</div>
-        ) : posts.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 p-12 text-center">
-            <FileText className="h-10 w-10 text-gray-300" />
-            <p className="text-gray-500">No blog posts yet.</p>
-            <Link href="/blog/new">
-              <Button>Create your first post</Button>
-            </Link>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-100 dark:divide-gray-800">
-            {posts.map((post) => (
-              <div key={post.id} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
-                <div className="relative h-20 w-full shrink-0 overflow-hidden rounded-lg bg-gray-100 sm:h-16 sm:w-28 dark:bg-gray-800">
-                  {post.featured_image_url ? (
-                    <Image
-                      src={post.featured_image_url}
-                      alt=""
-                      fill
-                      className="object-cover"
-                      unoptimized
-                    />
+      {isLoading ? (
+        <div className="space-y-3">
+          {[0, 1, 2].map((item) => <div key={item} className={`${card} h-32 animate-pulse`} />)}
+        </div>
+      ) : posts.length === 0 ? (
+        <section className={`${card} px-6 py-12 text-center`}>
+          <p className="text-sm font-medium text-neutral-950 dark:text-white">{filter === "all" ? "No blog posts yet" : `No ${filter} posts`}</p>
+          <p className="mt-1 text-sm text-neutral-500">Write one and publish it when it is ready.</p>
+          <Link href="/blog/new" className="mt-4 inline-flex rounded-full bg-[#E4F56C] px-4 py-2 text-xs font-semibold text-neutral-950">
+            New post
+          </Link>
+        </section>
+      ) : (
+        <div className="space-y-3">
+          {posts.map((post) => (
+            <article key={post.id} className={`${card} flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5`}>
+              <div className="relative h-36 w-full shrink-0 overflow-hidden rounded-[20px] bg-neutral-100 sm:h-24 sm:w-36 dark:bg-white/10">
+                {post.featured_image_url ? (
+                  <Image src={post.featured_image_url} alt="" fill className="object-cover" unoptimized />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">No image</div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-semibold text-neutral-950 dark:text-white">{post.title}</h2>
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${post.status === "published" ? "bg-[#E4F56C] text-neutral-950" : "bg-neutral-100 text-neutral-600 dark:bg-white/10 dark:text-white"}`}>
+                    {post.status === "published" ? "Published" : "Draft"}
+                  </span>
+                  {post.is_featured ? (
+                    <span className="rounded-full bg-neutral-950 px-2.5 py-1 text-[11px] font-semibold text-white dark:bg-white dark:text-neutral-950">Featured</span>
                   ) : null}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate font-semibold text-gray-900 dark:text-white">{post.title}</h3>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        post.status === "published"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-amber-100 text-amber-700"
-                      }`}
-                    >
-                      {post.status}
-                    </span>
-                    {post.is_featured ? (
-                      <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700">Featured</span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 line-clamp-1 text-sm text-gray-500">{post.excerpt || "No excerpt"}</p>
-                  <p className="mt-1 text-xs text-gray-400">
-                    /blog/{post.slug} · Updated {formatDate(post.updated_at)}
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <Link href={`/blog/${post.id}/edit`}>
-                    <Button variant="outline" className="inline-flex items-center gap-1">
-                      <Pencil className="h-4 w-4" /> Edit
-                    </Button>
-                  </Link>
-                  <Button
-                    variant="outline"
-                    className="text-red-600"
-                    disabled={deletingId === post.id}
-                    onClick={() => handleDelete(post)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
+                <p className="mt-2 line-clamp-2 text-sm text-neutral-500">{post.excerpt || "No excerpt yet."}</p>
+                <p className="mt-2 text-xs text-neutral-400">/blog/{post.slug} · Updated {formatDate(post.updated_at)}</p>
               </div>
-            ))}
+              <div className="flex shrink-0 gap-2">
+                <Link href={`/blog/${post.id}/edit`} className="rounded-full bg-neutral-950 px-3.5 py-2 text-xs font-semibold text-white dark:bg-white dark:text-neutral-950">
+                  Edit
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setDeleteTarget(post)}
+                  className="rounded-full border border-red-200 bg-red-50 px-3.5 py-2 text-xs font-semibold text-red-600 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                >
+                  Delete
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-neutral-950/40" onClick={() => !deletePost.isPending && setDeleteTarget(null)} />
+          <div className={`${card} relative w-full max-w-md p-6`} onClick={(event) => event.stopPropagation()}>
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-red-500">Delete</p>
+            <h2 className="mt-2 text-xl font-semibold text-neutral-950 dark:text-white">Remove this post?</h2>
+            <p className="mt-2 text-sm text-neutral-500">{deleteTarget.title} will leave the website and this list.</p>
+            <div className="mt-6 flex gap-2">
+              <button type="button" onClick={() => setDeleteTarget(null)} className="flex-1 rounded-full border border-neutral-200 py-3 text-sm font-semibold text-neutral-700 dark:border-white/10 dark:text-white">Cancel</button>
+              <button type="button" onClick={confirmDelete} disabled={deletePost.isPending} className="flex-1 rounded-full bg-red-600 py-3 text-sm font-semibold text-white disabled:opacity-50">
+                {deletePost.isPending ? "Deleting…" : "Delete"}
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

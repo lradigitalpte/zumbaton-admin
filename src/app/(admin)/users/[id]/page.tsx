@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import SlidePanel from "@/components/ui/SlidePanel";
 import Label from "@/components/form/Label";
 import Input from "@/components/form/input/InputField";
+import StudioDate from "@/components/ui/StudioDate";
 import { useUser, useInvalidateUser, type UserDetail } from "@/hooks/useUser";
-import { RefreshCw, Upload, Trash2, Copy, Check } from "lucide-react";
+import { RefreshCw, Upload, Trash2, Copy, Check, ChevronDown } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 import { supabase } from "@/lib/supabase";
 import { useQueryClient } from "@tanstack/react-query";
@@ -16,6 +18,138 @@ import { isExpiredBySgtCalendar, sgtDaysUntilExpiry } from "@/lib/reports-utils"
 import { InvoicePreviewModal, type PreviewInvoice } from "@/components/invoices/InvoicePreviewModal";
 
 const LOADING_TIMEOUT = 15000; // 15 seconds
+
+function StudioMenu({
+  id,
+  value,
+  onChange,
+  placeholder,
+  options,
+}: {
+  id?: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  options: { value: string; label: string; hint?: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ top: 0, left: 0, width: 0, maxHeight: 240 });
+
+  const place = () => {
+    const node = buttonRef.current;
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    const below = window.innerHeight - rect.bottom - 16;
+    const above = rect.top - 16;
+    const openUp = below < 180 && above > below;
+    const maxHeight = Math.max(140, Math.min(280, openUp ? above : below));
+    setBox({
+      top: openUp ? Math.max(8, rect.top - 8 - maxHeight) : rect.bottom + 8,
+      left: rect.left,
+      width: rect.width,
+      maxHeight,
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    place();
+    const onMove = () => place();
+    window.addEventListener("resize", onMove);
+    document.addEventListener("scroll", onMove, true);
+    return () => {
+      window.removeEventListener("resize", onMove);
+      document.removeEventListener("scroll", onMove, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (buttonRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const selected = options.find((option) => option.value === value);
+
+  return (
+    <div className="relative mt-1.5">
+      <button
+        ref={buttonRef}
+        id={id}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className={`flex h-12 w-full items-center justify-between gap-3 rounded-2xl border bg-neutral-50 px-4 text-left text-sm dark:bg-white/5 ${
+          open
+            ? "border-neutral-950 dark:border-white"
+            : "border-neutral-200 dark:border-white/10"
+        }`}
+      >
+        <span className={`truncate ${selected ? "font-medium text-neutral-950 dark:text-white" : "text-neutral-400"}`}>
+          {selected ? selected.label : placeholder}
+        </span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="listbox"
+            className="fixed z-[100001] overflow-auto rounded-[22px] border border-neutral-200/80 bg-white p-1.5 shadow-[0_18px_50px_rgba(16,24,40,0.16)] dark:border-white/10 dark:bg-neutral-950"
+            style={{ top: box.top, left: box.left, width: box.width, maxHeight: box.maxHeight }}
+          >
+            {options.length === 0 ? (
+              <div className="px-3 py-3 text-sm text-neutral-500">Nothing to choose</div>
+            ) : (
+              options.map((option) => {
+                const active = option.value === value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => {
+                      onChange(option.value);
+                      setOpen(false);
+                    }}
+                    className={`flex w-full flex-col rounded-2xl px-3 py-2.5 text-left ${
+                      active
+                        ? "bg-[#E4F56C] text-neutral-950"
+                        : "text-neutral-950 hover:bg-neutral-100 dark:text-white dark:hover:bg-white/10"
+                    }`}
+                  >
+                    <span className="text-sm font-semibold">{option.label}</span>
+                    {option.hint ? (
+                      <span className={`mt-0.5 text-xs ${active ? "text-neutral-950/70" : "text-neutral-500 dark:text-white/45"}`}>
+                        {option.hint}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })
+            )}
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+}
 
 interface ClassHistory {
   id: string;
@@ -526,13 +660,13 @@ export default function UserDetailPage() {
   const getStatusStyle = (status: UserDetail["status"]) => {
     switch (status) {
       case "active":
-        return "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-400";
+        return "bg-[#E4F56C] text-neutral-950";
       case "flagged":
-        return "bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-400";
+        return "bg-neutral-950 text-[#E4F56C]";
       case "inactive":
-        return "bg-gray-50 text-gray-600 ring-gray-500/20 dark:bg-gray-500/10 dark:text-gray-400";
+        return "bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white/50";
       default:
-        return "bg-gray-50 text-gray-600 ring-gray-500/20";
+        return "bg-neutral-100 text-neutral-700";
     }
   };
 
@@ -1406,79 +1540,32 @@ export default function UserDetailPage() {
   const userData = user!;
 
   return (
-    <div>
-      <PageBreadCrumb pageTitle="User Details" />
-
-      {/* Back button and actions */}
-      <div className="mb-6 flex items-center justify-between">
-        <button
-          onClick={() => router.push("/users")}
-          className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-        >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to Users
-        </button>
-        <div className="flex gap-2">
-          <button 
-            onClick={() => setIsAdjustPanelOpen(true)}
-            className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700"
-          >
-            Sell Tokens
-          </button>
-          <button 
-            onClick={() => setIsEditPanelOpen(true)}
-            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
-          >
-            Edit User
-          </button>
-          {userData.isActive ? (
-            <button 
-              onClick={handleDeactivateUser}
-              disabled={isDeactivating}
-              className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isDeactivating ? 'Deactivating...' : 'Deactivate User'}
-            </button>
-          ) : (
-            <button 
-              onClick={handleReactivateUser}
-              disabled={isReactivating}
-              className="rounded-lg bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isReactivating ? 'Reactivating...' : 'Reactivate User'}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* User Header Card */}
-      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="relative">
+    <div className="space-y-6">
+      <div className="overflow-hidden rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+        <div className="flex flex-col gap-6 p-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex items-end gap-5">
+            <div className="relative shrink-0">
               {userData.avatarUrl ? (
                 <img
                   src={userData.avatarUrl}
                   alt={userData.name}
-                  className="h-16 w-16 rounded-full object-cover"
+                  className="h-24 w-24 rounded-full object-cover"
                 />
               ) : (
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-xl font-bold text-white">
+                <div className="flex h-24 w-24 items-center justify-center rounded-full bg-neutral-950 text-2xl font-semibold text-[#E4F56C]">
                   {getInitials(userData.name)}
                 </div>
               )}
               <button
                 onClick={handleAvatarClick}
                 disabled={isUploadingAvatar}
-                className="absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded-full bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-[#E4F56C] text-neutral-950 hover:bg-[#d5e45c] disabled:cursor-not-allowed disabled:opacity-50"
                 title="Upload profile picture"
               >
                 {isUploadingAvatar ? (
-                  <div className="h-3 w-3 animate-spin rounded-full border border-white border-t-transparent"></div>
+                  <div className="h-3 w-3 animate-spin rounded-full border border-neutral-950 border-t-transparent"></div>
                 ) : (
-                  <Upload className="h-3 w-3" />
+                  <Upload className="h-3.5 w-3.5" />
                 )}
               </button>
               <input
@@ -1489,9 +1576,15 @@ export default function UserDetailPage() {
                 className="hidden"
               />
             </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">{userData.name}</h1>
+            <div className="min-w-0 pb-1">
+              <button
+                onClick={() => router.push("/users")}
+                className="mb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400 hover:text-neutral-950 dark:hover:text-white"
+              >
+                ← Users
+              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-3xl font-semibold uppercase tracking-tight text-neutral-950 dark:text-white">{userData.name}</h1>
                 <span
                   className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${getStatusStyle(
                     userData.status
@@ -1500,106 +1593,131 @@ export default function UserDetailPage() {
                   {userData.status.charAt(0).toUpperCase() + userData.status.slice(1)}
                 </span>
               </div>
-              <div className="mt-1 flex flex-col gap-1 text-sm text-gray-500 dark:text-gray-400 sm:flex-row sm:gap-4">
-                <span>{userData.email}</span>
-                <span>{userData.phone}</span>
-              </div>
+              <p className="mt-1 truncate text-sm text-neutral-500 dark:text-white/50">
+                {userData.email}
+                {userData.phone ? ` · ${userData.phone}` : ""}
+              </p>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-6 text-center">
-            <div>
-              <div className={`text-2xl font-bold ${userData.tokenBalance === 0 ? "text-red-600" : userData.tokenBalance < 3 ? "text-amber-600" : "text-emerald-600"}`}>
-                {userData.tokenBalance}
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Tokens</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">{userData.classesAttended + userData.noShows}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Classes</div>
-            </div>
-            <div>
-              <div className={`text-2xl font-bold ${userData.noShows >= 3 ? "text-red-600" : userData.noShows > 0 ? "text-amber-600" : "text-gray-900 dark:text-white"}`}>
-                {userData.noShows}
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">No-Shows</div>
-            </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setIsAdjustPanelOpen(true)}
+              className="rounded-full bg-[#E4F56C] px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-[#d5e45c]"
+            >
+              Sell Tokens
+            </button>
+            <button
+              onClick={() => setIsEditPanelOpen(true)}
+              className="rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800"
+            >
+              Edit User
+            </button>
+            {userData.isActive ? (
+              <button
+                onClick={handleDeactivateUser}
+                disabled={isDeactivating}
+                className="rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white"
+              >
+                {isDeactivating ? "Deactivating..." : "Deactivate User"}
+              </button>
+            ) : (
+              <button
+                onClick={handleReactivateUser}
+                disabled={isReactivating}
+                className="rounded-full bg-[#E4F56C] px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-[#d5e45c] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isReactivating ? "Reactivating..." : "Reactivate User"}
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 px-5 pb-5 sm:grid-cols-4 sm:px-6">
+          <div className="rounded-[22px] bg-[#E4F56C] p-4 text-neutral-950">
+            <p className="text-3xl font-semibold leading-none tracking-tight">{userData.tokenBalance}</p>
+            <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-950/50">Tokens</p>
+          </div>
+          <div className="rounded-[22px] bg-neutral-950 p-4 text-white">
+            <p className="text-3xl font-semibold leading-none tracking-tight">{userData.classesAttended + userData.noShows}</p>
+            <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.14em] text-white/45">Classes</p>
+          </div>
+          <div className="rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+            <p className="text-3xl font-semibold leading-none tracking-tight text-neutral-950 dark:text-white">{userData.classesAttended}</p>
+            <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Attended</p>
+          </div>
+          <div className="rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+            <p className="text-3xl font-semibold leading-none tracking-tight text-neutral-950 dark:text-white">{userData.noShows}</p>
+            <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">No-shows</p>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="mb-6 border-b border-gray-200 dark:border-gray-800">
-        <div className="flex gap-1">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`relative px-4 py-3 text-sm font-medium transition-colors ${
-                activeTab === tab.key
-                  ? "text-brand-600 dark:text-brand-400"
-                  : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-              }`}
-            >
-              {tab.label}
-              {activeTab === tab.key && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-600 dark:bg-brand-400" />
-              )}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === tab.key
+                ? "bg-neutral-950 text-white"
+                : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* Tab Content */}
-      <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <div>
         {/* Overview Tab */}
         {activeTab === "overview" && (
-          <div className="p-6">
+          <div>
             <div className="grid gap-6 md:grid-cols-2">
               {/* Personal Information */}
-              <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-                <h3 className="mb-4 font-semibold text-gray-900 dark:text-white">Personal Information</h3>
-                <dl className="space-y-3">
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Full Name</dt>
+              <div className="rounded-[28px] border border-neutral-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 md:col-span-2">
+                <h3 className="mb-4 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Personal</h3>
+                <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Full Name</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">{userData.name}</dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Email</dt>
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Email</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">{userData.email}</dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Phone</dt>
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Phone</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">{userData.phone || "-"}</dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Date of Birth</dt>
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Date of Birth</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">
                       {userData.dateOfBirth 
                         ? new Date(userData.dateOfBirth).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
                         : "-"}
                     </dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Gender</dt>
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Gender</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">{userData.gender || "-"}</dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Blood Group</dt>
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Blood Group</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">{userData.bloodGroup || "-"}</dd>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Registration Form</dt>
+                  <div className="flex flex-col items-start gap-2 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5 sm:col-span-2 lg:col-span-3">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Registration Form</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">
                       {/* Digital Form Status & Actions */}
                       {userData.registrationFormSentAt && !userData.registrationFormId && (
-                        <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-yellow-50 text-yellow-700 ring-1 ring-inset ring-yellow-600/20">
+                        <span className="inline-flex items-center rounded-full bg-[#E4F56C] px-2.5 py-0.5 text-xs font-semibold text-neutral-950">
                           📤 Sent - Awaiting User
                         </span>
                       )}
                       {userData.registrationFormId && (
                         <a
                           href={`/users/${userData.id}/registration-form`}
-                          className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
+                          className="inline-flex items-center rounded-full bg-neutral-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800"
                           title="View and sign digital registration form"
                         >
                           ✓ View & Sign Digital Form
@@ -1649,7 +1767,7 @@ export default function UserDetailPage() {
                       <button
                         onClick={handleSendRegistrationForm}
                         disabled={isSendingForm || !userData.email}
-                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="rounded-full bg-[#E4F56C] px-3 py-1.5 text-xs font-semibold text-neutral-950 hover:bg-[#d5e45c] disabled:cursor-not-allowed disabled:opacity-50"
                         title={userData.registrationFormSentAt ? "Resend digital registration form" : "Send digital registration form"}
                       >
                         {isSendingForm ? 'Sending...' : (userData.registrationFormSentAt ? 'Resend Form' : 'Send Form')}
@@ -1660,7 +1778,7 @@ export default function UserDetailPage() {
                       <button
                         onClick={handleCopyRegistrationFormLink}
                         disabled={isCopyingFormLink || !user?.id}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+                        className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-neutral-950 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white/10 dark:text-white"
                         title="Copy the registration form link to clipboard"
                       >
                         {formLinkCopied ? (
@@ -1675,12 +1793,12 @@ export default function UserDetailPage() {
                       </button>
                     </dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Early Bird Status</dt>
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Early Bird Status</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">
                       {user.earlyBirdEligible ? (
                         <span className="inline-flex items-center gap-1.5">
-                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-400">
+                          <span className="inline-flex items-center rounded-full bg-[#E4F56C] px-2.5 py-0.5 text-xs font-semibold text-neutral-950">
                             Eligible
                           </span>
                           <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -1694,27 +1812,27 @@ export default function UserDetailPage() {
                       )}
                     </dd>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Referral Discount</dt>
+                  <div className="flex flex-col items-start gap-2 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5 sm:col-span-2 lg:col-span-3">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Referral Discount</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">
                       <button
                         onClick={() => setShowReferralPanel(true)}
-                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-lime-600 text-white hover:bg-lime-700 transition-colors"
+                        className="rounded-full bg-neutral-950 px-3 py-1.5 text-xs font-semibold text-[#E4F56C] hover:bg-neutral-800"
                         title="Generate and send referral voucher"
                       >
                         Referral Discount
                       </button>
                     </dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Address</dt>
-                    <dd className="text-sm font-medium text-gray-900 dark:text-white text-right max-w-48">
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Address</dt>
+                    <dd className="text-sm font-medium text-gray-900 dark:text-white">
                       {user.address || "-"}
                     </dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Emergency Contact</dt>
-                    <dd className="text-sm font-medium text-gray-900 dark:text-white text-right max-w-48">
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Emergency Contact</dt>
+                    <dd className="text-sm font-medium text-gray-900 dark:text-white">
                       {user.emergencyContact || "-"}
                     </dd>
                   </div>
@@ -1722,23 +1840,23 @@ export default function UserDetailPage() {
               </div>
 
               {/* Membership Information */}
-              <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-                <h3 className="mb-4 font-semibold text-gray-900 dark:text-white">Membership Information</h3>
-                <dl className="space-y-3">
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Member Since</dt>
+              <div className="rounded-[28px] border border-neutral-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 md:col-span-2">
+                <h3 className="mb-4 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Membership</h3>
+                <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Member Since</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">
                       {new Date(user.joinedDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
                     </dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Last Active</dt>
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Last Active</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">
                       {new Date(user.lastActive).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
                     </dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Status</dt>
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Status</dt>
                     <dd>
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${getStatusStyle(
@@ -1749,14 +1867,14 @@ export default function UserDetailPage() {
                       </span>
                     </dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Token Balance</dt>
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Token Balance</dt>
                     <dd className={`text-sm font-bold ${user.tokenBalance === 0 ? "text-red-600" : "text-emerald-600"}`}>
                       {user.tokenBalance} tokens
                     </dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-sm text-gray-500 dark:text-gray-400">Attendance Rate</dt>
+                  <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                    <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Attendance Rate</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">
                       {user.classesAttended + user.noShows > 0
                         ? Math.round((user.classesAttended / (user.classesAttended + user.noShows)) * 100)
@@ -1767,11 +1885,11 @@ export default function UserDetailPage() {
               </div>
 
               {/* User Packages */}
-              <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700 md:col-span-2">
-                <h3 className="mb-4 font-semibold text-gray-900 dark:text-white">Token Packages</h3>
+              <div className="rounded-[28px] border border-neutral-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 md:col-span-2">
+                <h3 className="mb-4 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Token packages</h3>
                 {isLoadingUserPackages ? (
                   <div className="flex items-center justify-center py-8">
-                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-500 border-t-transparent"></div>
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-950 border-t-transparent"></div>
                     <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">Loading packages...</span>
                   </div>
                 ) : userPackages.length === 0 ? (
@@ -1865,35 +1983,22 @@ export default function UserDetailPage() {
                 )}
               </div>
 
-              {/* Quick Stats */}
-              <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700 md:col-span-2">
-                <h3 className="mb-4 font-semibold text-gray-900 dark:text-white">Activity Summary</h3>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
-                    <div className="text-2xl font-bold text-gray-900 dark:text-white">{user.classesAttended + user.noShows}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Total Classes</div>
-                  </div>
-                  <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
-                    <div className="text-2xl font-bold text-emerald-600">{user.classesAttended}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Attended</div>
-                  </div>
-                  <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
-                    <div className={`text-2xl font-bold ${user.noShows > 0 ? "text-amber-600" : "text-gray-900 dark:text-white"}`}>{user.noShows}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">No-Shows</div>
-                  </div>
-                  <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
-                    <div className="text-2xl font-bold text-brand-600">{user.tokenBalance}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Current Tokens</div>
-                  </div>
-                </div>
-              </div>
+              <p className="rounded-full bg-neutral-950 px-4 py-2 text-center text-sm text-white/70 md:col-span-2">
+                <span className="font-semibold text-[#E4F56C]">{user.classesAttended}</span> attended
+                <span className="mx-2 text-white/30">·</span>
+                {user.classesAttended + user.noShows} classes
+                <span className="mx-2 text-white/30">·</span>
+                {user.noShows} no-shows
+                <span className="mx-2 text-white/30">·</span>
+                <span className="font-semibold text-white">{user.tokenBalance}</span> tokens
+              </p>
             </div>
           </div>
         )}
 
         {/* Classes Tab */}
         {activeTab === "classes" && (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-800/50">
@@ -1954,7 +2059,7 @@ export default function UserDetailPage() {
 
         {/* Tokens Tab */}
         {activeTab === "tokens" && (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-800/50">
@@ -1980,7 +2085,7 @@ export default function UserDetailPage() {
                   <tr>
                     <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                       <div className="flex items-center justify-center">
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-brand-500 border-t-transparent"></div>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-950 border-t-transparent"></div>
                         <span className="ml-2">Loading token transactions...</span>
                       </div>
                     </td>
@@ -2052,7 +2157,7 @@ export default function UserDetailPage() {
                       <button
                         onClick={() => handleGenerateInvoice(payment)}
                         disabled={generatingPaymentId === payment.id}
-                        className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 dark:bg-brand-600 dark:hover:bg-brand-700"
+                        className="rounded-full bg-neutral-950 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-40"
                       >
                         {generatingPaymentId === payment.id ? "Generating..." : "Generate Invoice"}
                       </button>
@@ -2090,7 +2195,7 @@ export default function UserDetailPage() {
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                       <div className="flex items-center justify-center">
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-brand-500 border-t-transparent"></div>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-950 border-t-transparent"></div>
                         <span className="ml-2">Loading invoices...</span>
                       </div>
                     </td>
@@ -2130,7 +2235,7 @@ export default function UserDetailPage() {
                               href={inv.pdfUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-sm font-medium text-brand-500 hover:text-brand-600"
+                              className="rounded-full bg-neutral-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800"
                             >
                               Download
                             </a>
@@ -2154,13 +2259,13 @@ export default function UserDetailPage() {
 
         {/* Notes Tab */}
         {activeTab === "notes" && (
-          <div className="p-6">
+          <div className="rounded-[28px] border border-neutral-200/80 bg-white p-6 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="font-semibold text-gray-900 dark:text-white">Admin Notes</h3>
               {!isEditingNotes && (
                 <button
                   onClick={() => setIsEditingNotes(true)}
-                  className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600 dark:bg-brand-600 dark:hover:bg-brand-700"
+                  className="rounded-full bg-neutral-950 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800"
                 >
                   {notes ? "Edit Note" : "Add Note"}
                 </button>
@@ -2173,7 +2278,7 @@ export default function UserDetailPage() {
                   <textarea
                     id="notes"
                     rows={8}
-                    className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
+                    className="mt-1.5 w-full rounded-[22px] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
                     placeholder="Enter admin notes for this user..."
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
@@ -2206,7 +2311,7 @@ export default function UserDetailPage() {
                       }
                     }}
                     disabled={isSavingNotes}
-                    className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-full bg-neutral-950 px-5 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {isSavingNotes ? "Saving..." : "Save Notes"}
                   </button>
@@ -2216,7 +2321,7 @@ export default function UserDetailPage() {
                       setNotes(user.notes || "");
                     }}
                     disabled={isSavingNotes}
-                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                    className="rounded-full border border-neutral-200 bg-white px-5 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-transparent dark:text-white"
                   >
                     Cancel
                   </button>
@@ -2245,13 +2350,13 @@ export default function UserDetailPage() {
         title="Upload Physical Form"
       >
         <div className="space-y-6">
-          <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-lg font-semibold text-white">
+          <div className="flex items-center gap-4 rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-sm font-semibold text-[#E4F56C]">
               {getInitials(user.name)}
             </div>
             <div>
-              <div className="font-medium text-gray-900 dark:text-white">{user.name}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">{user.email}</div>
+              <div className="font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{user.name}</div>
+              <div className="text-sm text-neutral-500 dark:text-white/50">{user.email}</div>
             </div>
           </div>
 
@@ -2262,16 +2367,16 @@ export default function UserDetailPage() {
               type="file"
               accept=".pdf,.jpg,.jpeg,.png,.webp"
               onChange={handlePhysicalFormFileChange}
-              className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 file:mr-4 file:rounded-lg file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-brand-600 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:file:bg-brand-600 dark:file:hover:bg-brand-700"
+              className="mt-1.5 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm text-neutral-950 file:mr-4 file:rounded-full file:border-0 file:bg-neutral-950 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#E4F56C] focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
             />
             <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
               Accepted formats: PDF, JPEG, PNG, WebP. Maximum file size: 10MB.
             </p>
             {physicalFormFile && (
-              <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+              <div className="mt-2 rounded-[22px] border border-neutral-200/80 bg-white p-3 dark:border-white/10 dark:bg-white/5">
                 <div className="flex items-center justify-between">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    <p className="text-sm font-semibold uppercase tracking-wide text-neutral-950 dark:text-white truncate">
                       {physicalFormFile.name}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -2284,8 +2389,8 @@ export default function UserDetailPage() {
           </div>
 
           {userData.physicalFormUrl && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
-              <p className="text-sm text-amber-800 dark:text-amber-200">
+            <div className="rounded-[22px] bg-[#E4F56C]/40 p-4 text-neutral-950">
+              <p className="text-sm text-neutral-950">
                 <strong>Note:</strong> Uploading a new file will replace the existing physical form.
               </p>
             </div>
@@ -2297,14 +2402,14 @@ export default function UserDetailPage() {
                 setIsUploadPanelOpen(false);
                 setPhysicalFormFile(null);
               }}
-              className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
             >
               Cancel
             </button>
             <button
               onClick={handleUploadPhysicalForm}
               disabled={!physicalFormFile || isUploading}
-              className="flex-1 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex-1 rounded-full bg-[#E4F56C] px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-[#d5e45c] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {isUploading ? 'Uploading...' : 'Upload Form'}
             </button>
@@ -2319,26 +2424,26 @@ export default function UserDetailPage() {
         title="Referral Discount"
       >
         <div className="space-y-6">
-          <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-lime-500 text-lg font-semibold text-white">
+          <div className="flex items-center gap-4 rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-sm font-semibold text-[#E4F56C]">
               {getInitials(user?.name ?? "")}
             </div>
             <div>
-              <div className="font-medium text-gray-900 dark:text-white">{user?.name}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">{user?.email}</div>
+              <div className="font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{user?.name}</div>
+              <div className="text-sm text-neutral-500 dark:text-white/50">{user?.email}</div>
             </div>
           </div>
 
           <div>
             <Label htmlFor="referralDiscountPercent">Discount percentage</Label>
             <Input
+              className="!h-12 !rounded-2xl !border-neutral-200 !bg-neutral-50 !shadow-none focus:!border-neutral-950 focus:!ring-neutral-950/10 dark:!border-white/10 dark:!bg-white/5"
               id="referralDiscountPercent"
               type="number"
               min="1"
               max="100"
               value={referralDiscountPercent}
               onChange={(e) => setReferralDiscountPercent(Number(e.target.value) || 8)}
-              className="mt-1.5"
             />
             <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
               Default 8%. User will receive this discount on their next token package purchase.
@@ -2349,18 +2454,18 @@ export default function UserDetailPage() {
             <button
               onClick={handleGenerateVoucher}
               disabled={isGeneratingVoucher}
-              className="w-full rounded-lg bg-lime-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-lime-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full rounded-full bg-[#E4F56C] px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-[#d5e45c] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {isGeneratingVoucher ? "Generating..." : "Generate"}
             </button>
           ) : (
             <>
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800">
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Voucher code</p>
-                <p className="mt-1 font-mono text-lg font-semibold text-gray-900 dark:text-white">{latestVoucher.voucherCode}</p>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{latestVoucher.discountPercent}% off next package</p>
+              <div className="rounded-[22px] bg-neutral-950 p-4 text-white">
+                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/45">Voucher code</p>
+                <p className="mt-1 font-mono text-lg font-semibold text-[#E4F56C]">{latestVoucher.voucherCode}</p>
+                <p className="mt-1 text-sm text-white/70">{latestVoucher.discountPercent}% off next package</p>
                 {latestVoucher.sentAt && (
-                  <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">Email sent</p>
+                  <p className="mt-2 text-xs text-[#E4F56C]">Email sent</p>
                 )}
                 {latestVoucher.usedAt && (
                   <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">Already used</p>
@@ -2370,7 +2475,7 @@ export default function UserDetailPage() {
                 <button
                   onClick={handleSendVoucherEmail}
                   disabled={isSendingVoucher || !user?.email}
-                  className="w-full rounded-lg bg-lime-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-lime-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full rounded-full bg-[#E4F56C] px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-[#d5e45c] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {isSendingVoucher ? "Sending..." : "Send"}
                 </button>
@@ -2379,7 +2484,7 @@ export default function UserDetailPage() {
                 <button
                   onClick={handleGenerateVoucher}
                   disabled={isGeneratingVoucher}
-                  className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 disabled:opacity-50"
+                  className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white disabled:opacity-50"
                 >
                   {isGeneratingVoucher ? "Generating..." : "Generate another"}
                 </button>
@@ -2390,7 +2495,7 @@ export default function UserDetailPage() {
           <div className="flex pt-2">
             <button
               onClick={() => setShowReferralPanel(false)}
-              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="w-full rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
             >
               Close
             </button>
@@ -2418,13 +2523,13 @@ export default function UserDetailPage() {
         title="Edit User"
       >
         <div className="space-y-6">
-          <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-lg font-semibold text-white">
+          <div className="flex items-center gap-4 rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-sm font-semibold text-[#E4F56C]">
               {getInitials(user.name)}
             </div>
             <div>
-              <div className="font-medium text-gray-900 dark:text-white">{user.name}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">{user.email}</div>
+              <div className="font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{user.name}</div>
+              <div className="text-sm text-neutral-500 dark:text-white/50">{user.email}</div>
             </div>
           </div>
 
@@ -2433,6 +2538,7 @@ export default function UserDetailPage() {
               Full Name <span className="text-error-500">*</span>
             </Label>
             <Input
+              className="!h-12 !rounded-2xl !border-neutral-200 !bg-neutral-50 !shadow-none focus:!border-neutral-950 focus:!ring-neutral-950/10 dark:!border-white/10 dark:!bg-white/5"
               id="editName"
               type="text"
               value={editForm.name}
@@ -2445,6 +2551,7 @@ export default function UserDetailPage() {
               Email Address <span className="text-error-500">*</span>
             </Label>
             <Input
+              className="!h-12 !rounded-2xl !border-neutral-200 !bg-neutral-50 !shadow-none focus:!border-neutral-950 focus:!ring-neutral-950/10 dark:!border-white/10 dark:!bg-white/5"
               id="editEmail"
               type="email"
               value={editForm.email}
@@ -2455,6 +2562,7 @@ export default function UserDetailPage() {
           <div>
             <Label htmlFor="editPhone">Phone Number</Label>
             <Input
+              className="!h-12 !rounded-2xl !border-neutral-200 !bg-neutral-50 !shadow-none focus:!border-neutral-950 focus:!ring-neutral-950/10 dark:!border-white/10 dark:!bg-white/5"
               id="editPhone"
               type="tel"
               value={editForm.phone}
@@ -2464,47 +2572,44 @@ export default function UserDetailPage() {
 
           <div>
             <Label htmlFor="editDateOfBirth">Date of Birth</Label>
-            <Input
+            <StudioDate
               id="editDateOfBirth"
-              type="date"
+              block
+              clearable
+              ariaLabel="Date of birth"
+              placeholder="Date of birth"
               value={editForm.dateOfBirth}
-              onChange={(e) => setEditForm({ ...editForm, dateOfBirth: e.target.value })}
+              onChange={(value) => setEditForm({ ...editForm, dateOfBirth: value })}
             />
           </div>
 
           <div>
             <Label htmlFor="editGender">Gender</Label>
-            <select
+            <StudioMenu
               id="editGender"
               value={editForm.gender}
-              onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
-              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-            >
-              <option value="">Select gender</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Not sure">Not sure</option>
-            </select>
+              onChange={(gender) => setEditForm({ ...editForm, gender })}
+              placeholder="Select gender"
+              options={[
+                { value: "Male", label: "Male" },
+                { value: "Female", label: "Female" },
+                { value: "Not sure", label: "Not sure" },
+              ]}
+            />
           </div>
 
           <div>
             <Label htmlFor="editBloodGroup">Blood Group</Label>
-            <select
+            <StudioMenu
               id="editBloodGroup"
               value={editForm.bloodGroup}
-              onChange={(e) => setEditForm({ ...editForm, bloodGroup: e.target.value })}
-              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-            >
-              <option value="">Select blood group</option>
-              <option value="A+">A+</option>
-              <option value="A-">A-</option>
-              <option value="B+">B+</option>
-              <option value="B-">B-</option>
-              <option value="AB+">AB+</option>
-              <option value="AB-">AB-</option>
-              <option value="O+">O+</option>
-              <option value="O-">O-</option>
-            </select>
+              onChange={(bloodGroup) => setEditForm({ ...editForm, bloodGroup })}
+              placeholder="Select blood group"
+              options={["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((group) => ({
+                value: group,
+                label: group,
+              }))}
+            />
           </div>
 
           <div className="flex gap-3 pt-4">
@@ -2522,14 +2627,14 @@ export default function UserDetailPage() {
                   });
                 }
               }}
-              className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
             >
               Cancel
             </button>
             <button
               onClick={handleUpdateUser}
               disabled={!editForm.name || !editForm.email || isUpdating}
-              className="flex-1 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex-1 rounded-full bg-[#E4F56C] px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-[#d5e45c] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {isUpdating ? 'Updating...' : 'Update User'}
             </button>
@@ -2551,20 +2656,20 @@ export default function UserDetailPage() {
         title="Sell Tokens"
       >
         <div className="space-y-6">
-          <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-lg font-semibold text-white">
+          <div className="flex items-center gap-4 rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-sm font-semibold text-[#E4F56C]">
               {getInitials(user.name)}
             </div>
             <div>
-              <div className="font-medium text-gray-900 dark:text-white">{user.name}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">{user.email}</div>
+              <div className="font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{user.name}</div>
+              <div className="text-sm text-neutral-500 dark:text-white/50">{user.email}</div>
             </div>
           </div>
 
-          <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-            <div className="text-sm text-gray-500 dark:text-gray-400">Current Balance</div>
-            <div className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">
-              {user.tokenBalance} <span className="text-lg font-normal text-gray-500">tokens</span>
+          <div className="rounded-[22px] bg-neutral-950 p-4 text-white">
+            <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/45">Current Balance</div>
+            <div className="mt-2 text-3xl font-semibold tracking-tight text-white">
+              {user.tokenBalance} <span className="text-lg font-normal text-[#E4F56C]">tokens</span>
             </div>
           </div>
 
@@ -2579,10 +2684,10 @@ export default function UserDetailPage() {
                   setAdjustmentAmount("");
                   setExpiryDays("365");
                 }}
-                className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+                className={`flex-1 rounded-full px-4 py-2.5 text-sm font-semibold transition-colors ${
                   mode === "sell"
-                    ? "bg-brand-500 text-white"
-                    : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                    ? "bg-neutral-950 text-white"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70"
                 }`}
               >
                 Sell Package
@@ -2592,10 +2697,10 @@ export default function UserDetailPage() {
                   setMode("adjust");
                   setSelectedPackageId("");
                 }}
-                className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+                className={`flex-1 rounded-full px-4 py-2.5 text-sm font-semibold transition-colors ${
                   mode === "adjust"
-                    ? "bg-brand-500 text-white"
-                    : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                    ? "bg-[#E4F56C] text-neutral-950"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70"
                 }`}
               >
                 Adjust Tokens
@@ -2608,30 +2713,28 @@ export default function UserDetailPage() {
               <div>
                 <Label htmlFor="package">Select Package</Label>
                 {isLoadingPackages ? (
-                  <div className="mt-1.5 flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2.5 dark:border-gray-700 dark:bg-gray-800">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-brand-500 border-t-transparent"></div>
-                    <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">Loading packages...</span>
+                  <div className="mt-1.5 flex h-12 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 px-4 dark:border-white/10 dark:bg-white/5">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-950 border-t-transparent"></div>
+                    <span className="ml-2 text-sm text-neutral-500 dark:text-white/50">Loading packages...</span>
                   </div>
                 ) : (
-                  <select
+                  <StudioMenu
                     id="package"
                     value={selectedPackageId}
-                    onChange={(e) => setSelectedPackageId(e.target.value)}
-                    className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                  >
-                    <option value="">Select a package...</option>
-                    {packages.map((pkg) => (
-                      <option key={pkg.id} value={pkg.id}>
-                        {pkg.name} - {pkg.tokenCount} tokens ({pkg.validityDays} days) - ${(pkg.priceCents / 100).toFixed(2)} {pkg.currency}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setSelectedPackageId}
+                    placeholder="Select a package..."
+                    options={packages.map((pkg) => ({
+                      value: pkg.id,
+                      label: pkg.name,
+                      hint: `${pkg.tokenCount} tokens · ${pkg.validityDays} days · $${(pkg.priceCents / 100).toFixed(2)} ${pkg.currency}`,
+                    }))}
+                  />
                 )}
               </div>
 
               {selectedPackageId && (
-                <div className="rounded-xl border-2 border-dashed border-gray-300 p-4 dark:border-gray-600">
-                  <div className="text-sm text-gray-500 dark:text-gray-400">Package Details</div>
+                <div className="rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+                  <div className="text-sm text-neutral-500 dark:text-white/50">Package Details</div>
                   {(() => {
                     const selectedPkg = packages.find((p) => p.id === selectedPackageId);
                     if (!selectedPkg) return null;
@@ -2640,20 +2743,20 @@ export default function UserDetailPage() {
                     return (
                       <>
                         <div className="mt-2 space-y-1">
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            Tokens: <span className="text-brand-600">{selectedPkg.tokenCount}</span>
+                          <div className="text-sm font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">
+                            Tokens: <span className="text-neutral-950">{selectedPkg.tokenCount}</span>
                           </div>
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            Expiry Date: <span className="text-brand-600">{expiryDate.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</span>
+                          <div className="text-sm font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">
+                            Expiry Date: <span className="text-neutral-950">{expiryDate.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</span>
                           </div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                          <div className="text-sm text-neutral-500 dark:text-white/50">
                             Valid for {selectedPkg.validityDays} days
                           </div>
                         </div>
-                        <div className="mt-3 text-sm text-gray-500 dark:text-gray-400">New Balance Preview</div>
-                        <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
+                        <div className="mt-3 text-sm text-neutral-500 dark:text-white/50">New Balance Preview</div>
+                        <div className="mt-1 text-2xl font-bold text-neutral-950 dark:text-white">
                           {user.tokenBalance + selectedPkg.tokenCount}{" "}
-                          <span className="text-base font-normal text-gray-500">tokens</span>
+                          <span className="text-base font-normal text-neutral-500">tokens</span>
                         </div>
                       </>
                     );
@@ -2664,6 +2767,7 @@ export default function UserDetailPage() {
               <div>
                 <Label htmlFor="discount">Discount Percentage (%)</Label>
                 <Input
+              className="!h-12 !rounded-2xl !border-neutral-200 !bg-neutral-50 !shadow-none focus:!border-neutral-950 focus:!ring-neutral-950/10 dark:!border-white/10 dark:!bg-white/5"
                   id="discount"
                   type="number"
                   step="0.1"
@@ -2691,12 +2795,12 @@ export default function UserDetailPage() {
                 const discountAmount = (originalPrice * discountPercent) / 100;
                 const finalPrice = Math.max(0, originalPrice - discountAmount);
                 return (
-                  <div className="rounded-xl border-2 border-dashed border-blue-300 bg-blue-50 p-4 dark:border-blue-600 dark:bg-blue-900/20">
-                    <div className="text-sm font-medium text-gray-900 dark:text-white mb-2">Price Summary</div>
+                  <div className="rounded-[22px] bg-[#E4F56C] p-4 text-neutral-950">
+                    <div className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-950">Price Summary</div>
                     <div className="space-y-1 text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">Original Price:</span>
-                        <span className="font-medium text-gray-900 dark:text-white">${originalPrice.toFixed(2)} {selectedPkg.currency}</span>
+                        <span className="font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">${originalPrice.toFixed(2)} {selectedPkg.currency}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">Discount ({discountPercent}%):</span>
@@ -2704,7 +2808,7 @@ export default function UserDetailPage() {
                       </div>
                       <div className="flex justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
                         <span className="font-semibold text-gray-900 dark:text-white">Final Price:</span>
-                        <span className="font-bold text-lg text-brand-600">${finalPrice.toFixed(2)} {selectedPkg.currency}</span>
+                        <span className="text-lg font-semibold text-neutral-950">${finalPrice.toFixed(2)} {selectedPkg.currency}</span>
                       </div>
                     </div>
                   </div>
@@ -2716,7 +2820,7 @@ export default function UserDetailPage() {
                 <textarea
                   id="reason-sell"
                   rows={2}
-                  className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
+                  className="mt-1.5 w-full rounded-[22px] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
                   placeholder="Enter reason for this sale (optional)..."
                   value={adjustmentReason}
                   onChange={(e) => setAdjustmentReason(e.target.value)}
@@ -2728,6 +2832,7 @@ export default function UserDetailPage() {
               <div>
                 <Label htmlFor="amount">Adjustment Amount</Label>
                 <Input
+              className="!h-12 !rounded-2xl !border-neutral-200 !bg-neutral-50 !shadow-none focus:!border-neutral-950 focus:!ring-neutral-950/10 dark:!border-white/10 dark:!bg-white/5"
                   id="amount"
                   type="number"
                   placeholder="e.g., 5 or -2"
@@ -2743,6 +2848,7 @@ export default function UserDetailPage() {
                 <div>
                   <Label htmlFor="expiryDays">Expiry Duration (Days)</Label>
                   <Input
+              className="!h-12 !rounded-2xl !border-neutral-200 !bg-neutral-50 !shadow-none focus:!border-neutral-950 focus:!ring-neutral-950/10 dark:!border-white/10 dark:!bg-white/5"
                     id="expiryDays"
                     type="number"
                     min="1"
@@ -2759,9 +2865,9 @@ export default function UserDetailPage() {
                     Number of days until these tokens expire. Default is 365 days (1 year).
                   </p>
                   {expiryDays && !isNaN(parseInt(expiryDays)) && parseInt(expiryDays) > 0 && (
-                    <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+                    <div className="mt-2 rounded-[22px] border border-neutral-200/80 bg-white p-3 dark:border-white/10 dark:bg-white/5">
                       <div className="text-xs text-gray-500 dark:text-gray-400">Expiry Date Preview</div>
-                      <div className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                      <div className="mt-1 text-sm font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">
                         {new Date(Date.now() + parseInt(expiryDays) * 24 * 60 * 60 * 1000).toLocaleDateString("en-US", {
                           month: "long",
                           day: "numeric",
@@ -2778,7 +2884,7 @@ export default function UserDetailPage() {
                 <textarea
                   id="reason"
                   rows={3}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
+                  className="w-full rounded-[22px] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
                   placeholder="Enter reason for this adjustment..."
                   value={adjustmentReason}
                   onChange={(e) => setAdjustmentReason(e.target.value)}
@@ -2786,11 +2892,11 @@ export default function UserDetailPage() {
               </div>
 
               {adjustmentAmount && (
-                <div className="rounded-xl border-2 border-dashed border-gray-300 p-4 dark:border-gray-600">
-                  <div className="text-sm text-gray-500 dark:text-gray-400">New Balance Preview</div>
-                  <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
+                <div className="rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+                  <div className="text-sm text-neutral-500 dark:text-white/50">New Balance Preview</div>
+                  <div className="mt-1 text-2xl font-bold text-neutral-950 dark:text-white">
                     {user.tokenBalance + parseInt(adjustmentAmount || "0")}{" "}
-                    <span className="text-base font-normal text-gray-500">tokens</span>
+                    <span className="text-base font-normal text-neutral-500">tokens</span>
                   </div>
                 </div>
               )}
@@ -2807,7 +2913,7 @@ export default function UserDetailPage() {
                 setAdjustmentReason("");
                 setExpiryDays("365");
               }}
-              className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
             >
               Cancel
             </button>
@@ -2819,7 +2925,7 @@ export default function UserDetailPage() {
                   ? !selectedPackageId
                   : !adjustmentAmount || !adjustmentReason)
               }
-              className="flex-1 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
+              className="flex flex-1 items-center justify-center gap-2 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {isProcessingTokens && (
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
@@ -2845,19 +2951,19 @@ export default function UserDetailPage() {
       >
         {extendingPackage && (
           <div className="space-y-6">
-            <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-lg font-semibold text-white">
+            <div className="flex items-center gap-4 rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-sm font-semibold text-[#E4F56C]">
                 {getInitials(user.name)}
               </div>
               <div>
-                <div className="font-medium text-gray-900 dark:text-white">{user.name}</div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">{extendingPackage.packageName}</div>
+                <div className="font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{user.name}</div>
+                <div className="text-sm text-neutral-500 dark:text-white/50">{extendingPackage.packageName}</div>
               </div>
             </div>
 
-            <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-              <div className="text-sm text-gray-500 dark:text-gray-400">Current Expiry Date</div>
-              <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
+            <div className="rounded-[22px] bg-neutral-950 p-4 text-white">
+              <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/45">Current Expiry Date</div>
+              <div className="mt-2 text-xl font-semibold text-white">
                 {new Date(extendingPackage.expiresAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
               </div>
             </div>
@@ -2865,6 +2971,7 @@ export default function UserDetailPage() {
             <div>
               <Label htmlFor="extendDays">Extend By (Days)</Label>
               <Input
+              className="!h-12 !rounded-2xl !border-neutral-200 !bg-neutral-50 !shadow-none focus:!border-neutral-950 focus:!ring-neutral-950/10 dark:!border-white/10 dark:!bg-white/5"
                 id="extendDays"
                 type="number"
                 min="1"
@@ -2883,9 +2990,9 @@ export default function UserDetailPage() {
             </div>
 
             {extendDays && !isNaN(parseInt(extendDays)) && parseInt(extendDays) > 0 && (
-              <div className="rounded-xl border-2 border-dashed border-gray-300 p-4 dark:border-gray-600">
-                <div className="text-sm text-gray-500 dark:text-gray-400">New Expiry Date Preview</div>
-                <div className="mt-1 text-2xl font-bold text-brand-600">
+              <div className="rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+                <div className="text-sm text-neutral-500 dark:text-white/50">New Expiry Date Preview</div>
+                <div className="mt-1 text-2xl font-bold text-neutral-950">
                   {(() => {
                     const base = Math.max(Date.now(), new Date(extendingPackage.expiresAt).getTime());
                     const newDate = new Date(base);
@@ -2903,14 +3010,14 @@ export default function UserDetailPage() {
                   setExtendingPackage(null);
                   setExtendDays("30");
                 }}
-                className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
               >
                 Cancel
               </button>
               <button
                 onClick={handleExtendExpiry}
                 disabled={isExtendingExpiry || !extendDays || parseInt(extendDays) <= 0}
-                className="flex-1 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex flex-1 items-center justify-center gap-2 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isExtendingExpiry && (
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>

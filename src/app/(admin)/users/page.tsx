@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import SlidePanel from "@/components/ui/SlidePanel";
 import Label from "@/components/form/Label";
 import Input from "@/components/form/input/InputField";
@@ -14,6 +13,8 @@ import { RefreshCw, Mail } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/components/ui/Toast";
 import { supabase } from "@/lib/supabase";
+import StudioMenu from "@/components/ui/StudioMenu";
+import StudioDate from "@/components/ui/StudioDate";
 
 // Skeleton Components
 const StatCardSkeleton = () => (
@@ -70,7 +71,7 @@ const TableSkeleton = () => (
 );
 
 type FilterType = "all" | "active" | "flagged" | "inactive" | "public";
-type SortField = "name" | "tokenBalance" | "totalClasses" | "noShows" | "lastActive" | "joinedDate";
+type SortField = "name" | "tokenBalance" | "totalClasses" | "classesAttended" | "noShows" | "lastActive" | "joinedDate";
 type SortDirection = "asc" | "desc";
 type TokenFilter = "all" | "zero" | "low" | "normal" | "high";
 
@@ -91,7 +92,7 @@ export default function UsersPage() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [tokenFilter, setTokenFilter] = useState<TokenFilter>("all");
-  const [noShowFilter, setNoShowFilter] = useState<"all" | "none" | "some" | "many">("all");
+  const [attendanceFilter, setAttendanceFilter] = useState<"all" | "been" | "never">("all");
   
   // Sorting
   const [sortField, setSortField] = useState<SortField>("name");
@@ -154,7 +155,7 @@ export default function UsersPage() {
     else if (filter === 'flagged') filters.isFlagged = true;
     
     if (searchQuery) filters.search = searchQuery;
-    if (sortField) filters.sortBy = sortField === 'joinedDate' ? 'createdAt' : sortField;
+    if (sortField && sortField !== "classesAttended") filters.sortBy = sortField === 'joinedDate' ? 'createdAt' : sortField;
     if (sortDirection) filters.sortOrder = sortDirection;
     
     return filters;
@@ -220,15 +221,17 @@ export default function UsersPage() {
       else if (tokenFilter === "normal") matchesTokens = user.tokenBalance > 3 && user.tokenBalance <= 10;
       else if (tokenFilter === "high") matchesTokens = user.tokenBalance > 10;
       
-      // No-show filter
-      let matchesNoShows = true;
-      if (noShowFilter === "none") matchesNoShows = user.noShows === 0;
-      else if (noShowFilter === "some") matchesNoShows = user.noShows > 0 && user.noShows < 3;
-      else if (noShowFilter === "many") matchesNoShows = user.noShows >= 3;
+      const attended = user.classesAttended || 0;
+      const matchesAttendance =
+        attendanceFilter === "all"
+          ? true
+          : attendanceFilter === "been"
+            ? attended > 0
+            : attended === 0;
       
-      return matchesStatus && matchesSearch && matchesTokens && matchesNoShows;
+      return matchesStatus && matchesSearch && matchesTokens && matchesAttendance;
     });
-  }, [users, filter, searchQuery, tokenFilter, noShowFilter]);
+  }, [users, filter, searchQuery, tokenFilter, attendanceFilter]);
 
   // Sorting logic
   const sortedUsers = useMemo(() => {
@@ -244,6 +247,9 @@ export default function UsersPage() {
           break;
         case "totalClasses":
           comparison = a.totalClasses - b.totalClasses;
+          break;
+        case "classesAttended":
+          comparison = (a.classesAttended || 0) - (b.classesAttended || 0);
           break;
         case "noShows":
           comparison = a.noShows - b.noShows;
@@ -296,22 +302,22 @@ export default function UsersPage() {
     setFilter("all");
     setSearchQuery("");
     setTokenFilter("all");
-    setNoShowFilter("all");
+    setAttendanceFilter("all");
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = filter !== "all" || searchQuery !== "" || tokenFilter !== "all" || noShowFilter !== "all";
+  const hasActiveFilters = filter !== "all" || searchQuery !== "" || tokenFilter !== "all" || attendanceFilter !== "all";
 
   const getStatusStyle = (status: User["status"]) => {
     switch (status) {
       case "active":
-        return "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20";
+        return "bg-[#E4F56C] text-neutral-950";
       case "flagged":
-        return "bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/20";
+        return "bg-neutral-950 text-[#E4F56C]";
       case "inactive":
-        return "bg-gray-50 text-gray-600 ring-gray-500/20 dark:bg-gray-500/10 dark:text-gray-400 dark:ring-gray-500/20";
+        return "bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white/50";
       default:
-        return "bg-gray-50 text-gray-600 ring-gray-500/20";
+        return "bg-neutral-100 text-neutral-700";
     }
   };
 
@@ -643,17 +649,19 @@ export default function UsersPage() {
 
   // Stats - memoized to avoid expensive recalculations
   const stats = useMemo(() => {
-    const usersCount = users.length;
     return {
       totalTokens: users.reduce((sum, u) => sum + u.tokenBalance, 0),
-      totalNoShows: users.reduce((sum, u) => sum + u.noShows, 0),
-      avgAttendance: usersCount > 0 
-        ? Math.round(users.reduce((sum, u) => sum + u.totalClasses, 0) / usersCount) 
-        : 0,
+      wentToClass: users.filter((u) => (u.classesAttended || 0) > 0).length,
+      classesAttended: users.reduce((sum, u) => sum + (u.classesAttended || 0), 0),
+      showRate: (() => {
+        const attended = users.reduce((sum, u) => sum + (u.classesAttended || 0), 0);
+        const finished = attended + users.reduce((sum, u) => sum + u.noShows, 0);
+        return finished > 0 ? Math.round((attended / finished) * 100) : 0;
+      })(),
     };
   }, [users]);
   
-  const { totalTokens, totalNoShows, avgAttendance } = stats;
+  const { totalTokens, wentToClass, classesAttended, showRate } = stats;
 
   // Pagination range - memoized
   const paginationRange = useMemo(() => {
@@ -702,74 +710,72 @@ export default function UsersPage() {
   };
 
   return (
-    <div>
-      <PageBreadCrumb pageTitle="Users Management" />
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">
+            Users{" "}
+            <span className="inline-flex h-7 w-9 translate-y-[-1px] items-center justify-center rounded-full bg-[#E4F56C] align-middle text-neutral-950">
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </span>
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500 dark:text-white/50">
+            Who is coming to class, how many they have done, and what they still hold in tokens.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCreatePanel(true)}
+            className="inline-flex items-center gap-2 rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-medium text-white hover:bg-neutral-800"
+          >
+            <span className="text-base leading-none">+</span>
+            Create User
+          </button>
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-950 hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white"
+            title="Refresh data"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
+      </div>
 
-      {/* Stats Cards */}
       {loading ? (
-        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
           {[...Array(4)].map((_, i) => <StatCardSkeleton key={i} />)}
         </div>
       ) : (
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <div className="text-2xl font-bold text-gray-900 dark:text-white">{users.length}</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">Total Users</div>
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <div className="rounded-[28px] border border-neutral-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+          <p className="text-sm font-medium text-neutral-500 dark:text-white/60">Total Users</p>
+          <p className="mt-3 text-4xl font-semibold tracking-tight text-neutral-950 dark:text-white">{users.length}</p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-            {users.reduce((sum, u) => sum + u.tokenBalance, 0)}
-          </div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">Active Tokens</div>
+        <div className="rounded-[28px] border border-[#d5e45c] bg-[#E4F56C] p-5 text-neutral-950 shadow-[0_10px_30px_rgba(16,24,40,0.06)]">
+          <p className="text-sm font-medium">Active Tokens</p>
+          <p className="mt-3 text-4xl font-semibold tracking-tight">{totalTokens}</p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <div className="text-2xl font-bold text-gray-900 dark:text-white">
-            {users.length > 0 ? Math.round(users.reduce((sum, u) => sum + u.totalClasses, 0) / users.length) : 0}
-          </div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">Avg Classes/User</div>
+        <div className="rounded-[28px] border border-neutral-950 bg-neutral-950 p-5 text-white shadow-[0_10px_30px_rgba(16,24,40,0.14)]">
+          <p className="text-sm font-medium text-white/60">Went to class</p>
+          <p className="mt-3 text-4xl font-semibold tracking-tight">{wentToClass}</p>
+          <p className="mt-1 text-xs text-white/50">of {users.length} members</p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">
-            {users.reduce((sum, u) => sum + u.noShows, 0)}
-          </div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">Total No-Shows</div>
+        <div className="rounded-[28px] border border-neutral-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+          <p className="text-sm font-medium text-neutral-500 dark:text-white/60">Classes attended</p>
+          <p className="mt-3 text-4xl font-semibold tracking-tight text-neutral-950 dark:text-white">{classesAttended}</p>
+          <p className="mt-1 text-xs text-neutral-400">{showRate}% show up</p>
         </div>
       </div>
       )}
 
       {/* Main Card */}
-      <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        {/* Header */}
-        <div className="border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+      <div className="overflow-hidden rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+        <div className="px-5 py-4 sm:px-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Users</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Manage user accounts and token balances
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowCreatePanel(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 transition-colors"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Create User
-              </button>
-              <button
-                onClick={handleRefresh}
-                disabled={loading}
-                className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                title="Refresh data"
-              >
-                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
-            </div>
-            
-            {/* Search and Filter Controls */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               {/* Search */}
               <div className="relative">
@@ -791,7 +797,7 @@ export default function UsersPage() {
                   placeholder="Search name, email, phone..."
                   value={searchQuery}
                   onChange={(e) => handleSearch(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400 sm:w-72"
+                  className="w-full rounded-full border border-neutral-200 bg-neutral-50 py-2.5 pl-10 pr-4 text-sm text-neutral-950 placeholder-neutral-400 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white sm:w-72"
                 />
                 {searchQuery && (
                   <button
@@ -808,10 +814,10 @@ export default function UsersPage() {
               {/* Advanced Filters Toggle */}
               <button
                 onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                   showAdvancedFilters || hasActiveFilters
-                    ? "border-brand-500 bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400"
-                    : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                    ? "bg-neutral-950 text-white"
+                    : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70"
                 }`}
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -819,8 +825,8 @@ export default function UsersPage() {
                 </svg>
                 Filters
                 {hasActiveFilters && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-500 text-xs text-white">
-                    {[filter !== "all", tokenFilter !== "all", noShowFilter !== "all"].filter(Boolean).length}
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#E4F56C] text-xs text-neutral-950">
+                    {[filter !== "all", tokenFilter !== "all", attendanceFilter !== "all"].filter(Boolean).length}
                   </span>
                 )}
               </button>
@@ -836,34 +842,34 @@ export default function UsersPage() {
                   <label className="mb-1.5 block text-xs font-medium text-gray-700 dark:text-gray-300">
                     Token Balance
                   </label>
-                  <select
+                  <StudioMenu
                     value={tokenFilter}
-                    onChange={(e) => { setTokenFilter(e.target.value as TokenFilter); setCurrentPage(1); }}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                  >
-                    <option value="all">All Balances</option>
-                    <option value="zero">Zero (0)</option>
-                    <option value="low">Low (1-3)</option>
-                    <option value="normal">Normal (4-10)</option>
-                    <option value="high">High (10+)</option>
-                  </select>
+                    onChange={(value) => { setTokenFilter(value as TokenFilter); setCurrentPage(1); }}
+                    placeholder="All balances"
+                    options={[
+                      { value: "all", label: "All balances" },
+                      { value: "zero", label: "Zero (0)" },
+                      { value: "low", label: "Low (1-3)" },
+                      { value: "normal", label: "Normal (4-10)" },
+                      { value: "high", label: "High (10+)" },
+                    ]}
+                  />
                 </div>
                 
-                {/* No-Shows Filter */}
                 <div className="min-w-[150px]">
-                  <label className="mb-1.5 block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    No-Shows
+                  <label className="mb-1.5 block text-xs font-medium text-neutral-500">
+                    Attendance
                   </label>
-                  <select
-                    value={noShowFilter}
-                    onChange={(e) => { setNoShowFilter(e.target.value as typeof noShowFilter); setCurrentPage(1); }}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                  >
-                    <option value="all">All</option>
-                    <option value="none">None (0)</option>
-                    <option value="some">Some (1-2)</option>
-                    <option value="many">Many (3+)</option>
-                  </select>
+                  <StudioMenu
+                    value={attendanceFilter}
+                    onChange={(value) => { setAttendanceFilter(value as typeof attendanceFilter); setCurrentPage(1); }}
+                    placeholder="Everyone"
+                    options={[
+                      { value: "all", label: "Everyone" },
+                      { value: "been", label: "Been to class" },
+                      { value: "never", label: "Not yet" },
+                    ]}
+                  />
                 </div>
                 
                 {/* Clear Filters */}
@@ -885,23 +891,23 @@ export default function UsersPage() {
           )}
 
           {/* Status Filter Tabs */}
-          <div className="mt-4 flex gap-1">
+          <div className="mt-4 flex flex-wrap gap-2">
             {filterTabs.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => handleFilterChange(tab.key)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
                   filter === tab.key
-                    ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
-                    : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+                    ? "bg-neutral-950 text-white"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70"
                 }`}
               >
                 {tab.label}
                 <span
                   className={`ml-1.5 rounded-full px-1.5 py-0.5 text-xs ${
                     filter === tab.key
-                      ? "bg-white/20 text-white dark:bg-gray-900/20 dark:text-gray-900"
-                      : "bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+                      ? "bg-[#E4F56C] text-neutral-950"
+                      : "bg-white text-neutral-500 dark:bg-neutral-950 dark:text-white/60"
                   }`}
                 >
                   {getFilterCount(tab.key)}
@@ -971,21 +977,17 @@ export default function UsersPage() {
                 </th>
                 <th className="whitespace-nowrap px-6 py-3 text-left">
                   <button
-                    onClick={() => handleSort("totalClasses")}
+                    onClick={() => handleSort("classesAttended")}
                     className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                   >
                     Classes
-                    <SortIcon field="totalClasses" />
+                    <SortIcon field="classesAttended" />
                   </button>
                 </th>
                 <th className="whitespace-nowrap px-6 py-3 text-left">
-                  <button
-                    onClick={() => handleSort("noShows")}
-                    className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                  >
-                    No-Shows
-                    <SortIcon field="noShows" />
-                  </button>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    Show rate
+                  </span>
                 </th>
                 <th className="whitespace-nowrap px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                   Status
@@ -1019,13 +1021,13 @@ export default function UsersPage() {
                           className="h-10 w-10 shrink-0 rounded-full object-cover"
                         />
                       ) : (
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-sm font-semibold text-white">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-xs font-semibold text-[#E4F56C]">
                           {getInitials(user.name)}
                         </div>
                       )}
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="truncate font-medium text-gray-900 dark:text-white">
+                          <span className="truncate text-sm font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">
                             {user.name}
                           </span>
                           {user.signupSource === "public" && (
@@ -1041,42 +1043,37 @@ export default function UsersPage() {
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-lg font-bold ${
-                          user.tokenBalance === 0
-                            ? "text-red-600 dark:text-red-400"
-                            : user.tokenBalance <= 3
-                            ? "text-amber-600 dark:text-amber-400"
-                            : "text-emerald-600 dark:text-emerald-400"
-                        }`}
-                      >
-                        {user.tokenBalance}
-                      </span>
-                      <span className="text-sm text-gray-500 dark:text-gray-400">tokens</span>
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4">
-                    <span className="font-medium text-gray-900 dark:text-white">
-                      {user.totalClasses}
+                    <span className="inline-flex h-8 min-w-8 items-center justify-center rounded-full bg-neutral-950 px-2.5 text-sm font-semibold text-[#E4F56C]">
+                      {user.tokenBalance}
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
-                    <span
-                      className={`font-medium ${
-                        user.noShows >= 3
-                          ? "text-red-600 dark:text-red-400"
-                          : user.noShows > 0
-                          ? "text-amber-600 dark:text-amber-400"
-                          : "text-gray-500 dark:text-gray-400"
-                      }`}
-                    >
-                      {user.noShows}
-                    </span>
+                    <p className="text-lg font-semibold leading-none text-neutral-950 dark:text-white">{user.classesAttended || 0}</p>
+                    <p className="mt-1 text-xs text-neutral-400">{user.totalClasses} booked</p>
+                  </td>
+                  <td className="whitespace-nowrap px-6 py-4">
+                    {(() => {
+                      const finished = (user.classesAttended || 0) + user.noShows;
+                      if (finished === 0) {
+                        return <span className="text-xs text-neutral-400">No classes yet</span>;
+                      }
+                      const rate = Math.round(((user.classesAttended || 0) / finished) * 100);
+                      return (
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                          rate >= 80
+                            ? "bg-[#E4F56C] text-neutral-950"
+                            : rate >= 50
+                              ? "bg-neutral-950 text-white"
+                              : "bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white/60"
+                        }`}>
+                          {rate}% show
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
                     <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${getStatusStyle(
+                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${getStatusStyle(
                         user.status
                       )}`}
                     >
@@ -1095,7 +1092,7 @@ export default function UsersPage() {
                       {user.status !== "flagged" && (
                         <button
                           onClick={() => setUserToFlag(user)}
-                          className="rounded-lg px-3 py-1.5 text-sm font-medium text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10"
+                          className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-200 dark:bg-white/10 dark:text-white"
                         >
                           Flag
                         </button>
@@ -1110,7 +1107,7 @@ export default function UsersPage() {
                       </button>
                       <Link
                         href={`/users/${user.id}`}
-                        className="rounded-lg bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
+                        className="rounded-full bg-neutral-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800"
                       >
                         View
                       </Link>
@@ -1160,17 +1157,15 @@ export default function UsersPage() {
             {/* Items per page */}
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500 dark:text-gray-400">Show</span>
-              <select
-                value={itemsPerPage}
-                onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
-                className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-              >
-                {ITEMS_PER_PAGE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
+              <span className="inline-block w-24">
+                <StudioMenu
+                  size="sm"
+                  value={String(itemsPerPage)}
+                  onChange={(value) => handleItemsPerPageChange(Number(value))}
+                  placeholder="Rows"
+                  options={ITEMS_PER_PAGE_OPTIONS.map((option) => ({ value: String(option), label: String(option) }))}
+                />
+              </span>
               <span className="text-sm text-gray-500 dark:text-gray-400">per page</span>
             </div>
 
@@ -1313,34 +1308,26 @@ export default function UsersPage() {
                 <div className="text-2xl font-bold text-gray-900 dark:text-white">{userToFlag.tokenBalance}</div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">Tokens</div>
               </div>
-              <div className="rounded-lg border border-gray-200 p-3 text-center dark:border-gray-700">
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">{userToFlag.totalClasses}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Classes</div>
+              <div className="rounded-[22px] bg-[#E4F56C] p-3 text-center text-neutral-950">
+                <div className="text-2xl font-semibold">{userToFlag.classesAttended || 0}</div>
+                <div className="text-xs">Attended</div>
               </div>
-              <div className="rounded-lg border border-gray-200 p-3 text-center dark:border-gray-700">
-                <div className={`text-2xl font-bold ${userToFlag.noShows >= 3 ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white"}`}>
-                  {userToFlag.noShows}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">No-Shows</div>
+              <div className="rounded-[22px] bg-neutral-950 p-3 text-center text-white">
+                <div className="text-2xl font-semibold">{userToFlag.totalClasses}</div>
+                <div className="text-xs text-white/50">Booked</div>
               </div>
             </div>
 
             {/* Flag Reason */}
             <div>
               <Label htmlFor="flagReason">Reason for Flagging *</Label>
-              <select
+              <StudioMenu
                 id="flagReason"
                 value={flagReason}
-                onChange={(e) => setFlagReason(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-              >
-                <option value="">Select a reason...</option>
-                {flagReasonOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                onChange={setFlagReason}
+                placeholder="Select a reason..."
+                options={[{ value: "", label: "Select a reason..." }, ...flagReasonOptions.map((option) => ({ value: option.value, label: option.label }))]}
+              />
             </div>
 
             {/* Notes */}
@@ -1517,11 +1504,14 @@ export default function UsersPage() {
             <Label htmlFor="dateOfBirth">
               Date of Birth {createAsChild && <span className="text-red-500">*</span>}
             </Label>
-            <Input
+            <StudioDate
               id="dateOfBirth"
-              type="date"
+              block
+              clearable
+              ariaLabel="Date of birth"
+              placeholder="Date of birth"
               value={newUser.dateOfBirth}
-              onChange={(e) => setNewUser({ ...newUser, dateOfBirth: e.target.value })}
+              onChange={(value) => setNewUser({ ...newUser, dateOfBirth: value })}
             />
           </div>
 
@@ -1529,23 +1519,13 @@ export default function UsersPage() {
             <Label htmlFor="bloodGroup">
               Blood Group
             </Label>
-            <select
+            <StudioMenu
               id="bloodGroup"
               value={newUser.bloodGroup}
-              onChange={(e) => setNewUser({ ...newUser, bloodGroup: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-            >
-              <option value="">Select blood group</option>
-              <option value="A+">A+</option>
-              <option value="A-">A-</option>
-              <option value="B+">B+</option>
-              <option value="B-">B-</option>
-              <option value="AB+">AB+</option>
-              <option value="AB-">AB-</option>
-              <option value="O+">O+</option>
-              <option value="O-">O-</option>
-              <option value="Not sure">Not sure</option>
-            </select>
+              onChange={(value) => setNewUser({ ...newUser, bloodGroup: value })}
+              placeholder="Select blood group"
+              options={["", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Not sure"].map((value) => ({ value, label: value || "Select blood group" }))}
+            />
           </div>
 
           <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">

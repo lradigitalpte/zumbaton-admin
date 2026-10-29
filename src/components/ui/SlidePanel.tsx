@@ -43,25 +43,26 @@ export default function SlidePanel({
   };
 
   return (
-    <div className="fixed inset-0 z-[99999]">
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/30 backdrop-blur-[2px] transition-opacity"
+    <div className="fixed inset-0 z-[100000] flex items-end justify-center sm:items-stretch sm:justify-end">
+      <button
+        type="button"
+        aria-label="Close panel"
+        className="fixed inset-0 bg-neutral-950/55 backdrop-blur-[2px]"
         onClick={onClose}
       />
 
-      {/* Panel */}
       <div
-        className={`fixed right-0 top-0 h-full w-full ${sizeClasses[size]} bg-white dark:bg-gray-900 shadow-xl`}
+        className={`relative flex h-[88vh] w-full flex-col overflow-hidden rounded-t-[28px] border border-neutral-200/80 bg-white shadow-[0_24px_80px_rgba(0,0,0,0.28)] dark:border-white/10 dark:bg-gray-800 sm:h-full sm:rounded-none sm:rounded-l-[28px] ${sizeClasses[size]}`}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+        <div className="flex items-start justify-between gap-4 px-6 pb-2 pt-6">
+          <h2 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">
             {title}
           </h2>
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-white dark:bg-white dark:text-neutral-950"
+            aria-label="Close"
           >
             <svg
               className="h-5 w-5"
@@ -80,7 +81,7 @@ export default function SlidePanel({
         </div>
 
         {/* Content */}
-        <div className="overflow-y-auto p-6" style={{ height: "calc(100% - 73px)" }}>
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
           {children}
         </div>
       </div>

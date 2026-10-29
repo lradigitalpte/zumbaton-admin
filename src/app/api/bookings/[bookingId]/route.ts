@@ -7,6 +7,7 @@ import { UuidSchema } from '@/api/schemas'
 import { ApiError } from '@/lib/api-error'
 import { z } from 'zod'
 import { getAuthenticatedUser, hasRequiredRole } from '@/middleware/rbac'
+import { createAuditLog } from '@/services/rbac.service'
 
 // Members may only act on their own bookings; staff and above may act for anyone.
 // Force-refund (cancel on the day, or after class) is admin-only.
@@ -87,6 +88,21 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       reason: validatedData.reason,
       forceRefund: validatedData.forceRefund,
     })
+
+    const actor = await getAuthenticatedUser(request)
+    if (actor) {
+      await createAuditLog({
+        userId: actor.id,
+        action: 'booking.cancel',
+        resourceType: 'bookings',
+        resourceId: bookingId,
+        newValues: {
+          memberId: validatedData.userId,
+          reason: validatedData.reason || null,
+          forceRefund: validatedData.forceRefund || false,
+        },
+      })
+    }
 
     return NextResponse.json({
       success: true,

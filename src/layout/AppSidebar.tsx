@@ -13,6 +13,7 @@ import {
   HorizontaLDots,
   ListIcon,
   PageIcon,
+  SettingsIcon,
   PieChartIcon,
   TableIcon,
   UserCircleIcon,
@@ -104,7 +105,7 @@ const getNavItems = (user: { role: string } | null): NavItem[] => [
 
 const othersItems: NavItem[] = [
   {
-    icon: <PageIcon />,
+    icon: <SettingsIcon />,
     name: "Settings",
     subItems: [
       { name: "General", path: "/settings", pro: false },
@@ -117,7 +118,7 @@ const othersItems: NavItem[] = [
 ];
 
 const AppSidebar: React.FC = () => {
-  const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
+  const { isExpanded, isMobileOpen, isHovered, setIsHovered, toggleMobileSidebar } = useSidebar();
   const pathname = usePathname();
   const sidebarRef = useRef<HTMLElement>(null);
   const { signOut, user } = useAuth();
@@ -134,6 +135,14 @@ const AppSidebar: React.FC = () => {
   const isManualToggleRef = useRef(false);
 
   const isActive = useCallback((path: string) => path === pathname, [pathname]);
+  const mobileOpenRef = useRef(isMobileOpen);
+  mobileOpenRef.current = isMobileOpen;
+  const closeMobileRef = useRef(toggleMobileSidebar);
+  closeMobileRef.current = toggleMobileSidebar;
+
+  useEffect(() => {
+    if (mobileOpenRef.current) closeMobileRef.current();
+  }, [pathname]);
 
   // Check if a menu item has an active submenu item
   const hasActiveSubItem = useCallback((nav: NavItem) => {
@@ -292,14 +301,14 @@ const AppSidebar: React.FC = () => {
                 {nav.icon}
               </span>
               {(isExpanded || isHovered || isMobileOpen) && (
-                <span className={`menu-item-text`}>{nav.name}</span>
+                <span className="menu-item-text truncate">{nav.name}</span>
               )}
               {(isExpanded || isHovered || isMobileOpen) && (
                 <ChevronDownIcon
-                  className={`ml-auto w-5 h-5 transition-transform duration-300 ${
+                  className={`ml-auto h-5 w-5 shrink-0 transition-transform duration-300 ${
                     (openSubmenu?.type === menuType && openSubmenu?.index === index) || hasActiveSubItem(nav)
-                      ? "rotate-180 text-lime-400"
-                      : "text-gray-400"
+                      ? "rotate-180 text-neutral-950"
+                      : "text-white/40"
                   }`}
                 />
               )}
@@ -311,6 +320,8 @@ const AppSidebar: React.FC = () => {
                 data-onboarding={`${nav.name.toLowerCase().replace(/\s+/g, '-')}-menu`}
                 className={`menu-item group ${
                   isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"
+                } ${
+                  !isExpanded && !isHovered ? "lg:justify-center" : "lg:justify-start"
                 }`}
               >
                 <span
@@ -323,7 +334,7 @@ const AppSidebar: React.FC = () => {
                   {nav.icon}
                 </span>
                 {(isExpanded || isHovered || isMobileOpen) && (
-                  <span className={`menu-item-text`}>{nav.name}</span>
+                  <span className="menu-item-text truncate">{nav.name}</span>
                 )}
               </Link>
             )
@@ -400,12 +411,10 @@ const AppSidebar: React.FC = () => {
   return (
     <aside
       ref={sidebarRef}
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-gray-900 border-r border-gray-800 text-white h-screen transition-all duration-300 ease-in-out z-50 
+      className={`fixed left-0 top-16 z-50 flex h-[calc(100dvh-4rem)] flex-col bg-neutral-950 px-3 text-white transition-all duration-300 ease-in-out lg:top-0 lg:h-screen
         ${
-          isExpanded || isMobileOpen
-            ? "w-[290px]"
-            : isHovered
-            ? "w-[290px]"
+          isExpanded || isMobileOpen || isHovered
+            ? "w-[min(290px,calc(100vw-3rem))]"
             : "w-[90px]"
         }
         ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}
@@ -413,7 +422,7 @@ const AppSidebar: React.FC = () => {
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="py-8 flex justify-center hidden lg:block">
+      <div className="flex justify-center py-5 lg:py-8">
         <Link href="/dashboard" className="flex items-center justify-center gap-2 w-full">
           {(isExpanded || isHovered || isMobileOpen) ? (
             <div className="h-16 w-[220px] rounded-md">
@@ -444,10 +453,10 @@ const AppSidebar: React.FC = () => {
             <div className="flex flex-col gap-2">
             <div>
               <h2
-                className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
+                className={`mb-3 flex text-[11px] font-medium uppercase tracking-[0.14em] text-white/35 ${
                   !isExpanded && !isHovered
                     ? "lg:justify-center"
-                    : "justify-start"
+                    : "justify-start px-3"
                 }`}
               >
                 {isExpanded || isHovered || isMobileOpen ? (
@@ -461,10 +470,10 @@ const AppSidebar: React.FC = () => {
 
             <div className="">
               <h2
-                className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
+                className={`mb-3 mt-4 flex text-[11px] font-medium uppercase tracking-[0.14em] text-white/35 ${
                   !isExpanded && !isHovered
                     ? "lg:justify-center"
-                    : "justify-start"
+                    : "justify-start px-3"
                 }`}
               >
                 {isExpanded || isHovered || isMobileOpen ? (
@@ -478,7 +487,7 @@ const AppSidebar: React.FC = () => {
           </div>
         </nav>
         </div>
-        <div className="pt-4 pb-5 border-t border-gray-800">
+        <div className="border-t border-white/10 py-4">
           {isExpanded || isHovered || isMobileOpen ? (
             <SidebarWidget />
           ) : (

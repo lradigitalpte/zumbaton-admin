@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Modal } from "@/components/ui/modal";
-import Button from "@/components/ui/button/Button";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/components/ui/Toast";
 import { Download, Send, CheckCircle2 } from "lucide-react";
@@ -82,44 +81,61 @@ export function InvoicePreviewModal({ isOpen, onClose, invoice }: InvoicePreview
         : 0;
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} className="max-w-3xl w-full">
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      showCloseButton={false}
+      className="max-w-3xl w-full !rounded-[28px] !border-neutral-200/80 !shadow-[0_24px_80px_rgba(0,0,0,0.18)]"
+    >
       <div className="flex max-h-[85vh] flex-col p-6">
-        <div className="mb-4 flex items-start justify-between gap-4 pr-12 sm:pr-14">
+        <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
+            <h4 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">
               Invoice {invoice.invoiceNumber}
             </h4>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+            <p className="mt-1 text-sm text-neutral-500 dark:text-white/60">
               {invoice.description || "—"}
               {invoice.billToName ? ` · ${invoice.billToName}` : ""}
               {invoice.billToEmail ? ` (${invoice.billToEmail})` : ""}
             </p>
           </div>
-          <div className="shrink-0 text-right">
-            <span className="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              {hasDiscount ? "Total Paid" : "Amount"}
-            </span>
-            {hasDiscount && (
-              <span className="block text-sm text-gray-400 line-through dark:text-gray-500">
-                {invoice.currency} {((invoice.originalAmountCents as number) / 100).toFixed(2)}
+          <div className="flex items-start gap-4">
+            <div className="shrink-0 text-right">
+              <span className="block text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">
+                {hasDiscount ? "Total Paid" : "Amount"}
               </span>
-            )}
-            <span className="text-xl font-bold text-gray-900 dark:text-white">
-              {invoice.currency} {(invoice.totalCents / 100).toFixed(2)}
-            </span>
-            {hasDiscount && (
-              <span className="block text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                {discountPercent}% off (−{invoice.currency} {(discountAmountCents / 100).toFixed(2)})
+              {hasDiscount && (
+                <span className="block text-sm text-neutral-400 line-through">
+                  {invoice.currency} {((invoice.originalAmountCents as number) / 100).toFixed(2)}
+                </span>
+              )}
+              <span className="text-xl font-semibold tracking-tight text-neutral-950 dark:text-white">
+                {invoice.currency} {(invoice.totalCents / 100).toFixed(2)}
               </span>
-            )}
+              {hasDiscount && (
+                <span className="mt-1 block rounded-full bg-[#E4F56C] px-2.5 py-0.5 text-xs font-semibold text-neutral-950">
+                  {discountPercent}% off (−{invoice.currency} {(discountAmountCents / 100).toFixed(2)})
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-white"
+              aria-label="Close"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+        <div className="min-h-0 flex-1 overflow-hidden rounded-[22px] border border-neutral-200 bg-neutral-50 dark:border-white/10 dark:bg-neutral-950">
           {invoice.pdfUrl ? (
             <iframe src={invoice.pdfUrl} title={`Invoice ${invoice.invoiceNumber}`} className="h-[55vh] w-full" />
           ) : (
-            <div className="flex h-[55vh] items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+            <div className="flex h-[55vh] items-center justify-center text-sm text-neutral-500">
               No PDF available for this invoice.
             </div>
           )}
@@ -131,7 +147,7 @@ export function InvoicePreviewModal({ isOpen, onClose, invoice }: InvoicePreview
               href={invoice.pdfUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-500 hover:text-brand-600"
+              className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-50"
             >
               <Download className="h-4 w-4" /> Download PDF
             </a>
@@ -140,22 +156,27 @@ export function InvoicePreviewModal({ isOpen, onClose, invoice }: InvoicePreview
           )}
 
           <div className="flex items-center gap-3">
-            <Button size="sm" variant="outline" onClick={handleClose}>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="rounded-full border border-neutral-200 bg-white px-5 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-50"
+            >
               Close
-            </Button>
+            </button>
             {sent ? (
-              <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-100 px-4 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#E4F56C] px-4 py-2.5 text-sm font-semibold text-neutral-950">
                 <CheckCircle2 className="h-4 w-4" /> Sent
               </span>
             ) : (
-              <Button
-                size="sm"
-                startIcon={<Send className="h-4 w-4" />}
+              <button
+                type="button"
                 onClick={handleSend}
                 disabled={sending || !invoice.pdfUrl}
+                className="inline-flex items-center gap-2 rounded-full bg-neutral-950 px-5 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
+                <Send className="h-4 w-4" />
                 {sending ? "Sending..." : "Send to Customer"}
-              </Button>
+              </button>
             )}
           </div>
         </div>

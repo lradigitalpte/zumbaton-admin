@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getClass, updateClass, cancelClass } from '@/services/class.service'
 import { UpdateClassRequestSchema, UuidSchema } from '@/api/schemas'
 import { ApiError } from '@/lib/api-error'
+import { getAuthenticatedUser } from '@/middleware/rbac'
+import { createAuditLog } from '@/services/rbac.service'
 import { z } from 'zod'
 
 // Cancel request schema
@@ -47,8 +49,28 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // Validate request body
     const validatedData = UpdateClassRequestSchema.parse(body)
+    const before = await getClass(classId).catch(() => null)
+    const previous = before?.class
 
     const result = await updateClass(classId, validatedData)
+    const actor = await getAuthenticatedUser(request)
+    if (actor) {
+      await createAuditLog({
+        userId: actor.id,
+        action: 'class.update',
+        resourceType: 'classes',
+        resourceId: classId,
+        oldValues: previous ? {
+          title: previous.title,
+          status: previous.status,
+          capacity: previous.capacity,
+          scheduledAt: previous.scheduledAt,
+          instructorId: previous.instructorId,
+          location: previous.location,
+        } : undefined,
+        newValues: validatedData as Record<string, unknown>,
+      })
+    }
 
     return NextResponse.json({
       success: true,
@@ -68,6 +90,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     UuidSchema.parse(classId)
 
     const result = await cancelClass(classId)
+    const actor = await getAuthenticatedUser(request)
+    if (actor) {
+      await createAuditLog({
+        userId: actor.id,
+        action: 'class.cancel',
+        resourceType: 'classes',
+        resourceId: classId,
+        newValues: { refundedBookings: result.refundedBookings },
+      })
+    }
 
     return NextResponse.json({
       success: true,

@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClass, listClasses } from '@/services/class.service'
 import { CreateClassRequestSchema, ClassListQuerySchema } from '@/api/schemas'
 import { ApiError } from '@/lib/api-error'
+import { getAuthenticatedUser } from '@/middleware/rbac'
+import { createAuditLog } from '@/services/rbac.service'
 
 // GET /api/classes - List all classes
 export async function GET(request: NextRequest) {
@@ -56,6 +58,21 @@ export async function POST(request: NextRequest) {
 
     // Create class with all validated fields
     const result = await createClass(classData)
+    const actor = await getAuthenticatedUser(request)
+    const created = (result as { class?: { id?: string; title?: string; scheduledAt?: string; capacity?: number } }).class
+    if (actor) {
+      await createAuditLog({
+        userId: actor.id,
+        action: 'class.create',
+        resourceType: 'classes',
+        resourceId: created?.id,
+        newValues: {
+          title: created?.title || classData.title,
+          scheduledAt: created?.scheduledAt,
+          capacity: created?.capacity ?? classData.capacity,
+        },
+      })
+    }
 
     return NextResponse.json({
       success: true,

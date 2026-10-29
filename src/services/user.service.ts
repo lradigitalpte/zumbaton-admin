@@ -208,6 +208,29 @@ export async function listUsers(
   }
   // For result sets > 50 users, skip last login fetch to maintain performance
 
+  // Live class counts from bookings. user_stats booked/attended often stay at 0
+  // while no-shows are written, so the list was hiding who actually goes.
+  const classCounts: Record<string, { attended: number; booked: number; noShows: number }> = {}
+  if (userIds.length > 0) {
+    const { data: bookingRows, error: bookingError } = await getSupabaseAdminClient()
+      .from('bookings')
+      .select('user_id, status')
+      .in('user_id', userIds)
+      .in('status', ['confirmed', 'attended', 'no-show'])
+
+    if (bookingError) {
+      console.warn('Failed to count class bookings for user list:', bookingError)
+    } else {
+      for (const row of bookingRows || []) {
+        const id = row.user_id as string
+        if (!classCounts[id]) classCounts[id] = { attended: 0, booked: 0, noShows: 0 }
+        classCounts[id].booked += 1
+        if (row.status === 'attended') classCounts[id].attended += 1
+        if (row.status === 'no-show') classCounts[id].noShows += 1
+      }
+    }
+  }
+
   // Map from view data (already has stats + balances) to UserProfile with stats
   const users = (data || []).map((row: Record<string, unknown>) => {
     const profile = toUserProfile(row)
@@ -237,8 +260,10 @@ export async function listUsers(
       stats,
       currentTokenBalance: (row.current_token_balance as number) || 0,
       currentAvailableTokens: (row.current_available_tokens as number) || 0,
-      totalClassesBooked: (row.total_classes_booked as number) || 0,
-      totalNoShows: (row.total_no_shows as number) || 0,
+      totalClassesBooked: classCounts[row.id as string]?.booked ?? ((row.total_classes_booked as number) || 0),
+      totalNoShows: classCounts[row.id as string]?.noShows ?? ((row.total_no_shows as number) || 0),
+      classesAttended: classCounts[row.id as string]?.attended ?? ((row.total_classes_attended as number) || 0),
+      classesBooked: classCounts[row.id as string]?.booked ?? ((row.total_classes_booked as number) || 0),
       lastLogin: lastLoginMap[row.id as string] || null,
     }
   })

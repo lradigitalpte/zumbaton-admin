@@ -2,14 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { Input } from "@/components/ui/input";
-import Button from "@/components/ui/button/Button";
 import { RichTextEditor } from "@/components/blog/RichTextEditor";
 import { SeoPreview } from "@/components/blog/SeoPreview";
 import { slugifyTitle } from "@/lib/blog-utils";
 import type { BlogPostRow, BlogPostStatus } from "@/lib/blog-utils";
 import { supabase } from "@/lib/supabase";
-import { ImageIcon, Loader2, Save, Send } from "lucide-react";
 
 export type BlogFormValues = {
   title: string;
@@ -111,6 +108,11 @@ async function uploadBlogImage(file: File, folder: string) {
   return json.data.url as string;
 }
 
+const card = "rounded-[28px] border border-neutral-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 sm:p-6";
+const label = "mb-2 block text-sm font-medium text-neutral-800 dark:text-white/90";
+const field = "h-11 w-full rounded-full border border-neutral-200 bg-white px-4 text-sm text-neutral-950 outline-none placeholder:text-neutral-400 dark:border-white/10 dark:bg-gray-800 dark:text-white";
+const area = "w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 outline-none placeholder:text-neutral-400 dark:border-white/10 dark:bg-gray-800 dark:text-white";
+
 export function BlogEditorForm({ initial, saving, onSave, onCancel }: BlogEditorFormProps) {
   const [form, setForm] = useState<BlogFormValues>(initial ?? emptyBlogForm());
   const [slugTouched, setSlugTouched] = useState(Boolean(initial?.slug));
@@ -166,200 +168,176 @@ export function BlogEditorForm({ initial, saving, onSave, onCancel }: BlogEditor
   };
 
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-      <div className="space-y-6 xl:col-span-2">
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-          <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Post content</h3>
-          <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+      <div className="space-y-5 xl:col-span-2">
+        <section className={card}>
+          <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">Post</h2>
+          <div className="mt-4 space-y-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Title *</label>
-              <Input
-                value={form.title}
-                onChange={(e) => setField("title", e.target.value)}
-                placeholder="e.g. 5 Tips for Your First Zumba Class"
-              />
+              <label className={label}>Title</label>
+              <input value={form.title} onChange={(event) => setField("title", event.target.value)} placeholder="e.g. 5 Tips for Your First Zumba Class" className={field} />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">URL slug</label>
+              <label className={label}>URL slug</label>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">/blog/</span>
-                <Input
+                <span className="shrink-0 text-sm text-neutral-500">/blog/</span>
+                <input
                   value={form.slug}
-                  onChange={(e) => {
+                  onChange={(event) => {
                     setSlugTouched(true);
-                    setField("slug", slugifyTitle(e.target.value));
+                    setField("slug", slugifyTitle(event.target.value));
                   }}
                   placeholder="your-post-slug"
+                  className={field}
                 />
               </div>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Excerpt</label>
+              <label className={label}>Excerpt</label>
               <textarea
                 value={form.excerpt}
-                onChange={(e) => setField("excerpt", e.target.value)}
+                onChange={(event) => setField("excerpt", event.target.value)}
                 rows={3}
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
-                placeholder="Short summary shown on the blog listing and search previews."
+                className={area}
+                placeholder="Short summary on the blog list and in search."
               />
-              <p className="mt-1 text-xs text-gray-500">{form.excerpt.length}/300 recommended</p>
+              <p className="mt-2 text-xs text-neutral-400">{form.excerpt.length}/300 recommended</p>
             </div>
           </div>
         </section>
 
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-          <div className="mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Article body</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Rich text editor — format with the toolbar. What you see is what appears on the website.
-            </p>
+        <section className={card}>
+          <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">Article</h2>
+          <p className="mt-1 text-sm text-neutral-500">Use the toolbar. This is what appears on the website.</p>
+          <div className="mt-4">
+            <RichTextEditor
+              value={form.body}
+              onChange={(html) => setField("body", html)}
+              onUploadImage={(file) => uploadBlogImage(file, "content")}
+              placeholder="Start writing your article…"
+            />
           </div>
-          <RichTextEditor
-            value={form.body}
-            onChange={(html) => setField("body", html)}
-            onUploadImage={(file) => uploadBlogImage(file, "content")}
-            placeholder="Start writing your article…"
-          />
         </section>
 
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-          <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Author & tags</h3>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <section className={card}>
+          <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">Author and tags</h2>
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm font-medium">Author name</label>
-              <Input value={form.author_name} onChange={(e) => setField("author_name", e.target.value)} />
+              <label className={label}>Author name</label>
+              <input value={form.author_name} onChange={(event) => setField("author_name", event.target.value)} className={field} />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">Author role</label>
-              <Input
-                value={form.author_designation}
-                onChange={(e) => setField("author_designation", e.target.value)}
-              />
+              <label className={label}>Author role</label>
+              <input value={form.author_designation} onChange={(event) => setField("author_designation", event.target.value)} className={field} />
             </div>
             <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium">Tags (comma-separated)</label>
-              <Input
-                value={form.tags}
-                onChange={(e) => setField("tags", e.target.value)}
-                placeholder="fitness, zumba, wellness"
-              />
+              <label className={label}>Tags</label>
+              <input value={form.tags} onChange={(event) => setField("tags", event.target.value)} placeholder="fitness, zumba, wellness" className={field} />
             </div>
           </div>
         </section>
       </div>
 
-      <div className="space-y-6">
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-          <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Featured image</h3>
+      <div className="space-y-5">
+        <section className={card}>
+          <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">Featured image</h2>
           {form.featured_image_url ? (
-            <div className="relative mb-3 aspect-video overflow-hidden rounded-lg">
-              <Image src={form.featured_image_url} alt="Featured" fill className="object-cover" unoptimized />
+            <div className="relative mt-4 aspect-video overflow-hidden rounded-[20px]">
+              <Image src={form.featured_image_url} alt="" fill className="object-cover" unoptimized />
             </div>
           ) : (
-            <div className="mb-3 flex aspect-video items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
-              <ImageIcon className="h-8 w-8 text-gray-400" />
-            </div>
+            <div className="mt-4 flex aspect-video items-center justify-center rounded-[20px] bg-neutral-100 text-xs text-neutral-400 dark:bg-white/10">No image yet</div>
           )}
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-brand-600">
-            {uploadingFeatured ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Upload image
+          <label className="mt-4 inline-flex cursor-pointer rounded-full bg-neutral-950 px-3.5 py-2 text-xs font-semibold text-white dark:bg-white dark:text-neutral-950">
+            {uploadingFeatured ? "Uploading…" : "Upload image"}
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp,image/gif"
               className="hidden"
               disabled={uploadingFeatured}
-              onChange={(e) => handleFeaturedUpload(e.target.files?.[0] ?? null)}
+              onChange={(event) => handleFeaturedUpload(event.target.files?.[0] ?? null)}
             />
           </label>
-          <Input
-            className="mt-3"
+          <input
             value={form.featured_image_url}
-            onChange={(e) => setField("featured_image_url", e.target.value)}
-            placeholder="Or paste image URL"
+            onChange={(event) => setField("featured_image_url", event.target.value)}
+            placeholder="Or paste an image URL"
+            className={`${field} mt-3`}
           />
         </section>
 
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-          <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">SEO</h3>
-          <div className="space-y-3">
+        <section className={card}>
+          <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">Search and social</h2>
+          <div className="mt-4 space-y-4">
             <div>
-              <label className="mb-1 block text-sm font-medium">Meta title</label>
-              <Input
-                value={form.seo_title}
-                onChange={(e) => setField("seo_title", e.target.value)}
-                placeholder={form.title || "Defaults to post title"}
-              />
-              <p className="mt-1 text-xs text-gray-500">{charCounts.title}/60</p>
+              <label className={label}>Meta title</label>
+              <input value={form.seo_title} onChange={(event) => setField("seo_title", event.target.value)} placeholder={form.title || "Defaults to the post title"} className={field} />
+              <p className={`mt-2 text-xs ${charCounts.title > 60 ? "text-red-500" : "text-neutral-400"}`}>{charCounts.title}/60</p>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">Meta description</label>
+              <label className={label}>Meta description</label>
               <textarea
                 value={form.seo_description}
-                onChange={(e) => setField("seo_description", e.target.value)}
+                onChange={(event) => setField("seo_description", event.target.value)}
                 rows={3}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
-                placeholder={form.excerpt || "Defaults to excerpt"}
+                className={area}
+                placeholder={form.excerpt || "Defaults to the excerpt"}
               />
-              <p className="mt-1 text-xs text-gray-500">{charCounts.description}/160</p>
+              <p className={`mt-2 text-xs ${charCounts.description > 160 ? "text-red-500" : "text-neutral-400"}`}>{charCounts.description}/160</p>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">OG image (optional)</label>
-              <label className="mb-2 inline-flex cursor-pointer items-center gap-2 text-sm text-brand-600">
-                {uploadingOg ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Upload OG image
+              <label className={label}>Social image</label>
+              <label className="inline-flex cursor-pointer rounded-full bg-neutral-100 px-3.5 py-2 text-xs font-semibold text-neutral-700 dark:bg-white/10 dark:text-white">
+                {uploadingOg ? "Uploading…" : "Upload social image"}
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/gif"
                   className="hidden"
                   disabled={uploadingOg}
-                  onChange={(e) => handleOgUpload(e.target.files?.[0] ?? null)}
+                  onChange={(event) => handleOgUpload(event.target.files?.[0] ?? null)}
                 />
               </label>
-              <Input
+              <input
                 value={form.og_image_url}
-                onChange={(e) => setField("og_image_url", e.target.value)}
-                placeholder="Defaults to featured image"
+                onChange={(event) => setField("og_image_url", event.target.value)}
+                placeholder="Defaults to the featured image"
+                className={`${field} mt-3`}
               />
             </div>
           </div>
           <div className="mt-5">
-            <SeoPreview
-              title={seoTitle}
-              description={seoDescription}
-              slug={form.slug}
-              imageUrl={ogImage}
-            />
+            <SeoPreview title={seoTitle} description={seoDescription} slug={form.slug} imageUrl={ogImage} />
           </div>
         </section>
 
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-          <label className="flex items-center gap-2 text-sm font-medium">
-            <input
-              type="checkbox"
-              checked={form.is_featured}
-              onChange={(e) => setField("is_featured", e.target.checked)}
-            />
-            Feature on blog homepage
-          </label>
+        <section className={card}>
+          <button
+            type="button"
+            onClick={() => setField("is_featured", !form.is_featured)}
+            className={`w-full rounded-2xl px-4 py-3 text-left ${form.is_featured ? "bg-[#E4F56C] text-neutral-950" : "bg-neutral-100 text-neutral-950 dark:bg-white/10 dark:text-white"}`}
+          >
+            <span className="block text-sm font-semibold">{form.is_featured ? "Featured on the blog" : "Not featured"}</span>
+            <span className={`mt-0.5 block text-xs ${form.is_featured ? "text-neutral-950/70" : "text-neutral-500"}`}>Shows this post on the blog homepage.</span>
+          </button>
           <div className="mt-4 flex flex-col gap-2">
-            <Button
-              disabled={saving || !form.title.trim()}
-              onClick={() => onSave(form, "draft")}
-              className="w-full justify-center"
-            >
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Save draft
-            </Button>
-            <Button
+            <button
+              type="button"
               disabled={saving || !form.title.trim()}
               onClick={() => onSave(form, "published")}
-              className="w-full justify-center"
+              className="rounded-full bg-[#E4F56C] py-3 text-sm font-semibold text-neutral-950 disabled:opacity-50"
             >
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              Publish
-            </Button>
+              {saving ? "Saving…" : "Publish"}
+            </button>
+            <button
+              type="button"
+              disabled={saving || !form.title.trim()}
+              onClick={() => onSave(form, "draft")}
+              className="rounded-full bg-neutral-950 py-3 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-neutral-950"
+            >
+              {saving ? "Saving…" : "Save draft"}
+            </button>
             {onCancel ? (
-              <button type="button" onClick={onCancel} className="text-sm text-gray-500 hover:text-gray-700">
+              <button type="button" onClick={onCancel} className="rounded-full border border-neutral-200 py-3 text-sm font-semibold text-neutral-600 dark:border-white/10 dark:text-white">
                 Cancel
               </button>
             ) : null}

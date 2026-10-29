@@ -167,6 +167,48 @@
   --z-index-999999: 999999;
 }
 
+/* Dark surfaces only. Text colors stay put so headings don't disappear.
+   Blue-slate gray-800/900 becomes neutral charcoal so it matches the sidebar and lime. */
+@layer utilities {
+  .dark .dark\:bg-gray-950 {
+    background-color: #070707;
+  }
+  .dark .dark\:bg-gray-900 {
+    background-color: #0e0e0e;
+  }
+  .dark .dark\:bg-gray-900\/90,
+  .dark .dark\:bg-gray-900\/80 {
+    background-color: rgb(14 14 14 / 0.92);
+  }
+  .dark .dark\:bg-gray-800 {
+    background-color: #232323;
+  }
+  .dark .dark\:bg-gray-800\/50,
+  .dark .dark\:bg-gray-800\/30 {
+    background-color: rgb(35 35 35 / 0.72);
+  }
+  .dark .dark\:bg-gray-700,
+  .dark .dark\:bg-gray-700\/50,
+  .dark .dark\:bg-gray-700\/30 {
+    background-color: #2c2c2c;
+  }
+  .dark .dark\:hover\:bg-gray-900:hover {
+    background-color: #161616;
+  }
+  .dark .dark\:hover\:bg-gray-800:hover {
+    background-color: #2a2a2a;
+  }
+  .dark .dark\:hover\:bg-gray-700:hover,
+  .dark .dark\:hover\:bg-gray-600:hover {
+    background-color: #333333;
+  }
+  .dark .dark\:border-gray-800,
+  .dark .dark\:border-gray-700,
+  .dark .dark\:border-gray-600 {
+    border-color: rgb(255 255 255 / 0.1);
+  }
+}
+
 /* Leads CRM dark-mode contrast. Scoped so other dashboard pages keep their own palette. */
 .dark .lead-crm-page {
   color: #e5e7eb;
@@ -286,15 +328,15 @@
 }
 
 @utility menu-item {
-  @apply relative flex items-center w-full gap-2 px-3 py-2 font-medium rounded-lg text-theme-sm;
+  @apply relative flex items-center w-full gap-3 px-3 py-2.5 text-sm font-medium rounded-2xl;
 }
 
 @utility menu-item-active {
-  @apply bg-lime-500/20 text-lime-400 dark:bg-lime-500/20 dark:text-lime-400;
+  @apply bg-[#E4F56C] text-neutral-950;
 }
 
 @utility menu-item-inactive {
-  @apply text-gray-300 hover:bg-lime-500/20 group-hover:text-lime-400 dark:text-gray-300 dark:hover:bg-lime-500/20 dark:hover:text-lime-400;
+  @apply text-white/70 hover:bg-white/10 hover:text-white;
 }
 
 @utility menu-item-icon {
@@ -302,11 +344,11 @@
 }
 
 @utility menu-item-icon-active {
-  @apply text-lime-400 dark:text-lime-400;
+  @apply text-neutral-950;
 }
 
 @utility menu-item-icon-inactive {
-  @apply text-gray-400 group-hover:text-lime-400 dark:text-gray-400 dark:group-hover:text-lime-400;
+  @apply text-white/55 group-hover:text-white;
 }
 
 @utility menu-item-arrow {
@@ -322,27 +364,27 @@
 }
 
 @utility menu-dropdown-item {
-  @apply relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-theme-sm font-medium;
+  @apply relative flex items-center gap-3 rounded-full px-3 py-2 text-sm font-medium;
 }
 
 @utility menu-dropdown-item-active {
-  @apply bg-lime-500/20 text-lime-400 dark:bg-lime-500/20 dark:text-lime-400;
+  @apply bg-[#E4F56C] text-neutral-950;
 }
 
 @utility menu-dropdown-item-inactive {
-  @apply text-gray-300 hover:bg-lime-500/20 hover:text-lime-400 dark:text-gray-300 dark:hover:bg-lime-500/20 dark:hover:text-lime-400;
+  @apply text-white/65 hover:bg-white/10 hover:text-white;
 }
 
 @utility menu-dropdown-badge {
-  @apply block rounded-full px-2.5 py-0.5 text-xs font-medium uppercase text-brand-500 dark:text-brand-400;
+  @apply block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
 }
 
 @utility menu-dropdown-badge-active {
-  @apply bg-brand-100 dark:bg-brand-500/20;
+  @apply bg-neutral-950 text-[#E4F56C];
 }
 
 @utility menu-dropdown-badge-inactive {
-  @apply bg-brand-50 group-hover:bg-brand-100 dark:bg-brand-500/15 dark:group-hover:bg-brand-500/20;
+  @apply bg-[#E4F56C] text-neutral-950;
 }
 
 @utility no-scrollbar {

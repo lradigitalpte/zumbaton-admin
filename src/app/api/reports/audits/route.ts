@@ -36,8 +36,20 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate') || undefined
     const endDate = searchParams.get('endDate') || undefined
     const search = searchParams.get('search') || undefined
+    const scope = searchParams.get('scope') === 'all' ? 'all' : 'changes'
     const page = searchParams.get('page') ? parseInt(searchParams.get('page')!) : 1
     const pageSize = searchParams.get('pageSize') ? parseInt(searchParams.get('pageSize')!) : 50
+
+    const sgtToday = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Singapore',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date())
+    const todayStart = `${sgtToday}T00:00:00+08:00`
+    const dayBound = (value: string, end: boolean) => (
+      value.includes('T') ? value : `${value}T${end ? '23:59:59.999' : '00:00:00'}+08:00`
+    )
 
     // Build query for audit logs
     let query = supabase
@@ -45,22 +57,51 @@ export async function GET(request: NextRequest) {
       .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
 
-    // Filter by action
-    if (action && action !== 'all') {
-      query = query.eq('action', action)
+    if (scope === 'changes') {
+      query = query.not('action', 'like', 'list_%')
     }
 
-    // Filter by resource type
+    const actionTerms: Record<string, string[]> = {
+      create: ['create'],
+      update: ['update', 'edit'],
+      delete: ['delete', 'cancel', 'deactivat'],
+      adjust: ['adjust'],
+      payment: ['payment', 'refund'],
+      attendance: ['check_in', 'no_show'],
+    }
     if (resourceType && resourceType !== 'all') {
-      query = query.eq('resource_type', resourceType)
+      query = query.ilike('resource_type', `%${resourceType}%`)
     }
 
-    // Filter by date range
     if (startDate) {
-      query = query.gte('created_at', startDate)
+      query = query.gte('created_at', dayBound(startDate, false))
     }
     if (endDate) {
-      query = query.lte('created_at', endDate)
+      query = query.lte('created_at', dayBound(endDate, true))
+    }
+
+    const term = (search || '').replace(/[^a-zA-Z0-9 @.+_-]/g, '').trim()
+    const actionFilters = action && action !== 'all'
+      ? (actionTerms[action] || [action]).map((piece) => `action.ilike.%${piece}%`)
+      : []
+    let searchFilters: string[] = []
+    if (term) {
+      const { data: people } = await supabase
+        .from(TABLES.USER_PROFILES)
+        .select('id')
+        .or(`name.ilike.%${term}%,email.ilike.%${term}%`)
+        .limit(40)
+      const ids = (people || []).map((person: { id: string }) => person.id)
+      searchFilters = [`action.ilike.%${term}%`, `resource_type.ilike.%${term}%`]
+      if (ids.length > 0) searchFilters.push(`user_id.in.(${ids.join(',')})`)
+    }
+    if (actionFilters.length > 0 && searchFilters.length > 0) {
+      const combined = actionFilters.flatMap((actionFilter) => searchFilters.map((searchFilter) => `and(${actionFilter},${searchFilter})`))
+      query = query.or(combined.join(','))
+    } else if (actionFilters.length > 0) {
+      query = query.or(actionFilters.join(','))
+    } else if (searchFilters.length > 0) {
+      query = query.or(searchFilters.join(','))
     }
 
     // Pagination
@@ -125,61 +166,30 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Client-side search filter
-    if (search) {
-      const searchLower = search.toLowerCase()
-      result = result.filter((log: { userName: string; userEmail: string | null; action: string; resourceType: string }) => 
-        log.userName.toLowerCase().includes(searchLower) ||
-        (log.userEmail && log.userEmail.toLowerCase().includes(searchLower)) ||
-        log.action.toLowerCase().includes(searchLower) ||
-        log.resourceType.toLowerCase().includes(searchLower)
-      )
-    }
+    const [{ count: changeCount }, { count: todayCount }, { count: readCount }, { data: changeRows }] = await Promise.all([
+      supabase.from(TABLES.AUDIT_LOGS).select('*', { count: 'exact', head: true }).not('action', 'like', 'list_%'),
+      supabase.from(TABLES.AUDIT_LOGS).select('*', { count: 'exact', head: true }).not('action', 'like', 'list_%').gte('created_at', todayStart),
+      supabase.from(TABLES.AUDIT_LOGS).select('*', { count: 'exact', head: true }).like('action', 'list_%'),
+      supabase.from(TABLES.AUDIT_LOGS).select('user_id, action, resource_type').not('action', 'like', 'list_%').limit(3000),
+    ])
 
-    // Calculate summary stats
-    const { data: allLogs } = await supabase
-      .from(TABLES.AUDIT_LOGS)
-      .select('action, resource_type, created_at')
-
-    const stats = {
-      totalLogs: count || 0,
-      todayLogs: 0,
-      uniqueUsers: 0,
-      uniqueActions: 0,
-      uniqueResources: 0,
-    }
-
-    const today = new Date().toISOString().split('T')[0]
     const uniqueUserIds = new Set<string>()
     const uniqueActionsSet = new Set<string>()
     const uniqueResourcesSet = new Set<string>()
-    
-    if (allLogs) {
-      for (const log of allLogs) {
-        if (log.created_at && log.created_at.startsWith(today)) {
-          stats.todayLogs++
-        }
-        if (log.action) {
-          uniqueActionsSet.add(log.action)
-        }
-        if (log.resource_type) {
-          uniqueResourcesSet.add(log.resource_type)
-        }
-      }
+    for (const log of changeRows || []) {
+      if (log.user_id) uniqueUserIds.add(log.user_id as string)
+      if (log.action) uniqueActionsSet.add(log.action as string)
+      if (log.resource_type) uniqueResourcesSet.add(log.resource_type as string)
     }
 
-    // Count unique users from current page results
-    if (auditLogs) {
-      auditLogs.forEach((log: { user_id: string | null }) => {
-        if (log.user_id) {
-          uniqueUserIds.add(log.user_id)
-        }
-      })
-      stats.uniqueUsers = uniqueUserIds.size
+    const stats = {
+      totalLogs: changeCount || 0,
+      todayLogs: todayCount || 0,
+      uniqueUsers: uniqueUserIds.size,
+      uniqueActions: uniqueActionsSet.size,
+      uniqueResources: uniqueResourcesSet.size,
+      hiddenReads: readCount || 0,
     }
-
-    stats.uniqueActions = uniqueActionsSet.size
-    stats.uniqueResources = uniqueResourcesSet.size
 
     return NextResponse.json({
       success: true,

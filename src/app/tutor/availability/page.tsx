@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import StudioDate from "@/components/ui/StudioDate";
 import { useTutorAvailability, updateTutorAvailability, requestTimeOff, cancelTimeOff, type WeeklyAvailability, type TimeOffRequest } from "@/hooks/useTutor";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -443,21 +444,11 @@ export default function TutorAvailabilityPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
-                <input
-                  type="date"
-                  value={newTimeOff.startDate}
-                  onChange={(e) => setNewTimeOff(prev => ({ ...prev, startDate: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                />
+                <StudioDate block ariaLabel="Start date" value={newTimeOff.startDate} onChange={(value) => setNewTimeOff(prev => ({ ...prev, startDate: value }))} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
-                <input
-                  type="date"
-                  value={newTimeOff.endDate}
-                  onChange={(e) => setNewTimeOff(prev => ({ ...prev, endDate: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                />
+                <StudioDate block ariaLabel="End date" value={newTimeOff.endDate} onChange={(value) => setNewTimeOff(prev => ({ ...prev, endDate: value }))} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Reason</label>

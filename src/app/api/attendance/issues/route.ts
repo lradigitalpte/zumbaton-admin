@@ -30,6 +30,8 @@ export async function GET(request: NextRequest) {
         booked_at,
         cancelled_at,
         cancellation_reason,
+        guest_name,
+        guest_email,
         created_at,
         updated_at,
         class:classes(
@@ -92,12 +94,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user profiles for all users in bookings
-    const userIds = [...new Set(bookings?.map(b => b.user_id) || [])]
-    
-    const { data: userProfiles } = await adminClient
-      .from(TABLES.USER_PROFILES)
-      .select('id, name, email, phone')
-      .in('id', userIds)
+    const userIds = [...new Set(bookings?.map(b => b.user_id).filter(Boolean) || [])] as string[]
+
+    const { data: userProfiles } = userIds.length
+      ? await adminClient
+          .from(TABLES.USER_PROFILES)
+          .select('id, name, email, phone')
+          .in('id', userIds)
+      : { data: [] }
 
     const userProfileMap: Record<string, { name: string; email: string; phone: string }> = {}
     userProfiles?.forEach(profile => {
@@ -118,10 +122,12 @@ export async function GET(request: NextRequest) {
       }).filter(Boolean) || []
     )] as string[]
 
-    const { data: instructorProfiles } = await adminClient
-      .from(TABLES.USER_PROFILES)
-      .select('id, name')
-      .in('id', instructorIds)
+    const { data: instructorProfiles } = instructorIds.length
+      ? await adminClient
+          .from(TABLES.USER_PROFILES)
+          .select('id, name')
+          .in('id', instructorIds)
+      : { data: [] }
 
     const instructorMap: Record<string, string> = {}
     instructorProfiles?.forEach(profile => {
@@ -129,11 +135,13 @@ export async function GET(request: NextRequest) {
     })
 
     // Get no-show counts for each user
-    const { data: noShowCounts } = await adminClient
-      .from(TABLES.BOOKINGS)
-      .select('user_id')
-      .in('user_id', userIds)
-      .eq('status', 'no-show')
+    const { data: noShowCounts } = userIds.length
+      ? await adminClient
+          .from(TABLES.BOOKINGS)
+          .select('user_id')
+          .in('user_id', userIds)
+          .eq('status', 'no-show')
+      : { data: [] }
 
     const noShowCountMap: Record<string, number> = {}
     noShowCounts?.forEach(item => {
@@ -198,8 +206,8 @@ export async function GET(request: NextRequest) {
         id: booking.id,
         bookingId: booking.id,
         userId: booking.user_id,
-        userName: user?.name || 'Unknown User',
-        userEmail: user?.email || '',
+        userName: user?.name || booking.guest_name?.trim() || 'Guest',
+        userEmail: user?.email || booking.guest_email || '',
         userPhone: user?.phone || '',
         classId: booking.class_id,
         className: classData?.title || 'Unknown Class',
@@ -304,17 +312,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user profile separately
-    let userName = 'Unknown User'
+    let userName = booking.guest_name?.trim() || 'Guest'
     if (booking.user_id) {
       const { data: userProfile } = await adminClient
         .from(TABLES.USER_PROFILES)
         .select('name')
         .eq('id', booking.user_id)
         .single()
-      
-      if (userProfile) {
-        userName = userProfile.name || 'Unknown User'
-      }
+
+      if (userProfile?.name) userName = userProfile.name
     }
 
     // Determine issue status and actions

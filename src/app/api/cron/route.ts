@@ -10,6 +10,7 @@ import {
   runNoShowsJob,
   runWaitlistExpiryJob,
   sendTokenExpiryWarnings,
+  sendTokenBalanceLowWarnings,
   sendClassReminders,
   sendStreakReminders,
   markCompletedClasses,
@@ -118,6 +119,9 @@ async function runCronJobs(job: string | null) {
       break
     case 'token-warnings':
       results = [await sendTokenExpiryWarnings()]
+      break
+    case 'token-balance':
+      results = [await sendTokenBalanceLowWarnings()]
       break
     case 'class-reminders':
       results = [await sendClassReminders()]

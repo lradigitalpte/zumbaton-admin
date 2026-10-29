@@ -1,10 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
+import StudioMenu from "@/components/ui/StudioMenu";
 import BookingReportCharts from "@/components/reports/BookingReportCharts";
 import { useAttendanceReport } from "@/hooks/useReports";
 import type { BookingTotals, YearMonthSummary } from "@/hooks/useReports";
+
+const card = "rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800";
+const metric = "flex min-h-[168px] flex-col rounded-[28px] p-5 sm:p-6";
 
 const MONTHS = [
   { value: 1, label: "January" },
@@ -42,10 +45,6 @@ function getCurrentSgtYearMonth() {
   };
 }
 
-const th = "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-200";
-const thR = `${th} text-right`;
-const td = "px-4 py-3 text-gray-800 dark:text-gray-100";
-const tdR = "px-4 py-3 text-right tabular-nums text-gray-800 dark:text-gray-100";
 function normalizeRow(row: YearMonthSummary): YearMonthSummary {
   const totalBookings = Number(row.totalBookings ?? 0)
   const trialBookings = Number(row.trialBookings ?? 0)
@@ -78,18 +77,13 @@ function sumRows(rows: YearMonthSummary[]): BookingTotals {
   )
 }
 
-function Num({ value, bold = false }: { value: number; bold?: boolean }) {
-  const n = Number(value ?? 0)
+function Count({ value, strong = false }: { value: number; strong?: boolean }) {
+  const n = Number(value ?? 0);
   return (
-    <span className={n === 0
-      ? "text-gray-500 dark:text-gray-400"
-      : bold
-        ? "font-bold text-gray-900 dark:text-white"
-        : "font-medium text-gray-900 dark:text-gray-100"
-    }>
+    <span className={n === 0 ? "text-neutral-400" : strong ? "font-semibold text-neutral-950 dark:text-white" : "text-neutral-950 dark:text-white"}>
       {n}
     </span>
-  )
+  );
 }
 
 export default function AttendanceReportPage() {
@@ -108,8 +102,8 @@ export default function AttendanceReportPage() {
     scope: reportScope,
   });
 
-  const loading = isLoading || isFetching;
-  const ready = !loading && !!data;
+  const showInitialLoading = isLoading && !data;
+  const isRefetching = isFetching && !isLoading;
 
   const totals = data?.totals ?? emptyTotals;
   const classSessions = data?.classSessions ?? [];
@@ -185,119 +179,110 @@ export default function AttendanceReportPage() {
     a.click();
   };
 
-  const SummaryCards = ({ t, label }: { t: BookingTotals; label: string }) => (
-    <div className="space-y-3">
-      <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        {[
-          { k: "Classes Scheduled", v: t.totalClasses },
-          { k: "Classes Booked", v: t.classesWithBookings },
-          { k: "Member Bookings", v: t.memberBookings, sub: "App / token users" },
-          { k: "Trial Bookings", v: t.trialBookings, sub: "Guest / website" },
-          { k: "Total Bookings", v: t.totalBookings, bold: true },
-        ].map((c) => (
-          <div key={c.k} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <p className="text-xs text-gray-500 dark:text-gray-400">{c.k}</p>
-            <p className={`text-2xl font-bold mt-1 ${c.bold ? "text-blue-600 dark:text-blue-400" : "text-gray-900 dark:text-white"}`}>
-              {ready ? c.v : "—"}
-            </p>
-            {c.sub && <p className="text-[10px] text-gray-400 mt-0.5">{c.sub}</p>}
-          </div>
-        ))}
-      </div>
-      {ready && t.totalBookings > 0 && (
-        <p className="text-sm text-emerald-700 dark:text-emerald-300 font-medium">
-          {t.totalBookings} total = {t.memberBookings} member + {t.trialBookings} trial
-        </p>
-      )}
-    </div>
-  );
+  const memberShare = displayTotals.totalBookings > 0
+    ? Math.round((displayTotals.memberBookings / displayTotals.totalBookings) * 100)
+    : 0;
+  const trialShare = displayTotals.totalBookings > 0
+    ? Math.round((displayTotals.trialBookings / displayTotals.totalBookings) * 100)
+    : 0;
+  const classShare = displayTotals.totalClasses > 0
+    ? Math.round((displayTotals.classesWithBookings / displayTotals.totalClasses) * 100)
+    : 0;
+  const periodName = reportScope === "year" ? String(selectedYear) : (data?.periodLabel || loadingLabel);
 
   return (
-    <div className="space-y-6">
-      <PageBreadCrumb pageTitle="Attendance Report" />
-
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div className="min-w-0 space-y-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Booking Report</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {loading ? `Loading ${loadingLabel}...` : ready ? data.periodLabel : "Select a period"}
-          </p>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-2xl">
-            Counts confirmed bookings only (paid or token committed). Member = app/token users.
-            Trial = guest website bookings. Token purchases are not counted here.
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">Bookings</h1>
+          <p className="mt-1 max-w-xl text-sm text-neutral-500">
+            {showInitialLoading ? `Loading ${loadingLabel}.` : `${periodName}. Confirmed bookings only. Members are app and token users. Trials are guest website bookings.`}
+            {isRefetching ? " Updating…" : ""}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
-            {(["month", "year"] as const).map((s) => (
+          <div className="flex rounded-full bg-neutral-100 p-1 dark:bg-white/10">
+            {(["month", "year"] as const).map((scope) => (
               <button
-                key={s}
+                key={scope}
                 type="button"
-                disabled={loading}
-                onClick={() => setReportScope(s)}
-                className={`px-3 py-2 text-sm font-medium capitalize ${reportScope === s ? "bg-blue-600 text-white" : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300"}`}
+                onClick={() => setReportScope(scope)}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold capitalize ${reportScope === scope ? "bg-neutral-950 text-white dark:bg-white dark:text-neutral-950" : "text-neutral-500"}`}
               >
-                {s}
+                {scope}
               </button>
             ))}
           </div>
           {reportScope === "month" && (
-            <select
-              value={selectedMonth}
-              disabled={loading}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-            >
-              {MONTHS.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
+            <div className="w-40">
+              <StudioMenu
+                size="sm"
+                value={String(selectedMonth)}
+                onChange={(value) => setSelectedMonth(parseInt(value, 10))}
+                placeholder="Month"
+                options={MONTHS.map((month) => ({ value: String(month.value), label: month.label }))}
+              />
+            </div>
           )}
-          <select
-            value={selectedYear}
-            disabled={loading}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-          >
-            {yearOptions.map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
+          <div className="w-28">
+            <StudioMenu
+              size="sm"
+              value={String(selectedYear)}
+              onChange={(value) => setSelectedYear(parseInt(value, 10))}
+              placeholder="Year"
+              options={yearOptions.map((year) => ({ value: String(year), label: String(year) }))}
+            />
+          </div>
           <button
             type="button"
-            disabled={loading || !data}
+            disabled={!data}
             onClick={exportCsv}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            className="rounded-full bg-neutral-950 px-4 py-2 text-xs font-semibold text-white disabled:opacity-40 dark:bg-white dark:text-neutral-950"
           >
             Export
           </button>
         </div>
       </div>
 
-      {loading && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/25 dark:text-blue-200">
-          Loading {loadingLabel}...
-        </div>
-      )}
-
       {isError && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {(error as Error)?.message || "Failed to load"}
+        <div className="rounded-[28px] border border-red-200 bg-white px-6 py-8 text-sm text-red-600 dark:border-red-900 dark:bg-gray-800">
+          {(error as Error)?.message || "Could not load bookings"}
         </div>
       )}
 
-      {ready && (
+      {showInitialLoading ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((item) => <div key={item} className={`${metric} animate-pulse border border-neutral-200/80 bg-white dark:border-white/10 dark:bg-gray-800`} />)}
+        </div>
+      ) : data && (
         <>
-          <SummaryCards
-            t={displayTotals}
-            label={reportScope === "year" ? `${selectedYear} totals` : `${data.periodLabel} totals`}
-          />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className={`${metric} border border-[#d5e45c] bg-[#E4F56C] text-neutral-950`}>
+              <p className="text-sm font-medium">Bookings</p>
+              <p className="mt-5 text-4xl font-semibold leading-none tracking-tight">{displayTotals.totalBookings}</p>
+              <p className="mt-2 text-xs text-neutral-950/60">{displayTotals.memberBookings} members + {displayTotals.trialBookings} trials</p>
+            </div>
+            <div className={`${metric} border border-neutral-950 bg-neutral-950 text-white`}>
+              <p className="text-sm font-medium text-white/70">Members</p>
+              <p className="mt-5 text-4xl font-semibold leading-none tracking-tight">{displayTotals.memberBookings}</p>
+              <p className="mt-2 text-xs text-white/50">{memberShare}% of bookings · app and token users</p>
+            </div>
+            <div className={`${metric} border border-neutral-200/80 bg-white text-neutral-950 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 dark:text-white`}>
+              <p className="text-sm font-medium text-neutral-600 dark:text-white/70">Trials</p>
+              <p className="mt-5 text-4xl font-semibold leading-none tracking-tight">{displayTotals.trialBookings}</p>
+              <p className="mt-2 text-xs text-neutral-400">{trialShare}% of bookings · guest website</p>
+            </div>
+            <div className={`${metric} border border-neutral-200/80 bg-white text-neutral-950 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 dark:text-white`}>
+              <p className="text-sm font-medium text-neutral-600 dark:text-white/70">Classes booked</p>
+              <p className="mt-5 text-4xl font-semibold leading-none tracking-tight">{displayTotals.classesWithBookings}</p>
+              <p className="mt-2 text-xs text-neutral-400">{classShare}% of {displayTotals.totalClasses} scheduled</p>
+            </div>
+          </div>
 
           <BookingReportCharts
             yearSummary={yearSummary}
             displayTotals={displayTotals}
-            periodLabel={reportScope === "year" ? String(selectedYear) : data.periodLabel}
+            periodLabel={periodName}
             reportScope={reportScope}
             selectedMonth={selectedMonth}
             classSessions={sessions}
@@ -305,110 +290,120 @@ export default function AttendanceReportPage() {
           />
 
           {reportScope === "month" && (
-            <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between p-5 border-b border-gray-200 dark:border-gray-700">
+            <section className={`${card} overflow-hidden`}>
+              <div className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Classes in {data.periodLabel}</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Member = app/token booking · Trial = guest website booking · Excludes drafts and cancelled
-                  </p>
+                  <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">Classes in {data.periodLabel}</h2>
+                  <p className="mt-1 text-sm text-neutral-500">Drafts and cancelled classes are left out.</p>
                 </div>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input type="checkbox" checked={bookedOnly} onChange={(e) => setBookedOnly(e.target.checked)} className="rounded" />
-                  Only classes with bookings
-                </label>
+                <button
+                  type="button"
+                  onClick={() => setBookedOnly((current) => !current)}
+                  className={`rounded-full px-3.5 py-2 text-xs font-semibold ${bookedOnly ? "bg-[#E4F56C] text-neutral-950" : "bg-neutral-100 text-neutral-600 dark:bg-white/10 dark:text-white"}`}
+                >
+                  {bookedOnly ? "With bookings" : "All classes"}
+                </button>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 dark:bg-gray-900/60 border-b border-gray-200 dark:border-gray-600">
-                      <th className={th}>Date</th>
-                      <th className={th}>Time</th>
-                      <th className={th}>Class</th>
-                      <th className={th}>Instructor</th>
-                      <th className={thR}>Member</th>
-                      <th className={thR}>Trial</th>
-                      <th className={thR}>Total</th>
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <thead className="border-y border-neutral-200 text-[11px] uppercase tracking-[0.14em] text-neutral-400 dark:border-white/10">
+                    <tr>
+                      <th className="px-5 py-3">Date</th>
+                      <th className="px-5 py-3">Time</th>
+                      <th className="px-5 py-3">Class</th>
+                      <th className="px-5 py-3">Instructor</th>
+                      <th className="px-5 py-3 text-right">Member</th>
+                      <th className="px-5 py-3 text-right">Trial</th>
+                      <th className="px-5 py-3 text-right">Total</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                  <tbody className="divide-y divide-neutral-100 dark:divide-white/10">
                     {sessions.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-10 text-center text-gray-500">
-                          {bookedOnly
-                            ? `No bookings in ${data.periodLabel}`
-                            : `No classes scheduled in ${data.periodLabel}`}
+                        <td colSpan={7} className="px-5 py-10 text-center text-neutral-500">
+                          {bookedOnly ? `No bookings in ${data.periodLabel}` : `No classes scheduled in ${data.periodLabel}`}
                         </td>
                       </tr>
                     ) : (
-                      sessions.map((s) => (
-                        <tr key={s.id} className={s.hasBookings ? "bg-blue-50/50 dark:bg-blue-950/20" : ""}>
-                          <td className={td}>{s.dateLabel}</td>
-                          <td className={td}>{s.timeLabel}</td>
-                          <td className={`${td} font-medium`}>{s.title}</td>
-                          <td className={td}>{s.instructor}</td>
-                          <td className={tdR}><Num value={s.memberBookings} /></td>
-                          <td className={tdR}><Num value={s.trialBookings} /></td>
-                          <td className={tdR}><Num value={s.totalBookings} bold /></td>
+                      sessions.map((session) => (
+                        <tr key={session.id}>
+                          <td className="px-5 py-3.5 text-neutral-600 dark:text-white/70">{session.dateLabel}</td>
+                          <td className="px-5 py-3.5 text-neutral-600 dark:text-white/70">{session.timeLabel}</td>
+                          <td className="px-5 py-3.5 font-semibold text-neutral-950 dark:text-white">{session.title}</td>
+                          <td className="px-5 py-3.5 text-neutral-600 dark:text-white/70">{session.instructor}</td>
+                          <td className="px-5 py-3.5 text-right"><Count value={session.memberBookings} /></td>
+                          <td className="px-5 py-3.5 text-right"><Count value={session.trialBookings} /></td>
+                          <td className="px-5 py-3.5 text-right"><Count value={session.totalBookings} strong /></td>
                         </tr>
                       ))
                     )}
                   </tbody>
                 </table>
               </div>
-            </div>
+            </section>
           )}
 
-          <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
-            <div className="p-5 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{selectedYear} by month</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Click a month to view its class list</p>
+          <section className={`${card} overflow-hidden`}>
+            <div className="px-5 py-5 sm:px-6">
+              <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">{selectedYear} by month</h2>
+              <p className="mt-1 text-sm text-neutral-500">Click a month to open its class list.</p>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm table-fixed">
-                <thead>
-                  <tr className="bg-gray-50 dark:bg-gray-900/60 border-b border-gray-200 dark:border-gray-600">
-                    <th className={`${th} w-[22%]`}>Month</th>
-                    <th className={`${thR} w-[16%]`}>Classes Scheduled</th>
-                    <th className={`${thR} w-[14%]`}>Classes Booked</th>
-                    <th className={`${thR} w-[14%]`}>Member</th>
-                    <th className={`${thR} w-[14%]`}>Trial</th>
-                    <th className={`${thR} w-[14%]`}>Total</th>
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead className="border-y border-neutral-200 text-[11px] uppercase tracking-[0.14em] text-neutral-400 dark:border-white/10">
+                  <tr>
+                    <th className="px-5 py-3">Month</th>
+                    <th className="px-5 py-3 text-right">Scheduled</th>
+                    <th className="px-5 py-3 text-right">Booked</th>
+                    <th className="px-5 py-3 text-right">Member</th>
+                    <th className="px-5 py-3 text-right">Trial</th>
+                    <th className="px-5 py-3 text-right">Total</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                <tbody className="divide-y divide-neutral-100 dark:divide-white/10">
                   {yearSummary.map((row) => {
                     const selected = reportScope === "month" && row.month === selectedMonth;
                     return (
                       <tr
                         key={row.month}
                         onClick={() => openMonth(row.month)}
-                        className={`cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 ${selected ? "bg-blue-50 dark:bg-blue-900/30 border-l-2 border-l-blue-500" : ""}`}
+                        className={`cursor-pointer ${selected ? "bg-[#E4F56C]/40" : "hover:bg-neutral-50 dark:hover:bg-white/5"}`}
                       >
-                        <td className={`${td} font-medium`}>
+                        <td className="px-5 py-3.5 font-semibold text-neutral-950 dark:text-white">
                           {row.monthName}
-                          {selected && <span className="ml-2 text-xs text-blue-600">(viewing)</span>}
+                          {selected && <span className="ml-2 text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-500">Viewing</span>}
                         </td>
-                        <td className={tdR}><Num value={row.totalClasses} /></td>
-                        <td className={tdR}><Num value={row.classesWithBookings} /></td>
-                        <td className={tdR}><Num value={row.memberBookings} /></td>
-                        <td className={tdR}><Num value={row.trialBookings} /></td>
-                        <td className={tdR}><Num value={row.totalBookings} bold /></td>
+                        <td className="px-5 py-3.5 text-right"><Count value={row.totalClasses} /></td>
+                        <td className="px-5 py-3.5 text-right"><Count value={row.classesWithBookings} /></td>
+                        <td className="px-5 py-3.5 text-right"><Count value={row.memberBookings} /></td>
+                        <td className="px-5 py-3.5 text-right"><Count value={row.trialBookings} /></td>
+                        <td className="px-5 py-3.5 text-right"><Count value={row.totalBookings} strong /></td>
                       </tr>
                     );
                   })}
-                  <tr className="bg-gray-100 dark:bg-gray-900 border-t-2 border-gray-300 dark:border-gray-500">
-                    <td className={`${td} font-bold`}>{selectedYear} Total</td>
-                    <td className={tdR}><Num value={yearTotals.totalClasses} bold /></td>
-                    <td className={tdR}><Num value={yearTotals.classesWithBookings} bold /></td>
-                    <td className={tdR}><Num value={yearTotals.memberBookings} bold /></td>
-                    <td className={tdR}><Num value={yearTotals.trialBookings} bold /></td>
-                    <td className={tdR}><Num value={yearTotals.totalBookings} bold /></td>
-                  </tr>
                 </tbody>
+                <tfoot>
+                  <tr className="border-t border-neutral-200 font-semibold dark:border-white/10">
+                    <td className="px-5 py-3.5">{selectedYear} total</td>
+                    <td className="px-5 py-3.5 text-right">{yearTotals.totalClasses}</td>
+                    <td className="px-5 py-3.5 text-right">{yearTotals.classesWithBookings}</td>
+                    <td className="px-5 py-3.5 text-right">{yearTotals.memberBookings}</td>
+                    <td className="px-5 py-3.5 text-right">{yearTotals.trialBookings}</td>
+                    <td className="px-5 py-3.5 text-right">{yearTotals.totalBookings}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
-          </div>
+          </section>
+
+          <section className={`${card} px-5 py-5 sm:px-6`}>
+            <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">How bookings are counted</h2>
+            <ul className="mt-3 space-y-1.5 text-sm text-neutral-500">
+              <li>Only confirmed bookings are counted, whether they were paid or a token was committed.</li>
+              <li>Members are people booking from the app or with a token. Trials are guest bookings from the website.</li>
+              <li>Token purchases are not bookings, so they do not appear here.</li>
+            </ul>
+          </section>
         </>
       )}
     </div>

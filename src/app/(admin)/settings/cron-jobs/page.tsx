@@ -1,18 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
-import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api-client";
 
 interface CronJob {
   name: string;
   displayName: string;
   description: string;
+  note?: string;
   frequency: string;
   cron: string;
-  category: "notifications" | "maintenance" | "cleanup";
+  category: "notifications" | "payments" | "maintenance" | "cleanup";
   apiParam: string;
+  inAll: boolean;
 }
 
 interface JobResult {
@@ -32,115 +32,194 @@ interface RunHistory {
   error?: string;
 }
 
+const card = "rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800";
+
 const CRON_JOBS: CronJob[] = [
-  // Notification Jobs
   {
     name: "sendClassReminders",
-    displayName: "Class Reminders",
-    description: "Sends reminder notifications 2 hours before class to students and tutors",
+    displayName: "Class reminders",
+    description: "Sends an email and an in-app reminder when a class starts in 1 hour, to members and trial guests.",
     frequency: "Every 15 minutes",
     cron: "*/15 * * * *",
     category: "notifications",
     apiParam: "class-reminders",
+    inAll: false,
   },
   {
     name: "sendStreakReminders",
-    displayName: "Week Streak Reminders",
-    description:
-      "Emails members on Friday if their week streak will break unless they come in. One email per member per week. cron-job.org: POST or GET with Authorization: Bearer CRON_SECRET; increase request timeout to 90s.",
-    frequency: "Friday at 9:00 AM Singapore (0 1 * * 5 UTC)",
+    displayName: "Week streak reminders",
+    description: "Emails members on Friday if their week streak will break unless they come in. One email per member per week.",
+    note: "Not included in Run all. cron-job.org: POST or GET with Authorization: Bearer CRON_SECRET. Set the request timeout to 90s.",
+    frequency: "Friday 9:00 AM SGT",
     cron: "0 1 * * 5",
     category: "notifications",
     apiParam: "streak-reminders",
+    inAll: false,
   },
   {
     name: "sendTokenExpiryWarnings",
-    displayName: "Token Expiry Warnings",
-    description: "Warns users whose token packages expire in 3 days",
+    displayName: "Token expiry warnings",
+    description: "Warns members whose token packages expire in 3 days.",
     frequency: "Daily at 9:00 AM",
     cron: "0 9 * * *",
     category: "notifications",
     apiParam: "token-warnings",
+    inAll: false,
   },
   {
     name: "sendTokenBalanceLowWarnings",
-    displayName: "Low Token Balance Alerts",
-    description: "Warns users when their token balance drops below 3",
+    displayName: "Low token balance",
+    description: "Warns members when their token balance drops below 3.",
     frequency: "Daily at 10:00 AM",
     cron: "0 10 * * *",
     category: "notifications",
-    apiParam: "all", // Part of all jobs
+    apiParam: "token-balance",
+    inAll: true,
   },
   {
     name: "processExpiredWaitlistNotifications",
-    displayName: "Waitlist Expiry",
-    description: "Expires waitlist offers after 24h and notifies next person in line",
+    displayName: "Waitlist expiry",
+    description: "Expires waitlist offers after 24 hours and notifies the next person.",
     frequency: "Every 15 minutes",
     cron: "*/15 * * * *",
     category: "notifications",
     apiParam: "waitlist-expiry",
+    inAll: true,
   },
-  // Maintenance Jobs
+  {
+    name: "processLeadOutreachQueue",
+    displayName: "Lead outreach",
+    description: "Sends queued lead follow-up emails and WhatsApp messages in batches.",
+    frequency: "Every 2 minutes",
+    cron: "*/2 * * * *",
+    category: "notifications",
+    apiParam: "process-lead-outreach",
+    inAll: false,
+  },
+  {
+    name: "syncPendingHitPayPayments",
+    displayName: "Sync payments",
+    description: "Checks HitPay for pending payments and issues tokens when a payment is confirmed.",
+    note: "Running this also sends checkout reminders.",
+    frequency: "Every 15 minutes",
+    cron: "*/15 * * * *",
+    category: "payments",
+    apiParam: "sync-pending-payments",
+    inAll: true,
+  },
+  {
+    name: "sendCheckoutReminders",
+    displayName: "Checkout reminders",
+    description: "Emails people who started checkout 1–48 hours ago and never paid. One reminder each.",
+    frequency: "Every 15 minutes",
+    cron: "*/15 * * * *",
+    category: "payments",
+    apiParam: "checkout-reminders",
+    inAll: true,
+  },
   {
     name: "processCompletedBookings",
-    displayName: "Mark Classes Attended",
-    description: "Marks bookings as attended 30 minutes after class ends. Staff can still mark individual no-shows. Tokens are not touched.",
+    displayName: "Mark classes attended",
+    description: "Marks bookings attended 30 minutes after class ends. Staff can still mark a no-show. Tokens are not touched.",
     frequency: "Every hour",
     cron: "0 * * * *",
     category: "maintenance",
     apiParam: "no-shows",
+    inAll: true,
+  },
+  {
+    name: "autoGenerateFutureClasses",
+    displayName: "Generate future classes",
+    description: "Adds more dates for recurring classes when the last one is inside two weeks. Keeps about 8–12 weeks on the schedule.",
+    frequency: "Daily at 2:00 AM",
+    cron: "0 2 * * *",
+    category: "maintenance",
+    apiParam: "generate-future-classes",
+    inAll: true,
   },
   {
     name: "markCompletedClasses",
-    displayName: "Mark Completed Classes",
-    description: "Marks all past classes (single, recurring, course) as completed",
+    displayName: "Mark completed classes",
+    description: "Marks past single, recurring, and course classes as completed.",
     frequency: "Daily at midnight",
     cron: "0 0 * * *",
     category: "maintenance",
     apiParam: "mark-completed-classes",
+    inAll: true,
   },
-  // Cleanup Jobs
   {
     name: "processExpiredPackages",
-    displayName: "Expire Packages",
-    description: "Marks token packages past their expiry date as expired",
+    displayName: "Expire packages",
+    description: "Marks token packages past their expiry date as expired.",
     frequency: "Daily at midnight",
     cron: "0 0 * * *",
     category: "cleanup",
     apiParam: "expired-packages",
+    inAll: true,
   },
   {
     name: "processFrozenPackages",
-    displayName: "Unfreeze Packages",
-    description: "Reactivates frozen packages whose freeze period has ended",
+    displayName: "Unfreeze packages",
+    description: "Reactivates frozen packages whose freeze period has ended.",
     frequency: "Daily at midnight",
     cron: "0 0 * * *",
     category: "cleanup",
     apiParam: "frozen-packages",
+    inAll: true,
   },
 ];
 
+const categories = [
+  { id: "all" as const, label: "All jobs" },
+  { id: "notifications" as const, label: "Notifications" },
+  { id: "payments" as const, label: "Payments" },
+  { id: "maintenance" as const, label: "Maintenance" },
+  { id: "cleanup" as const, label: "Cleanup" },
+];
+
+function labelFor(key: string) {
+  const spaced = key.replace(/_/g, " ").replace(/([A-Z])/g, " $1").trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function formatValue(value: unknown): { text: string; block: boolean } {
+  if (value == null || value === "") return { text: "—", block: false };
+  if (typeof value === "boolean") return { text: value ? "Yes" : "No", block: false };
+  if (typeof value === "number" || typeof value === "string") return { text: String(value), block: false };
+  if (Array.isArray(value)) {
+    if (value.length === 0) return { text: "None", block: false };
+    if (value.every((item) => item == null || ["string", "number", "boolean"].includes(typeof item))) {
+      const text = value.map(String).join(", ");
+      return { text, block: text.length > 80 };
+    }
+    return { text: JSON.stringify(value, null, 2), block: true };
+  }
+  return { text: JSON.stringify(value, null, 2), block: true };
+}
+
+function displayNameFor(jobName: string) {
+  return CRON_JOBS.find((job) => job.name === jobName)?.displayName || jobName;
+}
+
 export default function CronJobsPage() {
-  const { user } = useAuth();
   const [runningJob, setRunningJob] = useState<string | null>(null);
   const [runHistory, setRunHistory] = useState<RunHistory[]>([]);
   const [lastRunResults, setLastRunResults] = useState<JobResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [category, setCategory] = useState<(typeof categories)[number]["id"]>("all");
+  const [openJob, setOpenJob] = useState<CronJob | null>(null);
 
-  // Clear messages after 5 seconds
   useEffect(() => {
-    if (successMessage) {
-      const timer = setTimeout(() => setSuccessMessage(null), 5000);
-      return () => clearTimeout(timer);
-    }
+    if (!successMessage) return;
+    const timer = setTimeout(() => setSuccessMessage(null), 5000);
+    return () => clearTimeout(timer);
   }, [successMessage]);
 
   useEffect(() => {
-    if (error) {
-      const timer = setTimeout(() => setError(null), 5000);
-      return () => clearTimeout(timer);
-    }
+    if (!error) return;
+    const timer = setTimeout(() => setError(null), 5000);
+    return () => clearTimeout(timer);
   }, [error]);
 
   const runJob = async (jobParam: string, jobName: string) => {
@@ -155,40 +234,34 @@ export default function CronJobsPage() {
         error?: { message?: string };
       }>(`/api/cron?job=${jobParam}`, {});
 
-      if (response.error) {
-        throw new Error(response.error.message || "Failed to run job");
-      }
+      if (response.error) throw new Error(response.error.message || "Failed to run job");
 
       const data = response.data;
       if (!data?.success || !data.data?.results) {
         throw new Error(data?.error?.message || "Failed to run job");
       }
 
-      // Add to history
       const results = data.data.results as JobResult[];
-      const newHistory: RunHistory[] = results.map((r) => ({
-        jobName: r.jobName,
+      const newHistory: RunHistory[] = results.map((result) => ({
+        jobName: result.jobName,
         timestamp: new Date(),
-        success: r.success,
-        duration: r.duration,
-        details: r.details,
-        error: r.error,
+        success: result.success,
+        duration: result.duration,
+        details: result.details,
+        error: result.error,
       }));
 
-      setRunHistory((prev) => [...newHistory, ...prev].slice(0, 50)); // Keep last 50
+      setRunHistory((prev) => [...newHistory, ...prev].slice(0, 50));
       setLastRunResults(results);
 
-      const successCount = results.filter((r) => r.success).length;
-      const failCount = results.filter((r) => !r.success).length;
+      const successCount = results.filter((result) => result.success).length;
+      const failCount = results.filter((result) => !result.success).length;
+      const duration = data.data?.summary?.totalDuration ?? 0;
 
       if (failCount === 0) {
-        setSuccessMessage(
-          `✅ ${jobParam === "all" ? "All jobs" : jobName} completed successfully! (${successCount} job${successCount > 1 ? "s" : ""}, ${data.data?.summary?.totalDuration ?? 0}ms)`
-        );
+        setSuccessMessage(`${jobName} finished. ${successCount} job${successCount === 1 ? "" : "s"} in ${duration}ms.`);
       } else {
-        setError(
-          `⚠️ ${successCount} succeeded, ${failCount} failed. Check details below.`
-        );
+        setError(`${successCount} succeeded, ${failCount} failed. Open a row to see why.`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -207,327 +280,250 @@ export default function CronJobsPage() {
     }
   };
 
-  const getCategoryIcon = (category: string) => {
-    switch (category) {
-      case "notifications":
-        return (
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-          </svg>
-        );
-      case "maintenance":
-        return (
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        );
-      case "cleanup":
-        return (
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        );
-      default:
-        return null;
-    }
-  };
-
-  const getCategoryColor = (category: string) => {
-    switch (category) {
-      case "notifications":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400";
-      case "maintenance":
-        return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400";
-      case "cleanup":
-        return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300";
-    }
-  };
-
-  const groupedJobs = {
-    notifications: CRON_JOBS.filter((j) => j.category === "notifications"),
-    maintenance: CRON_JOBS.filter((j) => j.category === "maintenance"),
-    cleanup: CRON_JOBS.filter((j) => j.category === "cleanup"),
-  };
+  const visible = category === "all" ? CRON_JOBS : CRON_JOBS.filter((job) => job.category === category);
+  const latest = openJob ? runHistory.find((entry) => entry.jobName === openJob.name) : undefined;
 
   return (
-    <div className="space-y-6">
-      <PageBreadCrumb pageTitle="Cron Jobs" />
-
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-lg">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Scheduled Jobs</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Manage and trigger background automation tasks
-            </p>
-          </div>
+    <div className="min-w-0 space-y-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">Cron jobs</h1>
+          <p className="mt-1 max-w-xl text-sm text-neutral-500">
+            Manual runs for testing. Open a job for the full description and the last result. Run all skips class reminders, streak, token expiry, and lead outreach.
+          </p>
         </div>
         <button
-          onClick={() => runJob("all", "All Jobs")}
+          type="button"
+          onClick={() => runJob("all", "All jobs")}
           disabled={runningJob !== null}
-          className="px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-sm font-semibold text-white hover:from-violet-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-lg"
+          className="rounded-full bg-[#E4F56C] px-5 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50"
         >
-          {runningJob === "all" ? (
-            <>
-              <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Running All...
-            </>
-          ) : (
-            <>
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Run All Jobs
-            </>
-          )}
+          {runningJob === "all" ? "Running all…" : "Run all"}
         </button>
       </div>
 
-      {/* Success/Error Messages */}
       {successMessage && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
-          <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">{successMessage}</p>
+        <div className="rounded-[22px] border border-[#d5e45c] bg-[#E4F56C]/40 px-4 py-3 text-sm font-medium text-neutral-950">
+          {successMessage}
         </div>
       )}
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
-          <p className="text-sm font-medium text-red-800 dark:text-red-300">{error}</p>
-        </div>
+        <div className="rounded-[22px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div>
       )}
 
-      {/* Stats Summary */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{groupedJobs.notifications.length}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Notification Jobs</p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{groupedJobs.maintenance.length}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Maintenance Jobs</p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{groupedJobs.cleanup.length}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Cleanup Jobs</p>
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {categories.map((item) => {
+          const count = item.id === "all" ? CRON_JOBS.length : CRON_JOBS.filter((job) => job.category === item.id).length;
+          const selected = category === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setCategory(item.id)}
+              className={`min-h-[112px] rounded-[28px] border p-5 text-left shadow-[0_10px_30px_rgba(16,24,40,0.05)] ${
+                selected
+                  ? "border-[#d5e45c] bg-[#E4F56C] text-neutral-950"
+                  : "border-neutral-200/80 bg-white text-neutral-950 dark:border-white/10 dark:bg-gray-800 dark:text-white"
+              }`}
+            >
+              <p className={`text-xs font-semibold uppercase tracking-wide ${selected ? "text-neutral-950/70" : "text-neutral-400"}`}>{item.label}</p>
+              <p className="mt-3 text-4xl font-semibold tracking-tight">{count}</p>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Job Categories */}
-      {Object.entries(groupedJobs).map(([category, jobs]) => (
-        <div key={category} className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex items-center gap-2">
-              <span className={`p-2 rounded-lg ${getCategoryColor(category)}`}>
-                {getCategoryIcon(category)}
-              </span>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white capitalize">
-                {category} Jobs
-              </h2>
-            </div>
-          </div>
-          <div className="divide-y divide-gray-100 dark:divide-gray-700">
-            {jobs.map((job) => (
-              <div key={job.name} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-gray-900 dark:text-white">{job.displayName}</h3>
-                      <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
-                        {job.frequency}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{job.description}</p>
-                    <p className="mt-2 text-xs font-mono text-gray-400 dark:text-gray-500">
-                      Cron: <code className="bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">{job.cron}</code>
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => runJob(job.apiParam, job.displayName)}
-                    disabled={runningJob !== null}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-                      runningJob === job.apiParam
-                        ? "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
-                        : "bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-900/50"
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {runningJob === job.apiParam ? (
-                      <>
-                        <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Running...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                        </svg>
-                        Run Now
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {/* Last Run Results */}
-      {lastRunResults && lastRunResults.length > 0 && (
-        <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Last Run Results</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 dark:bg-gray-700/50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Job</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Duration</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Details</th>
+      <section className={`${card} overflow-hidden`}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left text-sm">
+            <thead>
+              <tr className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                <th className="px-5 py-3 font-semibold">Job</th>
+                <th className="px-3 py-3 font-semibold">Schedule</th>
+                <th className="px-5 py-3 text-right font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((job) => (
+                <tr key={job.name} className="border-t border-neutral-200 dark:border-white/10">
+                  <td className="px-5 py-3">
+                    <p className="font-medium text-neutral-950 dark:text-white">{job.displayName}</p>
+                    <p className="mt-0.5 max-w-md truncate text-xs text-neutral-400">{job.description}</p>
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className="rounded-full bg-neutral-950 px-2 py-0.5 text-[11px] font-semibold text-white">{job.frequency}</span>
+                  </td>
+                  <td className="px-5 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setOpenJob(job)}
+                      className="mr-2 rounded-full bg-neutral-950 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-neutral-950"
+                    >
+                      Details
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => runJob(job.apiParam, job.displayName)}
+                      disabled={runningJob !== null}
+                      className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-950 disabled:opacity-40 dark:border-white/10 dark:text-white"
+                    >
+                      {runningJob === job.apiParam ? "Running…" : "Run"}
+                    </button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                {lastRunResults.map((result, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                    <td className="px-6 py-4">
-                      <span className="font-medium text-gray-900 dark:text-white">{result.jobName}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {result.success ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
-                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          Success
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
-                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                          Failed
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                      {result.duration}ms
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                      {result.error ? (
-                        <span className="text-red-600 dark:text-red-400">{result.error}</span>
-                      ) : (
-                        <code className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
-                          {JSON.stringify(result.details).slice(0, 100)}
-                          {JSON.stringify(result.details).length > 100 ? "..." : ""}
-                        </code>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
+      </section>
+
+      {lastRunResults && lastRunResults.length > 0 && (
+        <section className={`${card} p-5 sm:p-6`}>
+          <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">Last run</h2>
+          <ul className="mt-3 divide-y divide-neutral-200 dark:divide-white/10">
+            {lastRunResults.map((result, index) => {
+              const job = CRON_JOBS.find((item) => item.name === result.jobName);
+              return (
+                <li key={`${result.jobName}-${index}`} className="flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-neutral-950 dark:text-white">{displayNameFor(result.jobName)}</p>
+                    <p className="text-xs text-neutral-400">{result.duration}ms{result.error ? ` · ${result.error}` : ""}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${result.success ? "bg-[#E4F56C] text-neutral-950" : "bg-red-600 text-white"}`}>
+                      {result.success ? "Success" : "Failed"}
+                    </span>
+                    {job ? (
+                      <button type="button" onClick={() => setOpenJob(job)} className="text-xs font-semibold text-neutral-700 dark:text-white">
+                        Details
+                      </button>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
 
-      {/* Run History */}
       {runHistory.length > 0 && (
-        <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Run History (This Session)</h2>
-            <button
-              onClick={() => setRunHistory([])}
-              className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-            >
+        <section className={`${card} p-5 sm:p-6`}>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">This session</h2>
+            <button type="button" onClick={() => setRunHistory([])} className="text-xs font-semibold text-neutral-500">
               Clear
             </button>
           </div>
-          <div className="max-h-64 overflow-y-auto">
-            <div className="divide-y divide-gray-100 dark:divide-gray-700">
-              {runHistory.map((entry, idx) => (
-                <div key={idx} className="px-6 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                  <div className="flex items-center gap-3">
-                    {entry.success ? (
-                      <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
-                    ) : (
-                      <span className="h-2 w-2 rounded-full bg-red-500"></span>
-                    )}
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">{entry.jobName}</span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {entry.duration}ms
-                    </span>
-                    <span className="text-xs text-gray-400 dark:text-gray-500">
-                      {entry.timestamp.toLocaleTimeString()}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+          <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto">
+            {runHistory.map((entry, index) => {
+              const job = CRON_JOBS.find((item) => item.name === entry.jobName);
+              return (
+                <li key={`${entry.jobName}-${entry.timestamp.getTime()}-${index}`} className="flex items-center justify-between gap-3 text-sm">
+                  <button type="button" onClick={() => job && setOpenJob(job)} className="flex min-w-0 items-center gap-2 text-left">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${entry.success ? "bg-[#E4F56C]" : "bg-red-600"}`} />
+                    <span className="truncate font-medium text-neutral-950 dark:text-white">{displayNameFor(entry.jobName)}</span>
+                  </button>
+                  <span className="shrink-0 text-xs text-neutral-400">
+                    {entry.duration}ms · {entry.timestamp.toLocaleTimeString("en-SG", { timeZone: "Asia/Singapore" })}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
 
-      {/* Info Box */}
-      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-6 dark:border-blue-800 dark:bg-blue-900/20">
-        <div className="flex items-start gap-3">
-          <svg className="h-6 w-6 text-blue-600 dark:text-blue-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <div>
-            <p className="font-semibold text-blue-800 dark:text-blue-300">Production Setup</p>
-            <p className="text-sm text-blue-700 dark:text-blue-400 mt-1">
-              In production, these jobs should run automatically via Supabase pg_cron or Vercel Cron. 
-              This page is for manual testing and one-off runs. See <code className="bg-blue-100 dark:bg-blue-800/50 px-1 rounded">CRON_JOBS.md</code> for setup instructions.
-            </p>
-          </div>
+      <p className="text-xs leading-5 text-neutral-400">
+        Run here is a one-off test. Production should use Supabase pg_cron or Vercel Cron. Setup notes are in CRON_JOBS.md.
+      </p>
+
+      {openJob && (
+        <div className="fixed inset-0 z-[100000] flex justify-end bg-neutral-950/40" onClick={() => setOpenJob(null)}>
+          <aside
+            className="flex h-full w-full max-w-md flex-col overflow-y-auto bg-white p-6 shadow-2xl dark:bg-gray-800"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">{openJob.category}</p>
+                <h2 className="mt-1 text-xl font-semibold text-neutral-950 dark:text-white">{openJob.displayName}</h2>
+              </div>
+              <button type="button" onClick={() => setOpenJob(null)} className="rounded-full px-3 py-1 text-sm font-semibold text-neutral-500">
+                Close
+              </button>
+            </div>
+
+            <p className="mt-4 text-sm leading-6 text-neutral-600 dark:text-white/80">{openJob.description}</p>
+            {openJob.note ? <p className="mt-3 text-sm leading-6 text-neutral-500">{openJob.note}</p> : null}
+
+            <dl className="mt-5 space-y-3 text-sm">
+              <div className="flex justify-between gap-4">
+                <dt className="text-neutral-400">Schedule</dt>
+                <dd className="text-right font-medium text-neutral-950 dark:text-white">{openJob.frequency}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-neutral-400">Cron</dt>
+                <dd className="font-mono text-neutral-950 dark:text-white">{openJob.cron}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-neutral-400">Run all</dt>
+                <dd className="font-medium text-neutral-950 dark:text-white">{openJob.inAll ? "Included" : "Separate"}</dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">Request</dt>
+                <dd className="mt-1 break-all font-mono text-xs text-neutral-700 dark:text-white/80">POST /api/cron?job={openJob.apiParam}</dd>
+              </div>
+            </dl>
+
+            <button
+              type="button"
+              onClick={() => runJob(openJob.apiParam, openJob.displayName)}
+              disabled={runningJob !== null}
+              className="mt-6 rounded-full bg-[#E4F56C] px-5 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50"
+            >
+              {runningJob === openJob.apiParam ? "Running…" : "Run this job"}
+            </button>
+
+            <div className="mt-8 border-t border-neutral-200 pt-5 dark:border-white/10">
+              <h3 className="text-sm font-medium text-neutral-800 dark:text-white/90">Latest result</h3>
+              {!latest ? (
+                <p className="mt-2 text-sm text-neutral-400">No run yet this session.</p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${latest.success ? "bg-[#E4F56C] text-neutral-950" : "bg-red-600 text-white"}`}>
+                      {latest.success ? "Success" : "Failed"}
+                    </span>
+                    <span className="text-xs text-neutral-400">
+                      {latest.duration}ms · {latest.timestamp.toLocaleTimeString("en-SG", { timeZone: "Asia/Singapore" })}
+                    </span>
+                  </div>
+                  {latest.error ? <p className="text-sm text-red-600">{latest.error}</p> : null}
+                  {Object.keys(latest.details || {}).length === 0 && !latest.error ? (
+                    <p className="text-sm text-neutral-400">The job finished with no extra numbers.</p>
+                  ) : (
+                    <dl className="space-y-3">
+                      {Object.entries(latest.details || {}).map(([key, value]) => {
+                        const formatted = formatValue(value);
+                        return (
+                          <div key={key}>
+                            <dt className="text-xs font-semibold uppercase tracking-wide text-neutral-400">{labelFor(key)}</dt>
+                            {formatted.block ? (
+                              <dd className="mt-1 overflow-x-auto rounded-2xl bg-neutral-950 p-3 font-mono text-xs leading-5 text-[#E4F56C]">{formatted.text}</dd>
+                            ) : (
+                              <dd className="mt-1 text-sm text-neutral-950 dark:text-white">{formatted.text}</dd>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </dl>
+                  )}
+                </div>
+              )}
+            </div>
+          </aside>
         </div>
-      </div>
+      )}
     </div>
   );
 }

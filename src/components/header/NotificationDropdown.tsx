@@ -128,7 +128,7 @@ export default function NotificationDropdown({ 'data-onboarding': dataOnboarding
         onClick={toggleDropdown}
       >
         {unreadCount > 0 && (
-          <span className="absolute right-0 top-0.5 z-10 flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-orange-500 text-white text-[10px] font-semibold">
+          <span className="absolute -right-0.5 -top-0.5 z-10 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#E4F56C] px-1 text-[10px] font-semibold text-neutral-950">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
