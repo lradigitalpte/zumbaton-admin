@@ -13,6 +13,7 @@ import {
   sendTokenBalanceLowWarnings,
   sendClassReminders,
   sendStreakReminders,
+  sendBirthdayWishes,
   markCompletedClasses,
   runAutoGenerateClassesJob,
   runSyncPendingPaymentsJob,
@@ -128,6 +129,9 @@ async function runCronJobs(job: string | null) {
       break
     case 'streak-reminders':
       results = [await sendStreakReminders()]
+      break
+    case 'birthday-wishes':
+      results = [await sendBirthdayWishes()]
       break
     case 'mark-completed-classes':
       results = [await markCompletedClasses()]

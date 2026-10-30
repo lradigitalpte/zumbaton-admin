@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api-client";
 
 interface CronJob {
@@ -13,6 +14,7 @@ interface CronJob {
   category: "notifications" | "payments" | "maintenance" | "cleanup";
   apiParam: string;
   inAll: boolean;
+  detailHref?: string;
 }
 
 interface JobResult {
@@ -55,6 +57,19 @@ const CRON_JOBS: CronJob[] = [
     category: "notifications",
     apiParam: "streak-reminders",
     inAll: false,
+    detailHref: "/settings/cron-jobs/streak-reminders",
+  },
+  {
+    name: "sendBirthdayWishes",
+    displayName: "Birthday wishes",
+    description: "Emails a birthday wish to members whose birthday is today. One per birthday, and skips anyone already wished from Celebrate.",
+    note: "Not included in Run all. cron-job.org: GET or POST /api/cron?job=birthday-wishes with Authorization: Bearer CRON_SECRET.",
+    frequency: "Daily 9:00 AM SGT",
+    cron: "0 1 * * *",
+    category: "notifications",
+    apiParam: "birthday-wishes",
+    inAll: false,
+    detailHref: "/settings/celebrate",
   },
   {
     name: "sendTokenExpiryWarnings",
@@ -289,7 +304,7 @@ export default function CronJobsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">Cron jobs</h1>
           <p className="mt-1 max-w-xl text-sm text-neutral-500">
-            Manual runs for testing. Open a job for the full description and the last result. Run all skips class reminders, streak, token expiry, and lead outreach.
+            Manual runs for testing. Open a job for the full description and the last result. Run all skips class reminders, streak, birthdays, token expiry, and lead outreach.
           </p>
         </div>
         <button
@@ -354,6 +369,14 @@ export default function CronJobsPage() {
                     <span className="rounded-full bg-neutral-950 px-2 py-0.5 text-[11px] font-semibold text-white">{job.frequency}</span>
                   </td>
                   <td className="px-5 py-3 text-right">
+                    {job.detailHref ? (
+                      <Link
+                        href={job.detailHref}
+                        className="mr-2 rounded-full bg-[#E4F56C] px-3 py-1.5 text-xs font-semibold text-neutral-950"
+                      >
+                        Open
+                      </Link>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => setOpenJob(job)}
@@ -455,6 +478,11 @@ export default function CronJobsPage() {
 
             <p className="mt-4 text-sm leading-6 text-neutral-600 dark:text-white/80">{openJob.description}</p>
             {openJob.note ? <p className="mt-3 text-sm leading-6 text-neutral-500">{openJob.note}</p> : null}
+            {openJob.detailHref ? (
+              <Link href={openJob.detailHref} className="mt-4 inline-block text-sm font-semibold text-neutral-950 underline dark:text-white">
+                Open the {openJob.displayName.toLowerCase()} page →
+              </Link>
+            ) : null}
 
             <dl className="mt-5 space-y-3 text-sm">
               <div className="flex justify-between gap-4">

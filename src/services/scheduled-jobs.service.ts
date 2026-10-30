@@ -6,7 +6,6 @@ import { processExpiredPackages, processFrozenPackages } from './user-package.se
 import { processExpiredWaitlistNotifications } from './waitlist.service'
 import { autoGenerateFutureClasses } from '@/cron/generate-future-classes'
 import { sendAdminEmail } from '@/lib/admin-email'
-import { singaporeWeekBounds } from '@/lib/week-streak'
 const UNLIMITED_TOKEN_BALANCE = 2147483647
 
 // Job results interface
@@ -1079,167 +1078,103 @@ export async function sendCheckoutReminders(): Promise<Record<string, unknown>> 
   return { sent, skipped, skipReasons, customers: groups.size }
 }
 
-function chunkIds(ids: string[], size = 100): string[][] {
-  const chunks: string[][] = []
-  for (let i = 0; i < ids.length; i += size) chunks.push(ids.slice(i, i + size))
-  return chunks
-}
-
 // Friday nudge: members with a live week streak who have not attended
 // and have no class booked this Singapore week. Not part of job=all.
 export async function sendStreakReminders(): Promise<JobResult> {
   return runJob('sendStreakReminders', async () => {
     const { getSupabaseAdminClient } = await import('@/lib/supabase')
-    const { getWebAppUrl } = await import('@/lib/email-url')
+    const { getStreakReminderAudience, sendStreakReminderEmail } = await import('./streak-reminders.service')
     const admin = getSupabaseAdminClient()
-    const { weekStart, startIso, endIso } = singaporeWeekBounds()
-    const bookUrl = `${getWebAppUrl().replace(/\/$/, '')}/book-classes`
+    const { weekStart, members } = await getStreakReminderAudience()
 
-    const { data: statsRows, error: statsError } = await admin
-      .from('user_stats')
-      .select('user_id, streak_current, last_streak_reminder_week')
-      .gt('streak_current', 0)
-
-    if (statsError) {
-      throw new Error(`Failed to load streaks: ${statsError.message}`)
-    }
-
-    const due = (statsRows || []).filter((row) => {
-      const reminded = row.last_streak_reminder_week
-        ? String(row.last_streak_reminder_week).slice(0, 10)
-        : null
-      return !reminded || reminded < weekStart
-    })
-
-    if (due.length === 0) {
-      return { sent: 0, skipped: 0, weekStart }
-    }
-
-    const streakByUser = new Map(due.map((row) => [row.user_id as string, row.streak_current as number]))
-    const userIds = [...streakByUser.keys()]
-
-    const profiles = new Map<string, { email: string; name: string }>()
-    for (const ids of chunkIds(userIds)) {
-      const { data, error } = await admin
-        .from('user_profiles')
-        .select('id, email, name, is_active')
-        .in('id', ids)
-        .eq('is_active', true)
-
-      if (error) throw new Error(`Failed to load members: ${error.message}`)
-
-      for (const profile of data || []) {
-        if (profile.email && profile.name) {
-          profiles.set(profile.id, { email: profile.email, name: profile.name })
-        }
-      }
-    }
-
-    const optedOut = new Set<string>()
-    for (const ids of chunkIds(userIds)) {
-      const { data, error } = await admin
-        .from('user_notification_preferences')
-        .select('user_id, email_enabled')
-        .in('user_id', ids)
-
-      if (error) throw new Error(`Failed to load email preferences: ${error.message}`)
-
-      for (const pref of data || []) {
-        if (pref.email_enabled === false) optedOut.add(pref.user_id)
-      }
-    }
-
-    const covered = new Set<string>()
-    if (userIds.length > 0) {
-      for (const ids of chunkIds(userIds)) {
-        const { data: bookings, error: bookingError } = await admin
-          .from('bookings')
-          .select('user_id, classes!inner(scheduled_at)')
-          .in('user_id', ids)
-          .in('status', ['attended', 'confirmed'])
-          .gte('classes.scheduled_at', startIso)
-          .lt('classes.scheduled_at', endIso)
-
-        if (bookingError) {
-          throw new Error(`Failed to load this week's bookings: ${bookingError.message}`)
-        }
-
-        for (const booking of bookings || []) {
-          if (booking.user_id) covered.add(booking.user_id as string)
-        }
-      }
-    }
-
-    const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
-    const webAppUrl = getWebAppUrl().replace(/\/$/, '')
-    const emailUrl = `${webAppUrl}/api/email/send`
+    const candidates = members.filter((member) => member.status !== 'sent')
+    const toEmail = candidates.filter((member) => member.status === 'due')
+    let skipped = candidates.length - toEmail.length
     let sent = 0
-    let skipped = 0
-
-    const toEmail = [...streakByUser.entries()].filter(([userId]) => {
-      const profile = profiles.get(userId)
-      if (!profile || optedOut.has(userId) || covered.has(userId)) {
-        skipped++
-        return false
-      }
-      return true
-    })
+    const sentTo: string[] = []
+    const failed: string[] = []
 
     const EMAIL_BATCH = 8
-    const EMAIL_TIMEOUT_MS = 20_000
 
     for (let i = 0; i < toEmail.length; i += EMAIL_BATCH) {
       const batch = toEmail.slice(i, i + EMAIL_BATCH)
       await Promise.all(
-        batch.map(async ([userId, streakWeeks]) => {
-          const profile = profiles.get(userId)!
-          try {
-            const response = await fetch(emailUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              signal: AbortSignal.timeout(EMAIL_TIMEOUT_MS),
-              body: JSON.stringify({
-                type: 'streak-reminder',
-                secret: emailApiSecret,
-                data: {
-                  userEmail: profile.email,
-                  userName: profile.name,
-                  streakWeeks,
-                  bookUrl,
-                },
-              }),
-            })
-            const body = await response.json().catch(() => null)
-            if (!response.ok || !body?.success) {
-              console.error(`[Cron: StreakReminders] Email rejected for ${profile.email}`, body)
-              skipped++
-              return
-            }
-
-            const { error: markError } = await admin
-              .from('user_stats')
-              .update({
-                last_streak_reminder_week: weekStart,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('user_id', userId)
-
-            if (markError) {
-              console.error(
-                `[Cron: StreakReminders] Sent to ${profile.email} but failed to record dedupe`,
-                markError,
-              )
-            }
-            sent++
-          } catch (err) {
-            console.error(`[Cron: StreakReminders] Failed for ${profile.email}:`, err)
+        batch.map(async (member) => {
+          const email = member.email!
+          const result = await sendStreakReminderEmail({
+            email,
+            name: member.name!,
+            streakWeeks: member.streakWeeks,
+          })
+          if (!result.success) {
+            console.error(`[Cron: StreakReminders] Email rejected for ${email}`, result.error)
+            failed.push(email)
             skipped++
+            return
           }
+
+          const { error: markError } = await admin
+            .from('user_stats')
+            .update({
+              last_streak_reminder_week: weekStart,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('user_id', member.userId)
+
+          if (markError) {
+            console.error(
+              `[Cron: StreakReminders] Sent to ${email} but failed to record dedupe`,
+              markError,
+            )
+          }
+          sentTo.push(email)
+          sent++
         }),
       )
     }
 
-    return { sent, skipped, weekStart, candidates: due.length, webAppUrl: emailUrl }
+    return { sent, skipped, weekStart, candidates: candidates.length, sentTo, failed }
+  })
+}
+
+// Morning wish for members whose birthday is today in Singapore. One per birthday,
+// shared with the Celebrate page's Send button. Not part of job=all.
+export async function sendBirthdayWishes(): Promise<JobResult> {
+  return runJob('sendBirthdayWishes', async () => {
+    const { getBirthdayMembers, sendBirthdayWish, singaporeToday } = await import('./birthday.service')
+    const members = await getBirthdayMembers()
+    const today = members.filter((member) => member.isToday)
+
+    const sentTo: string[] = []
+    const failed: string[] = []
+    const skipReasons: Record<string, number> = {}
+    const skip = (reason: string) => {
+      skipReasons[reason] = (skipReasons[reason] || 0) + 1
+    }
+
+    for (const member of today) {
+      if (member.wished) { skip('already_wished'); continue }
+      if (!member.isActive) { skip('inactive'); continue }
+      if (!member.email || !member.name) { skip('missing_name_or_email'); continue }
+      if (member.emailOptedOut) { skip('opted_out'); continue }
+
+      const result = await sendBirthdayWish(member)
+      if (result.success) sentTo.push(member.email)
+      else if (result.skipped) skip('already_wished')
+      else {
+        console.error(`[Cron: BirthdayWishes] Email failed for ${member.email}:`, result.error)
+        failed.push(member.email)
+      }
+    }
+
+    return {
+      date: singaporeToday(),
+      birthdaysToday: today.length,
+      sent: sentTo.length,
+      sentTo,
+      failed,
+      skipReasons,
+    }
   })
 }
 
@@ -1287,6 +1222,12 @@ export function getJobSchedule() {
         description: 'Emails members whose week streak will break on Sunday if they do not come in. Skips anyone who already attended or has a class booked this week.',
         frequency: 'Friday at 9:00am Singapore (01:00 UTC). Not included in job=all.',
         cron: '0 1 * * 5',
+      },
+      {
+        name: 'sendBirthdayWishes',
+        description: 'Emails a birthday wish to members whose birthday is today. One per birthday; skips anyone already wished from the Celebrate page.',
+        frequency: 'Daily at 9:00am Singapore (01:00 UTC). Not included in job=all.',
+        cron: '0 1 * * *',
       },
       {
         name: 'markCompletedClasses',

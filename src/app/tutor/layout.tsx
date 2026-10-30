@@ -6,7 +6,6 @@ import AppHeader from "@/layout/AppHeader";
 import TutorSidebar from "@/layout/TutorSidebar";
 import Backdrop from "@/layout/Backdrop";
 import TutorOnboardingTour from "@/components/onboarding/TutorOnboardingTour";
-import TutorOnboardingHelpButton from "@/components/onboarding/TutorOnboardingHelpButton";
 import { useRouter } from "next/navigation";
 import React, { useEffect } from "react";
 
@@ -53,10 +52,7 @@ export default function TutorLayout({
         {/* Page Content */}
         <div className="mx-auto max-w-(--breakpoint-2xl) p-3 sm:p-4 md:p-6">{children}</div>
       </div>
-      {/* Tutor Onboarding Tour */}
       <TutorOnboardingTour />
-      {/* Floating Help Button */}
-      <TutorOnboardingHelpButton />
     </div>
   );
 }
