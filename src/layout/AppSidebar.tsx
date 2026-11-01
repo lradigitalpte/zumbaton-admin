@@ -113,6 +113,7 @@ const othersItems: NavItem[] = [
       { name: "Notifications", path: "/settings/notifications", pro: false },
       { name: "Celebrate", path: "/settings/celebrate", pro: false },
       { name: "Cron Jobs", path: "/settings/cron-jobs", pro: false },
+      { name: "Health", path: "/settings/job-health", pro: false },
     ],
   },
 ];

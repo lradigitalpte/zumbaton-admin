@@ -82,18 +82,23 @@ async function runJob(
 
     console.log(`[ScheduledJob] ${jobName} completed in ${duration}ms`, details)
 
-    return {
+    const result: JobResult = {
       jobName,
       success: true,
       duration,
       details: typeof details === 'object' && details !== null ? (details as Record<string, unknown>) : {},
     }
+    const { recordJobRun } = await import('@/lib/job-health')
+    await recordJobRun({ jobName, success: true, durationMs: duration, details: result.details })
+    return result
   } catch (error) {
     const duration = Date.now() - startTime
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
 
     console.error(`[ScheduledJob] ${jobName} failed after ${duration}ms:`, error)
 
+    const { recordJobRun } = await import('@/lib/job-health')
+    await recordJobRun({ jobName, success: false, durationMs: duration, details: {}, error: errorMessage })
     return {
       jobName,
       success: false,

@@ -24,6 +24,7 @@ import {
 import { processLeadOutreachQueue } from '@/services/lead-outreach.service'
 import { ApiError } from '@/lib/api-error'
 import { getAuthenticatedUser, hasRequiredRole } from '@/middleware/rbac'
+import { withCronSource } from '@/lib/job-health'
 
 // Vercel function time limit for scheduled jobs (seconds)
 export const maxDuration = 60
@@ -81,7 +82,7 @@ async function executeCronJob(request: NextRequest, job: string) {
   if (job === 'streak-reminders' && auth === 'secret') {
     after(async () => {
       try {
-        const result = await sendStreakReminders()
+        const result = await withCronSource('scheduled', () => sendStreakReminders())
         console.log('[Cron] streak-reminders completed', JSON.stringify(result))
       } catch (err) {
         console.error('[Cron] streak-reminders failed', err)
@@ -99,7 +100,7 @@ async function executeCronJob(request: NextRequest, job: string) {
     })
   }
 
-  return runCronJobs(job)
+  return withCronSource(auth === 'secret' ? 'scheduled' : 'desk', () => runCronJobs(job))
 }
 
 async function runCronJobs(job: string | null) {
@@ -176,8 +177,8 @@ export async function POST(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const job = searchParams.get('job')
     if (!job) {
-      await authorizeCronRequest(request)
-      return runCronJobs(null)
+      const auth = await authorizeCronRequest(request)
+      return withCronSource(auth === 'secret' ? 'scheduled' : 'desk', () => runCronJobs(null))
     }
     return await executeCronJob(request, job)
   } catch (error) {
