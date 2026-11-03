@@ -1,11 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Archivo, Work_Sans, IBM_Plex_Mono } from "next/font/google";
-
-const archivo = Archivo({ subsets: ["latin"], weight: ["800", "900"], style: ["italic"], variable: "--font-archivo" });
-const workSans = Work_Sans({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-work-sans" });
-const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-plex-mono" });
+const FONT_STYLESHEET =
+  "https://fonts.googleapis.com/css2?family=Archivo:ital,wght@1,800;1,900&family=IBM+Plex+Mono:wght@500;600&family=Work+Sans:wght@400;500;600&display=swap";
 
 const STORE_KEY = "zumbaton-shot-list-v1";
 
@@ -147,10 +144,17 @@ export default function PhotoShotListPage() {
   const checkedCount = hydrated ? Object.values(checked).filter(Boolean).length : 0;
 
   return (
-    <div
-      className={`${archivo.variable} ${workSans.variable} ${plexMono.variable} min-h-screen bg-[#f6f4ee] text-[#14140d] dark:bg-black dark:text-[#f5f4ec]`}
-      style={{ fontFamily: "var(--font-work-sans), ui-sans-serif, system-ui, sans-serif" }}
-    >
+    <>
+      <link rel="stylesheet" href={FONT_STYLESHEET} />
+      <div
+        className="min-h-screen bg-[#f6f4ee] text-[#14140d] dark:bg-black dark:text-[#f5f4ec]"
+        style={{
+          "--font-archivo": "'Archivo', sans-serif",
+          "--font-work-sans": "'Work Sans', ui-sans-serif, system-ui, sans-serif",
+          "--font-plex-mono": "'IBM Plex Mono', monospace",
+          fontFamily: "var(--font-work-sans), ui-sans-serif, system-ui, sans-serif",
+        } as React.CSSProperties}
+      >
       <div className="mx-auto max-w-5xl px-5 pb-24 pt-8">
         {/* header */}
         <header className="border border-black/10 bg-[#ece7d8] p-6 dark:border-white/10 dark:bg-zinc-950 sm:p-8">
@@ -457,5 +461,6 @@ export default function PhotoShotListPage() {
         </footer>
       </div>
     </div>
+    </>
   );
 }
