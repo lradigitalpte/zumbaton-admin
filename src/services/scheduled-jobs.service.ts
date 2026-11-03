@@ -61,6 +61,11 @@ export async function runAllScheduledJobs(): Promise<JobResult[]> {
     return await syncPendingHitPayPayments()
   }))
 
+  // Job 9: Remind customers about unfinished checkouts (after sync, so paid ones are excluded)
+  results.push(await runJob('sendCheckoutReminders', async () => {
+    return await sendCheckoutReminders()
+  }))
+
   return results
 }
 
@@ -77,18 +82,23 @@ async function runJob(
 
     console.log(`[ScheduledJob] ${jobName} completed in ${duration}ms`, details)
 
-    return {
+    const result: JobResult = {
       jobName,
       success: true,
       duration,
       details: typeof details === 'object' && details !== null ? (details as Record<string, unknown>) : {},
     }
+    const { recordJobRun } = await import('@/lib/job-health')
+    await recordJobRun({ jobName, success: true, durationMs: duration, details: result.details })
+    return result
   } catch (error) {
     const duration = Date.now() - startTime
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
 
     console.error(`[ScheduledJob] ${jobName} failed after ${duration}ms:`, error)
 
+    const { recordJobRun } = await import('@/lib/job-health')
+    await recordJobRun({ jobName, success: false, durationMs: duration, details: {}, error: errorMessage })
     return {
       jobName,
       success: false,
@@ -123,6 +133,10 @@ export async function runAutoGenerateClassesJob(): Promise<JobResult> {
 
 export async function runSyncPendingPaymentsJob(): Promise<JobResult> {
   return runJob('syncPendingHitPayPayments', syncPendingHitPayPayments)
+}
+
+export async function runCheckoutRemindersJob(): Promise<JobResult> {
+  return runJob('sendCheckoutReminders', sendCheckoutReminders)
 }
 
 export async function runProcessLeadOutreachJob(): Promise<JobResult> {
@@ -575,14 +589,18 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
     return { skipped: true, reason: 'HITPAY_API_KEY not configured' }
   }
 
-  // Fetch payments that are still pending but were created more than 5 minutes ago
+  // Fetch payments that are still pending, created between 7 days and 5 minutes ago.
+  // Older abandoned checkouts are left alone so each run stays short on serverless
+  // (the webhook still confirms any late payment; admins can Sync old rows manually).
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   const { data: pendingPayments, error } = await supabase
     .from('payments')
     .select('id, user_id, class_id, package_id, is_trial_booking, metadata, amount_cents, currency, hitpay_payment_request_id, promo_type, discount_percent, discount_amount_cents, packages(*)')
     .eq('status', 'pending')
     .not('hitpay_payment_request_id', 'is', null)
     .lt('created_at', fiveMinutesAgo)
+    .gt('created_at', sevenDaysAgo)
 
   if (error) {
     throw new Error(`Failed to fetch pending payments: ${error.message}`)
@@ -852,6 +870,319 @@ export async function syncPendingHitPayPayments(): Promise<Record<string, unknow
   return { synced, failed, skipped, total: pendingPayments.length }
 }
 
+// Email customers who opened HitPay checkout but never paid (runs after the pending-payment sync).
+// One reminder per customer, sent 1–48h after checkout, linking back to their original HitPay page.
+const CHECKOUT_REMINDER_MIN_AGE_MS = 60 * 60 * 1000
+const CHECKOUT_REMINDER_MAX_AGE_MS = 48 * 60 * 60 * 1000
+const CHECKOUT_REMINDER_CLASS_LEAD_MS = 3 * 60 * 60 * 1000
+const CHECKOUT_REMINDER_MAX_PER_RUN = 25
+const CHECKOUT_REMINDER_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1000
+
+export async function sendCheckoutReminders(): Promise<Record<string, unknown>> {
+  const { getSupabaseAdminClient } = await import('@/lib/supabase')
+  const { getPaymentRequestStatus } = await import('./hitpay.service')
+  const supabase = getSupabaseAdminClient()
+
+  if (!process.env.HITPAY_API_KEY) {
+    return { skipped: true, reason: 'HITPAY_API_KEY not configured' }
+  }
+
+  const now = Date.now()
+  const { data: rows, error } = await supabase
+    .from('payments')
+    .select('id, user_id, class_id, is_trial_booking, metadata, amount_cents, currency, hitpay_payment_request_id, hitpay_payment_url, created_at, packages(name)')
+    .eq('status', 'pending')
+    .not('hitpay_payment_url', 'is', null)
+    .gt('created_at', new Date(now - CHECKOUT_REMINDER_MAX_AGE_MS).toISOString())
+    .lt('created_at', new Date(now - CHECKOUT_REMINDER_MIN_AGE_MS).toISOString())
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    throw new Error(`Failed to fetch pending payments: ${error.message}`)
+  }
+
+  const candidates = (rows || []).filter((p) => {
+    const meta = (p.metadata as Record<string, unknown> | null) || {}
+    return !meta.checkout_reminder_sent_at && !meta.checkout_reminder_skipped
+  })
+
+  if (candidates.length === 0) {
+    return { sent: 0, skipped: 0, message: 'No unfinished checkouts to remind' }
+  }
+
+  // Resolve customer email/name: guests carry it in metadata, members via their profile
+  const userIds = [...new Set(candidates.map((p) => p.user_id).filter(Boolean))] as string[]
+  const profileMap: Record<string, { name: string | null; email: string | null }> = {}
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabase.from('user_profiles').select('id, name, email').in('id', userIds)
+    for (const pr of profiles || []) profileMap[pr.id] = { name: pr.name, email: pr.email }
+  }
+
+  type Candidate = (typeof candidates)[number]
+  const groups = new Map<string, { email: string; name: string; payments: Candidate[] }>()
+  for (const p of candidates) {
+    const meta = (p.metadata as Record<string, unknown> | null) || {}
+    const profile = p.user_id ? profileMap[p.user_id] : undefined
+    const email = ((profile?.email || (meta.guest_email as string) || '') as string).trim().toLowerCase()
+    if (!email) continue
+    const name = (profile?.name || (meta.guest_name as string) || 'there') as string
+    const group = groups.get(email) || { email, name, payments: [] }
+    group.payments.push(p) // rows are newest-first, so payments[0] is the latest attempt
+    groups.set(email, group)
+  }
+
+  const markPayments = async (payments: Candidate[], patch: Record<string, unknown>) => {
+    for (const p of payments) {
+      await supabase
+        .from('payments')
+        .update({ metadata: { ...((p.metadata as Record<string, unknown> | null) || {}), ...patch } })
+        .eq('id', p.id)
+    }
+  }
+
+  let sent = 0
+  let skipped = 0
+  const skipReasons: Record<string, number> = {}
+  const skip = async (payments: Candidate[], reason: string) => {
+    skipped++
+    skipReasons[reason] = (skipReasons[reason] || 0) + 1
+    await markPayments(payments, { checkout_reminder_skipped: reason })
+  }
+
+  for (const group of groups.values()) {
+    if (sent >= CHECKOUT_REMINDER_MAX_PER_RUN) break
+    const latest = group.payments[0]
+    const meta = (latest.metadata as Record<string, unknown> | null) || {}
+
+    try {
+      // Customer already paid on a later attempt
+      let paidQuery = supabase
+        .from('payments')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'succeeded')
+        .gt('created_at', latest.created_at)
+      paidQuery = latest.user_id
+        ? paidQuery.eq('user_id', latest.user_id)
+        : paidQuery.ilike('metadata->>guest_email', group.email)
+      const { count: paidLater } = await paidQuery
+      if ((paidLater || 0) > 0) {
+        await skip(group.payments, 'paid_on_later_attempt')
+        continue
+      }
+
+      // Never email the same customer more than once per cooldown window, even for a new checkout
+      let recentQuery = supabase
+        .from('payments')
+        .select('id', { count: 'exact', head: true })
+        .not('metadata->>checkout_reminder_sent_at', 'is', null)
+        .gt('metadata->>checkout_reminder_sent_at', new Date(now - CHECKOUT_REMINDER_COOLDOWN_MS).toISOString())
+      recentQuery = latest.user_id
+        ? recentQuery.eq('user_id', latest.user_id)
+        : recentQuery.ilike('metadata->>guest_email', group.email)
+      const { count: recentlyReminded } = await recentQuery
+      if ((recentlyReminded || 0) > 0) {
+        await skip(group.payments, 'reminded_recently')
+        continue
+      }
+
+      // Trial / class checkout: only remind while the class is still bookable
+      if (latest.is_trial_booking && latest.class_id) {
+        const { data: cls } = await supabase
+          .from('classes')
+          .select('status, scheduled_at, capacity')
+          .eq('id', latest.class_id)
+          .maybeSingle()
+        if (!cls || cls.status !== 'scheduled' || new Date(cls.scheduled_at).getTime() < now + CHECKOUT_REMINDER_CLASS_LEAD_MS) {
+          await skip(group.payments, 'class_unavailable')
+          continue
+        }
+        const { count: booked } = await supabase
+          .from('bookings')
+          .select('id', { count: 'exact', head: true })
+          .eq('class_id', latest.class_id)
+          .in('status', ['confirmed', 'attended', 'no-show'])
+        const spotsNeeded = Array.isArray(meta.draft_booking_ids) ? meta.draft_booking_ids.length : 1
+        if ((booked || 0) + spotsNeeded > (cls.capacity as number)) {
+          await skip(group.payments, 'class_full')
+          continue
+        }
+      }
+
+      // Double-check with HitPay: only remind if the checkout is still open and unpaid
+      let hitpayStatus: string | undefined
+      try {
+        const hitpayData = await getPaymentRequestStatus(latest.hitpay_payment_request_id)
+        hitpayStatus = hitpayData.status?.toLowerCase()
+      } catch (err) {
+        console.error(`[Cron: CheckoutReminders] HitPay lookup failed for ${latest.id}:`, err)
+        skipped++
+        continue
+      }
+      if (hitpayStatus !== 'pending') {
+        // Paid ones are confirmed by syncPendingHitPayPayments; expired/cancelled can't be resumed
+        if (hitpayStatus !== 'completed' && hitpayStatus !== 'succeeded') {
+          await skip(group.payments, `hitpay_${hitpayStatus || 'unknown'}`)
+        } else {
+          skipped++
+        }
+        continue
+      }
+
+      const pkg = Array.isArray(latest.packages) ? latest.packages[0] : latest.packages
+      const classTitle = typeof meta.class_title === 'string' ? meta.class_title : null
+      const classAt = typeof meta.class_scheduled_at === 'string' ? meta.class_scheduled_at : null
+      const itemLabel = latest.is_trial_booking
+        ? `${classTitle || 'Trial class'} — trial booking`
+        : (pkg?.name as string | undefined)?.trim() || 'Your package'
+      const itemDetail = latest.is_trial_booking && classAt
+        ? new Date(classAt).toLocaleString('en-SG', {
+            weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Singapore',
+          })
+        : undefined
+
+      // Claim before sending: if the send succeeds but a later write fails, or runs overlap,
+      // we'd rather miss a reminder than email the customer twice
+      const sentAt = new Date().toISOString()
+      const { data: claimed } = await supabase
+        .from('payments')
+        .update({ metadata: { ...meta, checkout_reminder_sent_at: sentAt } })
+        .eq('id', latest.id)
+        .eq('status', 'pending')
+        .is('metadata->>checkout_reminder_sent_at', null)
+        .select('id')
+      if (!claimed || claimed.length === 0) {
+        skipped++
+        continue
+      }
+
+      const result = await sendAdminEmail('checkout-reminder', {
+        customerEmail: group.email,
+        customerName: group.name,
+        itemLabel,
+        itemDetail,
+        amountLabel: `${latest.currency} ${(latest.amount_cents / 100).toFixed(2)}`,
+        checkoutUrl: latest.hitpay_payment_url,
+      })
+
+      if (!result.success) {
+        // Release the claim so a later run can retry
+        console.error(`[Cron: CheckoutReminders] Email failed for ${latest.id}:`, result.error)
+        await supabase.from('payments').update({ metadata: meta }).eq('id', latest.id)
+        skipped++
+        continue
+      }
+
+      await markPayments(group.payments.slice(1), { checkout_reminder_sent_at: sentAt })
+      sent++
+    } catch (err) {
+      console.error(`[Cron: CheckoutReminders] Unexpected error for ${latest.id}:`, err)
+      skipped++
+    }
+  }
+
+  return { sent, skipped, skipReasons, customers: groups.size }
+}
+
+// Friday nudge: members with a live week streak who have not attended
+// and have no class booked this Singapore week. Not part of job=all.
+export async function sendStreakReminders(): Promise<JobResult> {
+  return runJob('sendStreakReminders', async () => {
+    const { getSupabaseAdminClient } = await import('@/lib/supabase')
+    const { getStreakReminderAudience, sendStreakReminderEmail } = await import('./streak-reminders.service')
+    const admin = getSupabaseAdminClient()
+    const { weekStart, members } = await getStreakReminderAudience()
+
+    const candidates = members.filter((member) => member.status !== 'sent')
+    const toEmail = candidates.filter((member) => member.status === 'due')
+    let skipped = candidates.length - toEmail.length
+    let sent = 0
+    const sentTo: string[] = []
+    const failed: string[] = []
+
+    const EMAIL_BATCH = 8
+
+    for (let i = 0; i < toEmail.length; i += EMAIL_BATCH) {
+      const batch = toEmail.slice(i, i + EMAIL_BATCH)
+      await Promise.all(
+        batch.map(async (member) => {
+          const email = member.email!
+          const result = await sendStreakReminderEmail({
+            email,
+            name: member.name!,
+            streakWeeks: member.streakWeeks,
+          })
+          if (!result.success) {
+            console.error(`[Cron: StreakReminders] Email rejected for ${email}`, result.error)
+            failed.push(email)
+            skipped++
+            return
+          }
+
+          const { error: markError } = await admin
+            .from('user_stats')
+            .update({
+              last_streak_reminder_week: weekStart,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('user_id', member.userId)
+
+          if (markError) {
+            console.error(
+              `[Cron: StreakReminders] Sent to ${email} but failed to record dedupe`,
+              markError,
+            )
+          }
+          sentTo.push(email)
+          sent++
+        }),
+      )
+    }
+
+    return { sent, skipped, weekStart, candidates: candidates.length, sentTo, failed }
+  })
+}
+
+// Morning wish for members whose birthday is today in Singapore. One per birthday,
+// shared with the Celebrate page's Send button. Not part of job=all.
+export async function sendBirthdayWishes(): Promise<JobResult> {
+  return runJob('sendBirthdayWishes', async () => {
+    const { getBirthdayMembers, sendBirthdayWish, singaporeToday } = await import('./birthday.service')
+    const members = await getBirthdayMembers()
+    const today = members.filter((member) => member.isToday)
+
+    const sentTo: string[] = []
+    const failed: string[] = []
+    const skipReasons: Record<string, number> = {}
+    const skip = (reason: string) => {
+      skipReasons[reason] = (skipReasons[reason] || 0) + 1
+    }
+
+    for (const member of today) {
+      if (member.wished) { skip('already_wished'); continue }
+      if (!member.isActive) { skip('inactive'); continue }
+      if (!member.email || !member.name) { skip('missing_name_or_email'); continue }
+      if (member.emailOptedOut) { skip('opted_out'); continue }
+
+      const result = await sendBirthdayWish(member)
+      if (result.success) sentTo.push(member.email)
+      else if (result.skipped) skip('already_wished')
+      else {
+        console.error(`[Cron: BirthdayWishes] Email failed for ${member.email}:`, result.error)
+        failed.push(member.email)
+      }
+    }
+
+    return {
+      date: singaporeToday(),
+      birthdaysToday: today.length,
+      sent: sentTo.length,
+      sentTo,
+      failed,
+      skipReasons,
+    }
+  })
+}
+
 export function getJobSchedule() {
   return {
     jobs: [
@@ -892,6 +1223,18 @@ export function getJobSchedule() {
         cron: '*/15 * * * *',
       },
       {
+        name: 'sendStreakReminders',
+        description: 'Emails members whose week streak will break on Sunday if they do not come in. Skips anyone who already attended or has a class booked this week.',
+        frequency: 'Friday at 9:00am Singapore (01:00 UTC). Not included in job=all.',
+        cron: '0 1 * * 5',
+      },
+      {
+        name: 'sendBirthdayWishes',
+        description: 'Emails a birthday wish to members whose birthday is today. One per birthday; skips anyone already wished from the Celebrate page.',
+        frequency: 'Daily at 9:00am Singapore (01:00 UTC). Not included in job=all.',
+        cron: '0 1 * * *',
+      },
+      {
         name: 'markCompletedClasses',
         description: 'Marks all past classes (single, recurring, course) as completed',
         frequency: 'Daily at midnight',
@@ -906,6 +1249,12 @@ export function getJobSchedule() {
       {
         name: 'syncPendingHitPayPayments',
         description: 'Polls HitPay for pending payments and auto-issues tokens when confirmed',
+        frequency: 'Every 15 minutes',
+        cron: '*/15 * * * *',
+      },
+      {
+        name: 'sendCheckoutReminders',
+        description: 'Emails customers who started HitPay checkout 1–48h ago but never paid (one reminder each, runs with the payment sync)',
         frequency: 'Every 15 minutes',
         cron: '*/15 * * * *',
       },

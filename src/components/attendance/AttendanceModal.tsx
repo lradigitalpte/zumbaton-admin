@@ -31,7 +31,8 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
   const [list, setList] = useState<AttendeeRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
-  const isCompleted = classData.status === "completed";
+  const [pendingCancel, setPendingCancel] = useState<AttendeeRow | null>(null);
+  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
   const fetchList = useCallback(() => {
     if (!classData.id) return;
@@ -87,134 +88,131 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
 
   const cancelAndRefund = async (row: AttendeeRow) => {
     if (!row.userId) return;
-    if (!window.confirm(`Cancel ${row.name}'s booking, refund their token(s), and email them?`)) return;
 
     setCancellingId(row.id);
+    setNotice(null);
     const response = await api.delete(`/api/bookings/${row.id}`, {
       userId: row.userId,
       forceRefund: true,
       reason: 'Same-day booking is not allowed. Your booking has been cancelled and your token has been fully refunded. We apologize for the inconvenience.',
     });
     setCancellingId(null);
+    setPendingCancel(null);
 
     if (response.error) {
-      window.alert(response.error.message || 'Failed to cancel the booking');
+      setNotice({ tone: "error", text: response.error.message || "Failed to cancel the booking" });
       return;
     }
 
     setList((current) => current.filter((item) => item.id !== row.id));
-    window.alert('Booking cancelled, token(s) refunded, and cancellation email sent.');
+    setNotice({ tone: "ok", text: "Booking cancelled, tokens refunded, and the email was sent." });
   };
 
   const attendedCount = list.filter((r) => r.status === "attended").length;
 
   return (
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} aria-hidden />
-      <div className="relative flex w-full max-w-lg flex-col max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-gray-900 dark:shadow-none dark:ring-1 dark:ring-gray-800">
-        {/* Header */}
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-100 bg-gray-50/80 px-5 py-4 dark:border-gray-800 dark:bg-gray-800/50">
+    <div className="fixed inset-0 z-[100000] flex items-end justify-center p-0 sm:items-center sm:p-4">
+      <button type="button" aria-label="Close attendance" className="absolute inset-0 bg-neutral-950/55 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] border border-neutral-200/80 bg-white shadow-[0_24px_80px_rgba(0,0,0,0.28)] dark:border-white/10 dark:bg-gray-800 sm:rounded-[28px]">
+        <div className="flex shrink-0 items-start justify-between gap-4 px-6 pb-4 pt-6">
           <div className="min-w-0">
-            <h2 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">
+            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Attendance</p>
+            <h2 className="mt-1 text-2xl font-semibold uppercase tracking-tight text-neutral-950 dark:text-white">
               {classData.name}
             </h2>
-            <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+            <p className="mt-1 text-sm text-neutral-500 dark:text-white/50">
               {classData.instructor} · {classData.time}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 rounded-lg p-2 text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-white transition-colors hover:bg-neutral-800 dark:bg-white dark:text-neutral-950"
             aria-label="Close"
           >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        {/* Summary */}
         {!isLoading && list.length > 0 && (
-          <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Class list
-            </span>
-            <span className="text-sm text-gray-500 dark:text-gray-400">
-              <span className="font-medium text-emerald-600 dark:text-emerald-400">{attendedCount}</span>
-              {" / "}
-              <span className="font-medium text-gray-900 dark:text-white">{list.length}</span>
-              {" checked in"}
+          <div className="mx-6 mb-3 flex items-center justify-between rounded-full bg-neutral-950 px-4 py-2 text-white">
+            <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">Checked in</span>
+            <span className="text-sm font-semibold">
+              <span className="text-[#E4F56C]">{attendedCount}</span>
+              <span className="text-white/40"> / {list.length}</span>
             </span>
           </div>
         )}
 
-        {/* List */}
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        {notice && (
+          <div className={`mx-6 mb-3 rounded-full px-4 py-2 text-center text-xs font-medium ${notice.tone === "ok" ? "bg-[#E4F56C] text-neutral-950" : "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"}`}>
+            {notice.text}
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto px-5 pb-4">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-12">
-              <div className="h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-emerald-500 dark:border-gray-700 dark:border-t-emerald-500" />
-              <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Loading class list…</p>
+              <div className="h-10 w-10 animate-spin rounded-full border-2 border-neutral-200 border-t-neutral-950 dark:border-white/10 dark:border-t-[#E4F56C]" />
+              <p className="mt-3 text-sm text-neutral-500">Loading the list</p>
             </div>
           ) : list.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-                <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-950 text-[#E4F56C]">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </div>
-              <p className="mt-3 text-sm font-medium text-gray-700 dark:text-gray-300">No bookings</p>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">No one has booked this class yet.</p>
+              <p className="mt-3 text-sm font-medium text-neutral-950 dark:text-white">No bookings</p>
+              <p className="mt-1 text-sm text-neutral-500">Nobody has booked this class yet.</p>
             </div>
           ) : (
             <ul className="space-y-2">
               {list.map((row) => (
                 <li
                   key={row.id}
-                  className="flex items-center gap-4 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-800/50"
+                  className="flex items-center gap-3 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-3 py-3 dark:border-white/10 dark:bg-white/5"
                 >
-                  <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white ${
-                      row.status === "attended"
-                        ? "bg-emerald-500"
-                        : row.status === "no-show"
-                          ? "bg-red-500"
-                          : "bg-amber-500"
-                    }`}
-                  >
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                    row.status === "attended"
+                      ? "bg-[#E4F56C] text-neutral-950"
+                      : row.status === "no-show"
+                        ? "bg-neutral-200 text-neutral-500 dark:bg-white/10 dark:text-white/40"
+                        : "bg-neutral-950 text-[#E4F56C]"
+                  }`}>
                     {row.avatar}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-gray-900 dark:text-white">{row.name}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className="truncate text-sm font-medium text-neutral-950 dark:text-white">{row.name}</p>
+                    <p className="text-xs text-neutral-500 dark:text-white/45">
                       {row.status === "attended"
                         ? row.checkedInAt
                           ? `Checked in ${row.checkedInAt}`
                           : "Attended"
                         : row.status === "no-show"
                           ? "No-show"
-                          : "Pending"}
+                          : "Waiting"}
                     </p>
                   </div>
-                  <span
-                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
-                      row.status === "attended"
-                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
-                        : row.status === "no-show"
-                          ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
-                          : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-                    }`}
-                  >
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${
+                    row.status === "attended"
+                      ? "bg-[#E4F56C] text-neutral-950"
+                      : row.status === "no-show"
+                        ? "bg-neutral-200 text-neutral-600 dark:bg-white/10 dark:text-white/60"
+                        : "bg-neutral-950 text-white"
+                  }`}>
                     {row.status === "attended" ? "Attended" : row.status === "no-show" ? "No-show" : "Pending"}
                   </span>
                   {row.status === "pending" && !row.isGuest && row.userId && (
                     <button
                       type="button"
-                      onClick={() => cancelAndRefund(row)}
+                      onClick={() => setPendingCancel(row)}
                       disabled={cancellingId === row.id}
-                      className="shrink-0 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="shrink-0 rounded-full bg-neutral-950 px-3 py-2 text-[11px] font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {cancellingId === row.id ? "Cancelling…" : "Cancel & refund"}
+                      {cancellingId === row.id ? "Cancelling" : "Refund"}
                     </button>
                   )}
                 </li>
@@ -223,16 +221,45 @@ export default function AttendanceModal({ isOpen, onClose, classData }: Attendan
           )}
         </div>
 
-        {/* Footer */}
-        <div className="shrink-0 border-t border-gray-100 px-5 py-4 dark:border-gray-800">
+        <div className="shrink-0 px-5 pb-5">
           <button
             type="button"
             onClick={onClose}
-            className="w-full rounded-xl bg-gray-900 py-3 text-sm font-semibold text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200"
+            className="w-full rounded-full bg-neutral-950 py-3 text-sm font-semibold text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-950"
           >
             Close
           </button>
         </div>
+
+        {pendingCancel && (
+          <div className="absolute inset-0 z-10 flex items-end justify-center bg-neutral-950/40 p-4 sm:items-center">
+            <div className="w-full rounded-[28px] bg-white p-6 shadow-[0_24px_80px_rgba(0,0,0,0.28)] dark:bg-gray-900">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Refund</p>
+              <h3 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">Cancel this booking</h3>
+              <p className="mt-2 text-sm leading-relaxed text-neutral-500 dark:text-white/60">
+                <span className="font-semibold text-neutral-950 dark:text-white">{pendingCancel.name}</span> will be removed, their tokens refunded, and a cancellation email sent.
+              </p>
+              <div className="mt-6 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPendingCancel(null)}
+                  disabled={cancellingId === pendingCancel.id}
+                  className="flex-1 rounded-full border border-neutral-200 px-4 py-3 text-sm font-semibold text-neutral-950 disabled:opacity-50 dark:border-white/10 dark:text-white"
+                >
+                  Keep booking
+                </button>
+                <button
+                  type="button"
+                  onClick={() => cancelAndRefund(pendingCancel)}
+                  disabled={cancellingId === pendingCancel.id}
+                  className="flex-1 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50"
+                >
+                  {cancellingId === pendingCancel.id ? "Cancelling" : "Refund tokens"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

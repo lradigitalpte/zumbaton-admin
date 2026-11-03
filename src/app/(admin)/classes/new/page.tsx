@@ -1,14 +1,12 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef, Suspense } from "react";
+import { useState, useMemo, useEffect, useRef, Suspense, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import ComponentCard from "@/components/common/ComponentCard";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
-import Button from "@/components/ui/button/Button";
 import Label from "@/components/form/Label";
 import Input from "@/components/form/input/InputField";
+import StudioDate from "@/components/ui/StudioDate";
 import Select from "@/components/form/Select";
-import MultiSelect from "@/components/form/MultiSelect";
 import { 
   useInstructors, 
   useRooms, 
@@ -45,6 +43,44 @@ const levels = [
   { value: "advanced", label: "Advanced" },
 ];
 
+const fieldClass =
+  "!h-12 !rounded-2xl !border-neutral-200 !bg-neutral-50 !shadow-none !text-neutral-950 placeholder:!text-neutral-400 focus:!border-neutral-950 focus:!ring-neutral-950/10 dark:!border-white/10 dark:!bg-white/5 dark:!text-white";
+
+function StudioSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+      <div className="px-5 pt-5 sm:px-6 sm:pt-6">
+        <h2 className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">{title}</h2>
+      </div>
+      <div className="p-5 sm:p-6">{children}</div>
+    </section>
+  );
+}
+
+function PageHeading({ title }: { title: string }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Classes</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">
+          {title}{" "}
+          <span className="inline-flex h-7 w-9 translate-y-[-1px] items-center justify-center rounded-full bg-[#E4F56C] align-middle text-neutral-950">
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 4v16m8-8H4" />
+            </svg>
+          </span>
+        </h1>
+      </div>
+      <Link
+        href="/classes"
+        className="inline-flex items-center rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-950 transition-colors hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
+      >
+        Back to classes
+      </Link>
+    </div>
+  );
+}
+
 // Skeleton Components
 const FormFieldSkeleton = () => (
   <div className="animate-pulse">
@@ -54,7 +90,7 @@ const FormFieldSkeleton = () => (
 );
 
 const FormSectionSkeleton = () => (
-  <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800 animate-pulse">
+  <div className="animate-pulse rounded-[28px] border border-neutral-200/80 bg-white p-6 dark:border-white/10 dark:bg-gray-800">
     <div className="h-6 w-40 bg-gray-200 dark:bg-gray-700 rounded mb-6"></div>
     <div className="grid gap-6 sm:grid-cols-2">
       <FormFieldSkeleton />
@@ -564,11 +600,11 @@ function NewClassPageContent() {
   // Loading State with Skeleton
   if (isLoading) {
     return (
-      <div>
-        <PageBreadCrumb pageTitle={isEditMode ? "Edit Class" : "Add New Class"} />
+      <div className="space-y-6">
+        <PageHeading title={isEditMode ? "Edit Class" : "Add New Class"} />
         <div className="space-y-6">
           {/* Class Type Skeleton */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800 animate-pulse">
+          <div className="animate-pulse rounded-[28px] border border-neutral-200/80 bg-white p-6 dark:border-white/10 dark:bg-gray-800">
             <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {[...Array(3)].map((_, i) => (
@@ -590,7 +626,7 @@ function NewClassPageContent() {
           <FormSectionSkeleton />
 
           {/* Capacity Skeleton */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800 animate-pulse">
+          <div className="animate-pulse rounded-[28px] border border-neutral-200/80 bg-white p-6 dark:border-white/10 dark:bg-gray-800">
             <div className="h-6 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-6"></div>
             <div className="grid gap-6 sm:grid-cols-3">
               <FormFieldSkeleton />
@@ -610,14 +646,14 @@ function NewClassPageContent() {
   }
 
   return (
-    <div>
-      <PageBreadCrumb pageTitle={isEditMode ? "Edit Class" : "Add New Class"} />
+    <div className="space-y-6">
+      <PageHeading title={isEditMode ? "Edit Class" : "Add New Class"} />
 
       <div className="space-y-6">
         {/* Class Type Selection */}
-        <ComponentCard title="Class Type">
+        <StudioSection title="Class Type">
           {isEditMode && existingClass && /-\s*\d{1,2}\/\d{1,2}\/\d{4}$/.test(existingClass.title || "") && (
-            <div className="mb-4 p-3 rounded-lg bg-gray-100 dark:bg-gray-800 text-sm text-gray-600 dark:text-gray-400">
+            <div className="mb-4 rounded-2xl bg-neutral-950 px-4 py-3 text-sm text-white/80">
               <p>Class type is locked for individual instances. This session is part of a {existingClass.recurrenceType || 'recurring'} series.</p>
             </div>
           )}
@@ -632,19 +668,19 @@ function NewClassPageContent() {
                 type="button"
                 onClick={() => !isDisabled && setClassType(type.value)}
                 disabled={isDisabled}
-                className={`p-4 rounded-xl border-2 text-left transition-all ${
+                className={`rounded-[22px] border p-4 text-left transition-all ${
                   isDisabled
-                    ? "border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed dark:border-gray-700 dark:bg-gray-800"
+                    ? "cursor-not-allowed border-neutral-200 bg-neutral-50 opacity-50 dark:border-white/10 dark:bg-white/5"
                     : classType === type.value
-                    ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
-                    : "border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
+                    ? "border-[#d5e45c] bg-[#E4F56C] text-neutral-950"
+                    : "border-neutral-200/80 bg-white hover:border-neutral-300 dark:border-white/10 dark:bg-white/5"
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
+                  <div className={`flex h-11 w-11 items-center justify-center rounded-full ${
                     classType === type.value
-                      ? "bg-amber-500 text-white"
-                      : "bg-gray-100 text-gray-500 dark:bg-gray-700"
+                      ? "bg-neutral-950 text-[#E4F56C]"
+                      : "bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white/60"
                   }`}>
                     {type.value === "single" && (
                       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -663,14 +699,14 @@ function NewClassPageContent() {
                     )}
                   </div>
                   <div>
-                    <p className={`font-medium ${
+                    <p className={`font-semibold ${
                       classType === type.value
-                        ? "text-amber-700 dark:text-amber-400"
-                        : "text-gray-900 dark:text-white"
+                        ? "text-neutral-950"
+                        : "text-neutral-950 dark:text-white"
                     }`}>
                       {type.label.split(" - ")[0]}
                     </p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                    <p className={`text-sm ${classType === type.value ? "text-neutral-950/60" : "text-neutral-500 dark:text-white/50"}`}>
                       {type.label.split(" - ")[1]}
                     </p>
                   </div>
@@ -679,14 +715,14 @@ function NewClassPageContent() {
               );
             })}
           </div>
-        </ComponentCard>
+        </StudioSection>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Basic Details */}
-          <ComponentCard title="Class Details">
+          <StudioSection title="Class Details">
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-amber-500 border-t-transparent" />
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-neutral-200 border-t-neutral-950" />
                 <span className="ml-3 text-gray-500">Loading options...</span>
               </div>
             ) : (
@@ -694,6 +730,7 @@ function NewClassPageContent() {
                 <div>
                   <Label htmlFor="name">Class Name</Label>
                   <Input
+ className={fieldClass}
                     id="name"
                     type="text"
                     placeholder="e.g., Morning Energy Zumba"
@@ -709,7 +746,7 @@ function NewClassPageContent() {
                       <button
                         type="button"
                         onClick={() => setShowCategoryPanel(true)}
-                        className="text-sm text-brand-500 hover:text-brand-600 dark:text-brand-400 dark:hover:text-brand-300 font-medium flex items-center gap-1"
+                        className="inline-flex items-center gap-1 rounded-full bg-[#E4F56C] px-3 py-1 text-xs font-semibold text-neutral-950"
                       >
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -719,7 +756,7 @@ function NewClassPageContent() {
                       <button
                         type="button"
                         onClick={() => router.push("/categories")}
-                        className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 font-medium flex items-center gap-1"
+                        className="inline-flex items-center gap-1 rounded-full bg-neutral-950 px-3 py-1 text-xs font-semibold text-white"
                       >
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -730,6 +767,7 @@ function NewClassPageContent() {
                     </div>
                   </div>
                   <Select
+ className={fieldClass}
                     options={categoryOptions}
                     placeholder={loadingCategories ? "Loading..." : categories.length === 0 ? "No categories - Click 'Add Category' to create one" : "Select category"}
                     onChange={handleChange("category")}
@@ -740,6 +778,7 @@ function NewClassPageContent() {
                 <div>
                   <Label htmlFor="instructor">Instructor</Label>
                   <Select
+ className={fieldClass}
                     options={instructorOptions}
                     placeholder={loadingInstructors ? "Loading..." : "Select instructor"}
                     onChange={handleChange("instructor")}
@@ -750,6 +789,7 @@ function NewClassPageContent() {
                 <div>
                   <Label htmlFor="room">Room/Studio</Label>
                   <Select
+ className={fieldClass}
                     options={roomOptions}
                     placeholder={loadingRooms ? "Loading..." : "Select room"}
                     onChange={handleChange("room")}
@@ -760,6 +800,7 @@ function NewClassPageContent() {
                 <div>
                   <Label htmlFor="level">Level</Label>
                   <Select
+ className={fieldClass}
                     options={levels}
                     placeholder="Select level"
                     onChange={handleChange("level")}
@@ -770,6 +811,7 @@ function NewClassPageContent() {
                 <div>
                   <Label htmlFor="ageGroup">Target Audience</Label>
                   <Select
+ className={fieldClass}
                     options={[
                       { value: "all", label: "All (Adults & Kids)" },
                       { value: "adult", label: "Adults Only (13+)" },
@@ -787,15 +829,15 @@ function NewClassPageContent() {
                 {/* Indoor / Outdoor toggle */}
                 <div className="md:col-span-2">
                   <Label>Location Type</Label>
-                  <div className="mt-2 flex items-center gap-3">
-                    <div className="flex rounded-lg border border-gray-300 dark:border-gray-700 overflow-hidden">
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <div className="flex rounded-full bg-neutral-100 p-1 dark:bg-white/10">
                       <button
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, isOutdoor: false }))}
-                        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+                        className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                           !formData.isOutdoor
-                            ? "bg-amber-500 text-white"
-                            : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                            ? "bg-neutral-950 text-white"
+                            : "text-neutral-600 hover:text-neutral-950 dark:text-white/60"
                         }`}
                       >
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -806,10 +848,10 @@ function NewClassPageContent() {
                       <button
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, isOutdoor: true }))}
-                        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-l border-gray-300 dark:border-gray-700 ${
+                        className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                           formData.isOutdoor
-                            ? "bg-amber-500 text-white"
-                            : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                            ? "bg-[#E4F56C] text-neutral-950"
+                            : "text-neutral-600 hover:text-neutral-950 dark:text-white/60"
                         }`}
                       >
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -819,7 +861,7 @@ function NewClassPageContent() {
                       </button>
                     </div>
                     {formData.isOutdoor && (
-                      <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                      <span className="rounded-full bg-[#E4F56C] px-3 py-1 text-xs font-medium text-neutral-950">
                         &ldquo;(outdoors)&rdquo; will be shown after the class name on the website
                       </span>
                     )}
@@ -830,7 +872,7 @@ function NewClassPageContent() {
                   <Label htmlFor="description">Description</Label>
                   <textarea
                     id="description"
-                    className="dark:bg-dark-900 h-24 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
+                    className="h-28 w-full rounded-[22px] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 focus:border-neutral-950 focus:outline-hidden focus:ring-3 focus:ring-neutral-950/10 dark:border-white/10 dark:bg-white/5 dark:text-white"
                     placeholder="Brief description of the class..."
                     value={formData.description}
                     onChange={(e) => handleChange("description")(e.target.value)}
@@ -838,22 +880,22 @@ function NewClassPageContent() {
                 </div>
               </div>
             )}
-          </ComponentCard>
+          </StudioSection>
 
           {/* Schedule - Varies by class type */}
-          <ComponentCard title="Schedule">
+          <StudioSection title="Schedule">
             {/* Show info banner for individual instances */}
             {isEditMode && existingClass && /-\s*\d{1,2}\/\d{1,2}\/\d{4}$/.test(existingClass.title || "") && (
-              <div className="mb-6 p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+              <div className="mb-6 rounded-[22px] bg-neutral-950 p-4 text-white">
                 <div className="flex items-start gap-3">
-                  <svg className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="mt-0.5 h-5 w-5 shrink-0 text-[#E4F56C]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <div>
-                    <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                    <p className="text-sm font-medium text-white">
                       Editing Individual Instance
                     </p>
-                    <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                    <p className="mt-1 text-xs text-white/60">
                       You're editing a single session from a recurring series. Changes to date, time, instructor, capacity, or token cost will only affect this specific session, not the entire series.
                     </p>
                   </div>
@@ -864,12 +906,7 @@ function NewClassPageContent() {
               <div className="space-y-6">
                 <div>
                   <Label htmlFor="date">Date</Label>
-                  <Input
-                    id="date"
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) => handleChange("date")(e.target.value)}
-                  />
+                  <StudioDate id="date" block ariaLabel="Date" value={formData.date} onChange={handleChange("date")} />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Same date for all time slots below
                   </p>
@@ -882,6 +919,7 @@ function NewClassPageContent() {
                         Start Time <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">(SGT)</span>
                       </Label>
                       <Input
+ className={fieldClass}
                         id="startTime"
                         type="time"
                         value={formData.startTime}
@@ -891,6 +929,7 @@ function NewClassPageContent() {
                     <div>
                       <Label htmlFor="duration">Duration (minutes)</Label>
                       <Input
+ className={fieldClass}
                         id="duration"
                         type="number"
                         min="1"
@@ -904,14 +943,13 @@ function NewClassPageContent() {
                     <div>
                       <div className="flex items-center justify-between gap-4 mb-2">
                         <Label>Time slots</Label>
-                        <Button
+                        <button
                           type="button"
-                          variant="outline"
-                          size="sm"
                           onClick={addTimeSlot}
+                          className="rounded-full bg-neutral-950 px-4 py-2 text-xs font-semibold text-white hover:bg-neutral-800"
                         >
                           + Add time slot
-                        </Button>
+                        </button>
                       </div>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
                         Add multiple slots for the same day and instructor. One class will be created per slot.
@@ -920,11 +958,12 @@ function NewClassPageContent() {
                         {timeSlots.map((slot, index) => (
                           <div
                             key={index}
-                            className="flex flex-wrap items-end gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30"
+                            className="flex flex-wrap items-end gap-3 rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5"
                           >
                             <div className="flex-1 min-w-[120px]">
                               <Label className="text-xs">Start time (SGT)</Label>
                               <Input
+ className={fieldClass}
                                 type="time"
                                 value={slot.startTime}
                                 onChange={(e) => updateTimeSlot(index, "startTime", e.target.value)}
@@ -933,6 +972,7 @@ function NewClassPageContent() {
                             <div className="w-28">
                               <Label className="text-xs">Duration (min)</Label>
                               <Input
+ className={fieldClass}
                                 type="number"
                                 min="1"
                                 max="240"
@@ -940,17 +980,15 @@ function NewClassPageContent() {
                                 onChange={(e) => updateTimeSlot(index, "duration", e.target.value)}
                               />
                             </div>
-                            <Button
+                            <button
                               type="button"
-                              variant="outline"
-                              size="sm"
                               onClick={() => removeTimeSlot(index)}
                               disabled={timeSlots.length === 1}
-                              className="shrink-0"
                               title={timeSlots.length === 1 ? "Keep at least one slot" : "Remove slot"}
+                              className="shrink-0 rounded-full bg-white px-4 py-2.5 text-xs font-semibold text-neutral-700 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white/10 dark:text-white"
                             >
                               Remove
-                            </Button>
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -970,10 +1008,10 @@ function NewClassPageContent() {
                         key={day.key}
                         type="button"
                         onClick={() => toggleDay(day.key)}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                           selectedDays.includes(day.key)
-                            ? "bg-amber-500 text-white"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                            ? "bg-neutral-950 text-[#E4F56C]"
+                            : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70"
                         }`}
                       >
                         {day.label}
@@ -988,6 +1026,7 @@ function NewClassPageContent() {
                       Start Time <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">(SGT)</span>
                     </Label>
                     <Input
+ className={fieldClass}
                       id="startTime"
                       type="time"
                       value={formData.startTime}
@@ -1000,6 +1039,7 @@ function NewClassPageContent() {
                   <div>
                     <Label htmlFor="duration">Duration (minutes)</Label>
                     <Input
+ className={fieldClass}
                       id="duration"
                       type="number"
                       min="15"
@@ -1011,28 +1051,18 @@ function NewClassPageContent() {
                   </div>
                   <div>
                     <Label htmlFor="startDate">Start Date</Label>
-                    <Input
-                      id="startDate"
-                      type="date"
-                      value={formData.startDate}
-                      onChange={(e) => handleChange("startDate")(e.target.value)}
-                    />
+                    <StudioDate id="startDate" block ariaLabel="Start date" value={formData.startDate} onChange={handleChange("startDate")} />
                   </div>
                   <div>
                     <Label htmlFor="endDate">End Date (Optional)</Label>
-                    <Input
-                      id="endDate"
-                      type="date"
-                      value={formData.endDate}
-                      onChange={(e) => handleChange("endDate")(e.target.value)}
-                    />
+                    <StudioDate id="endDate" block clearable ariaLabel="End date" placeholder="No end date" value={formData.endDate} onChange={handleChange("endDate")} />
                     <p className="text-xs text-gray-500 mt-1">Leave empty for indefinite</p>
                   </div>
                 </div>
 
                 {selectedDays.length > 0 && (
-                  <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-                    <p className="text-sm text-amber-800 dark:text-amber-300">
+                  <div className="rounded-[22px] bg-[#E4F56C] p-4">
+                    <p className="text-sm text-neutral-950">
                       <strong>Schedule:</strong> This class will repeat every{" "}
                       {selectedDays.map((d, i) => (
                         <span key={d}>
@@ -1053,6 +1083,7 @@ function NewClassPageContent() {
                   <div>
                     <Label htmlFor="courseWeeks">Course Duration (Weeks)</Label>
                     <Select
+ className={fieldClass}
                       options={[
                         { value: "4", label: "4 Weeks" },
                         { value: "6", label: "6 Weeks" },
@@ -1066,21 +1097,11 @@ function NewClassPageContent() {
                   </div>
                   <div>
                     <Label htmlFor="courseStartDate">Course Start Date</Label>
-                    <Input
-                      id="courseStartDate"
-                      type="date"
-                      value={formData.courseStartDate}
-                      onChange={(e) => handleChange("courseStartDate")(e.target.value)}
-                    />
+                    <StudioDate id="courseStartDate" block ariaLabel="Course start date" value={formData.courseStartDate} onChange={handleChange("courseStartDate")} />
                   </div>
                   <div>
                     <Label>Course End Date</Label>
-                    <Input
-                      type="date"
-                      value={calculateEndDate()}
-                      disabled
-                      className="bg-gray-50 dark:bg-gray-800"
-                    />
+                    <StudioDate block disabled ariaLabel="Course end date" placeholder="Auto-calculated" value={calculateEndDate()} onChange={() => {}} />
                     <p className="text-xs text-gray-500 mt-1">Auto-calculated</p>
                   </div>
                 </div>
@@ -1093,10 +1114,10 @@ function NewClassPageContent() {
                         key={day.key}
                         type="button"
                         onClick={() => toggleDay(day.key)}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                           selectedDays.includes(day.key)
-                            ? "bg-amber-500 text-white"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                            ? "bg-neutral-950 text-[#E4F56C]"
+                            : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70"
                         }`}
                       >
                         {day.label}
@@ -1111,6 +1132,7 @@ function NewClassPageContent() {
                       Class Time <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">(SGT)</span>
                     </Label>
                     <Input
+ className={fieldClass}
                       id="startTime"
                       type="time"
                       value={formData.startTime}
@@ -1120,6 +1142,7 @@ function NewClassPageContent() {
                   <div>
                     <Label htmlFor="duration">Duration (minutes)</Label>
                     <Input
+ className={fieldClass}
                       id="duration"
                       type="number"
                       min="15"
@@ -1132,27 +1155,26 @@ function NewClassPageContent() {
                 </div>
 
                 {calculateTotalSessions() > 0 && (
-                  <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-blue-800 dark:text-blue-300">
-                        <strong>Course Summary:</strong> {formData.courseWeeks} weeks × {selectedDays.length} day(s)/week
-                      </p>
-                      <span className="text-lg font-bold text-blue-700 dark:text-blue-400">
-                        {calculateTotalSessions()} total sessions
-                      </span>
-                    </div>
+                  <div className="flex items-center justify-between gap-3 rounded-[22px] bg-neutral-950 p-4 text-white">
+                    <p className="text-sm text-white/80">
+                      <strong className="text-white">Course summary:</strong> {formData.courseWeeks} weeks × {selectedDays.length} day(s)/week
+                    </p>
+                    <span className="text-lg font-semibold text-[#E4F56C]">
+                      {calculateTotalSessions()} sessions
+                    </span>
                   </div>
                 )}
               </div>
             )}
-          </ComponentCard>
+          </StudioSection>
 
           {/* Capacity & Pricing */}
-          <ComponentCard title="Capacity & Pricing">
+          <StudioSection title="Capacity & Pricing">
             <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
               <div>
                 <Label htmlFor="capacity">Class Capacity</Label>
                 <Input
+ className={fieldClass}
                   id="capacity"
                   type="number"
                   min="1"
@@ -1164,7 +1186,7 @@ function NewClassPageContent() {
                   <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                     Default: {selectedRoom.capacity} (from {selectedRoom.name})
                     {parseInt(formData.capacity) !== selectedRoom.capacity && (
-                      <span className="ml-1 text-amber-600 dark:text-amber-400">• Custom</span>
+                      <span className="ml-1 rounded-full bg-[#E4F56C] px-2 py-0.5 text-[10px] font-semibold uppercase text-neutral-950">Custom</span>
                     )}
                   </p>
                 )}
@@ -1174,6 +1196,7 @@ function NewClassPageContent() {
                 <div>
                   <Label htmlFor="tokenCost">Token Cost (per class)</Label>
                   <Input
+ className={fieldClass}
                     id="tokenCost"
                     type="number"
                     min="1"
@@ -1187,6 +1210,7 @@ function NewClassPageContent() {
                   <div>
                   <Label htmlFor="tokenCost">Token Cost (per session)</Label>
                       <Input
+ className={fieldClass}
                     id="tokenCost"
                         type="number"
                     min="1"
@@ -1208,11 +1232,11 @@ function NewClassPageContent() {
                 <button
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, allowDropIn: !prev.allowDropIn }))}
-                  className={`relative h-6 w-11 rounded-full transition-colors ${
-                    formData.allowDropIn ? "bg-amber-500" : "bg-gray-300 dark:bg-gray-600"
+                  className={`relative h-7 w-12 rounded-full transition-colors ${
+                    formData.allowDropIn ? "bg-[#E4F56C]" : "bg-neutral-200 dark:bg-white/15"
                   }`}
                 >
-                  <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                  <span className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-neutral-950 transition-transform ${
                     formData.allowDropIn ? "translate-x-5" : ""
                   }`} />
                 </button>
@@ -1231,6 +1255,7 @@ function NewClassPageContent() {
                     Walk-in Token Cost {classType === "course" ? "(per session)" : ""}
                   </Label>
                   <Input
+ className={fieldClass}
                     id="dropInTokenCost"
                     type="number"
                     min="1"
@@ -1246,69 +1271,53 @@ function NewClassPageContent() {
                 </div>
               )}
             </div>
-          </ComponentCard>
+          </StudioSection>
 
           {/* Summary Preview */}
           {formData.name && (
-            <ComponentCard title="Preview">
-              <div className="flex items-start gap-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800">
-                <div className={`h-12 w-12 rounded-xl flex items-center justify-center shrink-0 text-xl ${
-                  classType === "course" 
-                    ? "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                    : classType === "recurring"
-                    ? "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400"
-                    : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
-                }`}>
+            <StudioSection title="Preview">
+              <div className="flex items-start gap-4 rounded-[22px] bg-neutral-950 p-4 text-white">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#E4F56C] text-xs font-semibold uppercase text-neutral-950">
+                  {classType === "single" ? "1" : classType === "recurring" ? "W" : "C"}
                 </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="font-semibold text-gray-900 dark:text-white">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-lg font-semibold uppercase tracking-tight">
                       {formData.name}{formData.isOutdoor ? " (outdoors)" : ""}
                     </h4>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      classType === "course"
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                        : classType === "recurring"
-                        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                    }`}>
+                    <span className="rounded-full bg-[#E4F56C] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-950">
                       {classType === "single" ? "Single" : classType === "recurring" ? "Recurring" : "Course"}
                     </span>
-                    {formData.isOutdoor && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                        Outdoors
-                      </span>
-                    )}
                   </div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  <p className="mt-1 text-sm text-white/55">
                     {selectedCategory?.name}
-                    {selectedInstructors.length > 0 && ` • ${selectedInstructors.map(i => i.name).join(", ")}`}
-                    {selectedRoom && ` • ${selectedRoom.name}`}
+                    {selectedInstructors.length > 0 && ` · ${selectedInstructors.map(i => i.name).join(", ")}`}
+                    {selectedRoom && ` · ${selectedRoom.name}`}
                   </p>
-                  <div className="flex flex-wrap gap-4 mt-3 text-sm">
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
                     {formData.startTime && (
-                      <span className="text-gray-600 dark:text-gray-300">🕐 {formData.startTime}</span>
+                      <span className="rounded-full bg-white/10 px-3 py-1">{formData.startTime}</span>
                     )}
                     {formData.duration && (
-                      <span className="text-gray-600 dark:text-gray-300">⏱️ {formData.duration} min</span>
+                      <span className="rounded-full bg-white/10 px-3 py-1">{formData.duration} min</span>
                     )}
                     {formData.capacity && (
-                      <span className="text-gray-600 dark:text-gray-300">👥 {formData.capacity} spots</span>
+                      <span className="rounded-full bg-white/10 px-3 py-1">{formData.capacity} spots</span>
                     )}
                     {formData.tokenCost && (
-                      <span className="text-gray-600 dark:text-gray-300">
-                        🎟️ {formData.tokenCost} token{classType === "course" && calculateTotalSessions() > 0 ? ` × ${calculateTotalSessions()} sessions = ${parseInt(formData.tokenCost) * calculateTotalSessions()} total` : "(s)"}
+                      <span className="rounded-full bg-[#E4F56C] px-3 py-1 text-neutral-950">
+                        {formData.tokenCost} token{classType === "course" && calculateTotalSessions() > 0 ? ` × ${calculateTotalSessions()} = ${parseInt(formData.tokenCost) * calculateTotalSessions()}` : ""}
                       </span>
                     )}
                   </div>
                 </div>
               </div>
-            </ComponentCard>
+            </StudioSection>
           )}
 
           {/* Error message */}
           {(createClass.isError || updateClass.isError) && (
-            <div className="p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+            <div className="rounded-[22px] border border-red-200 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/30">
               <p className="text-sm text-red-800 dark:text-red-300">
                 <strong>Error:</strong> {(createClass.error || updateClass.error)?.message || `Failed to ${isEditMode ? 'update' : 'create'} class`}
               </p>
@@ -1316,16 +1325,16 @@ function NewClassPageContent() {
           )}
 
           {/* Actions */}
-          <div className="flex gap-4 justify-end">
-            <Button
+          <div className="flex flex-wrap justify-end gap-3">
+            <button
               type="button"
-              variant="outline"
               onClick={() => router.push("/classes")}
+              className="rounded-full border border-neutral-200 bg-white px-5 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
             >
               Cancel
-            </Button>
-            <Button 
-              type="submit" 
+            </button>
+            <button
+              type="submit"
               disabled={
                 (createClass.isPending || updateClass.isPending) ||
                 !formData.name ||
@@ -1333,17 +1342,18 @@ function NewClassPageContent() {
                   ? !formData.date || timeSlots.length === 0 || !timeSlots.some(s => s.startTime && s.duration)
                   : !formData.startTime)
               }
+              className="rounded-full bg-neutral-950 px-5 py-3 text-sm font-semibold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {(createClass.isPending || updateClass.isPending) 
-                ? (isEditMode ? "Updating..." : timeSlots.length > 1 ? "Creating classes..." : "Creating...") 
-                : (isEditMode 
+              {(createClass.isPending || updateClass.isPending)
+                ? (isEditMode ? "Updating..." : timeSlots.length > 1 ? "Creating classes..." : "Creating...")
+                : (isEditMode
                   ? `Update ${classType === "course" ? "Course" : "Class"}`
                   : classType === "single" && timeSlots.length > 1
                     ? `Create ${timeSlots.length} classes`
                     : `Create ${classType === "course" ? "Course" : "Class"}`
                 )
               }
-            </Button>
+            </button>
           </div>
         </form>
 
@@ -1366,8 +1376,8 @@ function NewClassPageContent() {
 export default function NewClassPage() {
   return (
     <Suspense fallback={
-      <div>
-        <PageBreadCrumb pageTitle="Add New Class" />
+      <div className="space-y-6">
+        <PageHeading title="Add New Class" />
         <div className="space-y-6">
           <FormSectionSkeleton />
           <FormSectionSkeleton />

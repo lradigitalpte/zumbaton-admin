@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { checkIn, bulkCheckIn } from '@/services/attendance.service'
 import { UuidSchema, CheckInMethodSchema } from '@/api/schemas'
 import { ApiError } from '@/lib/api-error'
+import { getAuthenticatedUser } from '@/middleware/rbac'
+import { createAuditLog } from '@/services/rbac.service'
 import { z } from 'zod'
 
 // Check-in request schema with checkedInBy
@@ -38,6 +40,14 @@ export async function POST(request: NextRequest) {
         checkedInBy: validatedData.checkedInBy,
         notes: validatedData.notes,
       })
+      const actor = await getAuthenticatedUser(request)
+      await createAuditLog({
+        userId: actor?.id || validatedData.checkedInBy,
+        action: 'attendance.check_in',
+        resourceType: 'bookings',
+        resourceId: validatedData.bookingIds[0],
+        newValues: { bookingCount: validatedData.bookingIds.length, notes: validatedData.notes || null },
+      })
 
       return NextResponse.json({
         success: true,
@@ -53,6 +63,14 @@ export async function POST(request: NextRequest) {
       method: validatedData.method,
       checkedInBy: validatedData.checkedInBy,
       notes: validatedData.notes,
+    })
+    const actor = await getAuthenticatedUser(request)
+    await createAuditLog({
+      userId: actor?.id || validatedData.checkedInBy,
+      action: 'attendance.check_in',
+      resourceType: 'bookings',
+      resourceId: validatedData.bookingId,
+      newValues: { method: validatedData.method, notes: validatedData.notes || null },
     })
 
     return NextResponse.json({

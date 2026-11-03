@@ -416,7 +416,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-2xl mx-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="relative mx-4 w-full max-w-2xl overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.16)] dark:border-white/10 dark:bg-[#171717]">
         {/* Search Input */}
         <div className="flex items-center gap-3 px-4 border-b border-gray-200 dark:border-gray-700">
           <svg
@@ -446,7 +446,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
         </div>
 
         {/* Suggestions */}
-        <div className="max-h-[60vh] overflow-y-auto">
+        <div className="max-h-[60vh] overflow-y-auto [scrollbar-color:rgba(163,163,163,0.6)_transparent] [scrollbar-width:thin]">
           {flatList.length === 0 ? (
             <div className="px-4 py-8 text-center text-gray-500">
               <svg
@@ -480,37 +480,29 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
                         <button
                           onClick={() => handleSelect(item)}
                           onMouseEnter={() => setSelectedIndex(globalIndex)}
-                          className={`w-full flex items-center gap-4 px-4 py-3 text-left transition-colors ${
-                            isSelected
-                              ? "bg-brand-50 dark:bg-brand-900/20"
-                              : "hover:bg-gray-50 dark:hover:bg-gray-800"
+                          className={`flex w-full items-center gap-4 px-4 py-3 text-left ${
+                            isSelected ? "bg-[#E4F56C]" : "hover:bg-neutral-50 dark:hover:bg-white/5"
                           }`}
                         >
                           <span
-                            className={`shrink-0 w-10 h-10 flex items-center justify-center rounded-lg ${
+                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
                               isSelected
-                                ? "bg-brand-500 text-white"
-                                : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+                                ? "bg-neutral-950 text-[#E4F56C]"
+                                : "bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white"
                             }`}
                           >
                             {item.icon}
                           </span>
-                          <div className="flex-1 min-w-0">
-                            <p
-                              className={`text-sm font-medium truncate ${
-                                isSelected
-                                  ? "text-brand-600 dark:text-brand-400"
-                                  : "text-gray-900 dark:text-white"
-                              }`}
-                            >
+                          <div className="min-w-0 flex-1">
+                            <p className={`truncate text-sm font-medium ${isSelected ? "text-neutral-950" : "text-neutral-950 dark:text-white"}`}>
                               {item.title}
                             </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            <p className={`truncate text-xs ${isSelected ? "text-neutral-950/70" : "text-neutral-500"}`}>
                               {item.description}
                             </p>
                           </div>
                           {isSelected && (
-                            <span className="shrink-0 text-xs text-gray-400">
+                            <span className="shrink-0 text-xs font-medium text-neutral-950/60">
                               Press Enter
                             </span>
                           )}

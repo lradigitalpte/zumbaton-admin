@@ -4,9 +4,10 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import SlidePanel from "@/components/ui/SlidePanel";
+import StudioMenu from "@/components/ui/StudioMenu";
+import StudioDate from "@/components/ui/StudioDate";
 import Label from "@/components/form/Label";
 import Input from "@/components/form/input/InputField";
-import Button from "@/components/ui/button/Button";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api-client";
 import { useStaffMember, useInvalidateStaff, type StaffRole, type StaffMember } from "@/hooks/useStaff";
@@ -16,38 +17,47 @@ import { useToast } from "@/components/ui/Toast";
 import { supabase } from "@/lib/supabase";
 import { useQueryClient } from "@tanstack/react-query";
 
-const roleConfig: Record<StaffRole, { label: string; color: string; bgColor: string; description: string }> = {
+const fieldClass =
+  "!h-12 !rounded-2xl !border-neutral-200 !bg-neutral-50 !shadow-none focus:!border-neutral-950 focus:!ring-neutral-950/10 dark:!border-white/10 dark:!bg-white/5";
+
+const roleConfig: Record<StaffRole, { label: string; pill: string; description: string }> = {
   super_admin: {
     label: "Super Admin",
-    color: "text-purple-700 dark:text-purple-400",
-    bgColor: "bg-purple-100 dark:bg-purple-900/30",
+    pill: "bg-neutral-950 text-[#E4F56C]",
     description: "Full system access, user management, system settings",
   },
   admin: {
     label: "Admin",
-    color: "text-blue-700 dark:text-blue-400",
-    bgColor: "bg-blue-100 dark:bg-blue-900/30",
+    pill: "bg-[#E4F56C] text-neutral-950",
     description: "Day-to-day operations, reports, user management",
   },
   staff: {
     label: "Staff",
-    color: "text-indigo-700 dark:text-indigo-400",
-    bgColor: "bg-indigo-100 dark:bg-indigo-900/30",
+    pill: "bg-neutral-100 text-neutral-950 dark:bg-white/10 dark:text-white",
     description: "General staff access, bookings, attendance",
   },
   receptionist: {
     label: "Reception",
-    color: "text-emerald-700 dark:text-emerald-400",
-    bgColor: "bg-emerald-100 dark:bg-emerald-900/30",
+    pill: "border border-neutral-200 bg-white text-neutral-950 dark:border-white/15 dark:bg-transparent dark:text-white",
     description: "Bookings, check-ins, customer service",
   },
   instructor: {
     label: "Instructor",
-    color: "text-amber-700 dark:text-amber-400",
-    bgColor: "bg-amber-100 dark:bg-amber-900/30",
+    pill: "bg-neutral-800 text-white",
     description: "Class management, attendance, student info",
   },
 };
+
+const roleOptions = (Object.keys(roleConfig) as StaffRole[]).map((role) => ({
+  value: role,
+  label: roleConfig[role].label,
+  hint: roleConfig[role].description,
+}));
+
+const bloodGroupOptions = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((group) => ({
+  value: group,
+  label: group,
+}));
 
 export default function StaffDetailPage() {
   const params = useParams();
@@ -455,30 +465,13 @@ export default function StaffDetailPage() {
       .slice(0, 2);
   };
 
-  const getRoleColor = (role: StaffRole) => {
-    switch (role) {
-      case "super_admin":
-        return "from-purple-500 to-purple-600";
-      case "admin":
-        return "from-blue-500 to-blue-600";
-      case "staff":
-        return "from-indigo-500 to-indigo-600";
-      case "receptionist":
-        return "from-emerald-500 to-emerald-600";
-      case "instructor":
-        return "from-amber-500 to-amber-600";
-      default:
-        return "from-gray-500 to-gray-600";
-    }
-  };
-
   const isSuperAdmin = currentUser?.role === "super_admin";
   const isAdmin = currentUser?.role === "admin" || isSuperAdmin;
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-500"></div>
+        <div className="h-12 w-12 animate-spin rounded-full border-t-2 border-b-2 border-neutral-950"></div>
         <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading staff details...</p>
       </div>
     );
@@ -494,7 +487,7 @@ export default function StaffDetailPage() {
           </p>
           <button
             onClick={() => router.push("/users/staff")}
-            className="mt-4 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+            className="mt-4 rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800"
           >
             Back to Staff Management
           </button>
@@ -509,231 +502,181 @@ export default function StaffDetailPage() {
 
   return (
     <div className="space-y-6">
-      <PageBreadCrumb pageTitle="Staff Details" />
-
-      {/* Error Messages */}
       {(queryError || mutationError) && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+        <div className="rounded-[22px] border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
           <p className="text-sm text-red-600 dark:text-red-400">
             {queryError instanceof Error ? queryError.message : mutationError || "An error occurred"}
           </p>
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <button
-          onClick={() => router.push("/users/staff")}
-          className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white w-fit"
-        >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to Staff Management
-        </button>
-        <div className="flex gap-2">
-          <button
-            onClick={handleRefresh}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-            title="Refresh data"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-          {isAdmin && (
-            <>
+      <div className="overflow-hidden rounded-[28px] border border-neutral-200/80 bg-white p-6 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex items-end gap-5">
+            {staff.avatarUrl ? (
+              <img src={staff.avatarUrl} alt={staff.name} className="h-24 w-24 shrink-0 rounded-full object-cover" />
+            ) : (
+              <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-2xl font-semibold text-[#E4F56C]">
+                {getInitials(staff.name)}
+              </div>
+            )}
+            <div className="min-w-0 pb-1">
               <button
-                onClick={() => setIsEditPanelOpen(true)}
-                className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
+                onClick={() => router.push("/users/staff")}
+                className="mb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400 hover:text-neutral-950 dark:hover:text-white"
               >
-                Edit Staff
+                ← Staff
               </button>
-              <button
-                onClick={() => setShowStatusPanel(true)}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-              >
-                {staff.isActive ? "Deactivate" : "Activate"}
-              </button>
-              {isSuperAdmin && (
-                <button
-                  onClick={() => setShowRolePanel(true)}
-                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                >
-                  Change Role
-                </button>
-              )}
-              <button
-                onClick={() => setShowPasswordPanel(true)}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-              >
-                Reset Password
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Staff Header Card */}
-      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-center gap-4">
-            <div className={`flex h-16 w-16 items-center justify-center rounded-full bg-linear-to-br ${getRoleColor(staff.role)} text-xl font-bold text-white`}>
-              {staff.avatarUrl ? (
-                <img src={staff.avatarUrl} alt={staff.name} className="h-full w-full rounded-full object-cover" />
-              ) : (
-                getInitials(staff.name)
-              )}
-            </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">{staff.name}</h1>
-                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${roleConfig[staff.role].bgColor} ${roleConfig[staff.role].color}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-semibold uppercase tracking-wide text-neutral-950 dark:text-white sm:text-3xl">
+                  {staff.name}
+                </h1>
+                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${roleConfig[staff.role].pill}`}>
                   {roleConfig[staff.role].label}
                 </span>
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                  staff.isActive 
-                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" 
-                    : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400"
+                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                  staff.isActive ? "bg-[#E4F56C] text-neutral-950" : "bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white/50"
                 }`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${staff.isActive ? "bg-emerald-500" : "bg-gray-400"}`} />
                   {staff.isActive ? "Active" : "Inactive"}
                 </span>
               </div>
-              <div className="mt-1 flex flex-col gap-1 text-sm text-gray-500 dark:text-gray-400 sm:flex-row sm:gap-4">
-                <span>{staff.email}</span>
-                {staff.phone && <span>{staff.phone}</span>}
-              </div>
+              <p className="mt-1 text-sm text-neutral-500 dark:text-white/50">
+                {staff.email}{staff.phone ? ` · ${staff.phone}` : ""}
+              </p>
             </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleRefresh}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-950 hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+            {isAdmin && (
+              <>
+                <button
+                  onClick={() => setIsEditPanelOpen(true)}
+                  className="rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800"
+                >
+                  Edit Staff
+                </button>
+                <button
+                  onClick={() => setShowStatusPanel(true)}
+                  className="rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
+                >
+                  {staff.isActive ? "Deactivate" : "Activate"}
+                </button>
+                {isSuperAdmin && (
+                  <button
+                    onClick={() => setShowRolePanel(true)}
+                    className="rounded-full bg-[#E4F56C] px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-[#d5e45c]"
+                  >
+                    Change Role
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowPasswordPanel(true)}
+                  className="rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
+                >
+                  Reset Password
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Staff Details */}
-      <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        <div className="p-6">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Staff Information</h2>
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-              <h3 className="mb-4 font-semibold text-gray-900 dark:text-white">Personal Information</h3>
-              <dl className="space-y-3">
-                <div className="flex justify-between">
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Full Name</dt>
-                  <dd className="text-sm font-medium text-gray-900 dark:text-white">{staff.name}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Email</dt>
-                  <dd className="text-sm font-medium text-gray-900 dark:text-white">{staff.email}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Phone</dt>
-                  <dd className="text-sm font-medium text-gray-900 dark:text-white">{staff.phone || "-"}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Date of Birth</dt>
-                  <dd className="text-sm font-medium text-gray-900 dark:text-white">
-                    {staff.dateOfBirth 
-                      ? new Date(staff.dateOfBirth).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
-                      : "-"}
-                  </dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Blood Group</dt>
-                  <dd className="text-sm font-medium text-gray-900 dark:text-white">{staff.bloodGroup || "-"}</dd>
-                </div>
-                <div className="flex justify-between items-center">
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Registration Form</dt>
-                  <dd className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                    {staff.physicalFormUrl ? (
-                      <>
-                        <a
-                          href={`${staff.physicalFormUrl}?cb=${Date.now()}&refresh=${forceRefreshKey}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
-                        >
-                          View Registration Form
-                        </a>
-                        <button
-                          onClick={() => setIsUploadPanelOpen(true)}
-                          className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                          title="Replace physical form"
-                        >
-                          <Upload className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={handleDeletePhysicalForm}
-                          disabled={isDeleting}
-                          className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                          title="Delete physical form"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-gray-500 dark:text-gray-400">-</span>
-                        <button
-                          onClick={() => setIsUploadPanelOpen(true)}
-                          className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                          title="Upload physical form"
-                        >
-                          <Upload className="h-4 w-4" />
-                        </button>
-                      </>
-                    )}
-                  </dd>
-                </div>
-              </dl>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-[28px] border border-neutral-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+          <h3 className="mb-4 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Personal</h3>
+          <dl className="grid gap-3 sm:grid-cols-2">
+            {[
+              ["Full Name", staff.name],
+              ["Email", staff.email],
+              ["Phone", staff.phone || "-"],
+              ["Blood Group", staff.bloodGroup || "-"],
+              ["Date of Birth", staff.dateOfBirth ? new Date(staff.dateOfBirth).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "-"],
+            ].map(([label, value]) => (
+              <div key={label} className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                <dt className="text-[11px] uppercase tracking-[0.14em] text-neutral-400">{label}</dt>
+                <dd className="text-sm font-medium text-neutral-950 dark:text-white">{value}</dd>
+              </div>
+            ))}
+            <div className="flex flex-col gap-2 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5 sm:col-span-2">
+              <dt className="text-[11px] uppercase tracking-[0.14em] text-neutral-400">Registration Form</dt>
+              <dd className="flex flex-wrap items-center gap-2">
+                {staff.physicalFormUrl ? (
+                  <a
+                    href={`${staff.physicalFormUrl}?cb=${Date.now()}&refresh=${forceRefreshKey}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full bg-neutral-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800"
+                  >
+                    View form
+                  </a>
+                ) : (
+                  <span className="text-sm text-neutral-400">None yet</span>
+                )}
+                <button
+                  onClick={() => setIsUploadPanelOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[#E4F56C] px-3 py-1.5 text-xs font-semibold text-neutral-950 hover:bg-[#d5e45c]"
+                  title={staff.physicalFormUrl ? "Replace physical form" : "Upload physical form"}
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  {staff.physicalFormUrl ? "Replace" : "Upload"}
+                </button>
+                {staff.physicalFormUrl && (
+                  <button
+                    onClick={handleDeletePhysicalForm}
+                    disabled={isDeleting}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                    title="Delete physical form"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
+                )}
+              </dd>
             </div>
+          </dl>
+        </div>
 
-            <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-              <h3 className="mb-4 font-semibold text-gray-900 dark:text-white">Staff Information</h3>
-              <dl className="space-y-3">
-                <div className="flex justify-between">
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Role</dt>
-                  <dd>
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${roleConfig[staff.role].bgColor} ${roleConfig[staff.role].color}`}>
-                      {roleConfig[staff.role].label}
-                    </span>
-                  </dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Status</dt>
-                  <dd>
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      staff.isActive 
-                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" 
-                        : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400"
-                    }`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${staff.isActive ? "bg-emerald-500" : "bg-gray-400"}`} />
-                      {staff.isActive ? "Active" : "Inactive"}
-                    </span>
-                  </dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Created At</dt>
-                  <dd className="text-sm font-medium text-gray-900 dark:text-white">
-                    {new Date(staff.createdAt).toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-sm text-gray-500 dark:text-gray-400">Last Updated</dt>
-                  <dd className="text-sm font-medium text-gray-900 dark:text-white">
-                    {staff.updatedAt ? new Date(staff.updatedAt).toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    }) : "N/A"}
-                  </dd>
-                </div>
-              </dl>
+        <div className="rounded-[28px] border border-neutral-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+          <h3 className="mb-4 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Access</h3>
+          <dl className="grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-2 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+              <dt className="text-[11px] uppercase tracking-[0.14em] text-neutral-400">Role</dt>
+              <dd>
+                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${roleConfig[staff.role].pill}`}>
+                  {roleConfig[staff.role].label}
+                </span>
+              </dd>
             </div>
-          </div>
+            <div className="flex flex-col gap-2 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+              <dt className="text-[11px] uppercase tracking-[0.14em] text-neutral-400">Status</dt>
+              <dd>
+                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                  staff.isActive ? "bg-[#E4F56C] text-neutral-950" : "bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white/50"
+                }`}>
+                  {staff.isActive ? "Active" : "Inactive"}
+                </span>
+              </dd>
+            </div>
+            <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+              <dt className="text-[11px] uppercase tracking-[0.14em] text-neutral-400">Created</dt>
+              <dd className="text-sm font-medium text-neutral-950 dark:text-white">
+                {new Date(staff.createdAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+              </dd>
+            </div>
+            <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+              <dt className="text-[11px] uppercase tracking-[0.14em] text-neutral-400">Updated</dt>
+              <dd className="text-sm font-medium text-neutral-950 dark:text-white">
+                {staff.updatedAt ? new Date(staff.updatedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "N/A"}
+              </dd>
+            </div>
+          </dl>
         </div>
       </div>
 
@@ -751,16 +694,16 @@ export default function StaffDetailPage() {
         >
           <div className="space-y-6">
             {mutationError && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+              <div className="rounded-[22px] border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
                 <p className="text-sm text-red-600 dark:text-red-400">{mutationError}</p>
               </div>
             )}
 
-            <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-              <p className="text-sm font-medium text-gray-900 dark:text-white">{staff.name}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{staff.email}</p>
-              <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">
-                Current Role: <span className="font-medium">{roleConfig[staff.role].label}</span>
+            <div className="rounded-[22px] bg-neutral-950 p-4 text-white">
+              <p className="font-semibold uppercase tracking-wide">{staff.name}</p>
+              <p className="mt-1 text-sm text-white/60">{staff.email}</p>
+              <p className="mt-3 text-[11px] uppercase tracking-[0.14em] text-white/45">
+                Current role <span className="ml-2 text-[#E4F56C]">{roleConfig[staff.role].label}</span>
               </p>
             </div>
 
@@ -768,42 +711,35 @@ export default function StaffDetailPage() {
               <Label htmlFor="role">
                 New Role <span className="text-error-500">*</span>
               </Label>
-              <select
+              <StudioMenu
                 id="role"
                 value={newRole}
-                onChange={(e) => setNewRole(e.target.value as StaffRole)}
-                className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-              >
-                <option value="receptionist">Reception</option>
-                <option value="instructor">Instructor</option>
-                <option value="staff">Staff</option>
-                <option value="admin">Admin</option>
-                <option value="super_admin">Super Admin</option>
-              </select>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {roleConfig[newRole].description}
-              </p>
+                onChange={(role) => setNewRole(role as StaffRole)}
+                placeholder="Select a role"
+                options={roleOptions}
+              />
             </div>
 
-            <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <Button
+            <div className="flex gap-3 pt-4">
+              <button
+                type="button"
                 onClick={() => {
                   setShowRolePanel(false);
                   setMutationError(null);
                   setNewRole(staff.role);
                 }}
-                className="flex-1"
-                variant="outline"
+                className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
               >
                 Cancel
-              </Button>
-              <Button
+              </button>
+              <button
+                type="button"
                 onClick={handleUpdateRole}
-                className="flex-1"
                 disabled={updateRoleMutation.isPending || newRole === staff.role}
+                className="flex-1 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {updateRoleMutation.isPending ? "Updating..." : "Update Role"}
-              </Button>
+              </button>
             </div>
           </div>
         </SlidePanel>
@@ -823,48 +759,51 @@ export default function StaffDetailPage() {
         >
           <div className="space-y-6">
             {mutationError && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+              <div className="rounded-[22px] border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
                 <p className="text-sm text-red-600 dark:text-red-400">{mutationError}</p>
               </div>
             )}
 
-            <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-              <p className="text-sm font-medium text-gray-900 dark:text-white">{staff.name}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{staff.email}</p>
+            <div className="rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+              <p className="font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{staff.name}</p>
+              <p className="mt-1 text-sm text-neutral-500 dark:text-white/50">{staff.email}</p>
             </div>
 
-            <div className="flex items-center gap-3 p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-              <input
-                type="checkbox"
-                id="isActive"
-                checked={newStatus}
-                onChange={(e) => setNewStatus(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              <label htmlFor="isActive" className="text-sm text-gray-700 dark:text-gray-300">
+            <button
+              type="button"
+              onClick={() => setNewStatus(!newStatus)}
+              className={`flex w-full items-center justify-between rounded-[22px] px-4 py-4 text-left ${
+                newStatus ? "bg-[#E4F56C] text-neutral-950" : "bg-neutral-100 text-neutral-600 dark:bg-white/10 dark:text-white/70"
+              }`}
+            >
+              <span className="text-sm font-semibold">
                 {newStatus ? "Staff member is active" : "Staff member is inactive"}
-              </label>
-            </div>
+              </span>
+              <span className={`flex h-7 w-12 items-center rounded-full p-1 ${newStatus ? "bg-neutral-950" : "bg-neutral-300"}`}>
+                <span className={`h-5 w-5 rounded-full bg-white transition ${newStatus ? "translate-x-5" : ""}`} />
+              </span>
+            </button>
 
-            <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <Button
+            <div className="flex gap-3 pt-4">
+              <button
+                type="button"
                 onClick={() => {
                   setShowStatusPanel(false);
                   setMutationError(null);
                   setNewStatus(staff.isActive);
                 }}
-                className="flex-1"
-                variant="outline"
+                className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
               >
                 Cancel
-              </Button>
-              <Button
+              </button>
+              <button
+                type="button"
                 onClick={handleUpdateStatus}
-                className="flex-1"
                 disabled={updateStatusMutation.isPending || newStatus === staff.isActive}
+                className="flex-1 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {updateStatusMutation.isPending ? "Updating..." : newStatus ? "Activate" : "Deactivate"}
-              </Button>
+              </button>
             </div>
           </div>
         </SlidePanel>
@@ -884,14 +823,14 @@ export default function StaffDetailPage() {
         >
           <div className="space-y-6">
             {mutationError && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+              <div className="rounded-[22px] border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
                 <p className="text-sm text-red-600 dark:text-red-400">{mutationError}</p>
               </div>
             )}
 
-            <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-              <p className="text-sm font-medium text-gray-900 dark:text-white">{staff.name}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{staff.email}</p>
+            <div className="rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+              <p className="font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{staff.name}</p>
+              <p className="mt-1 text-sm text-neutral-500 dark:text-white/50">{staff.email}</p>
             </div>
 
             <div>
@@ -899,36 +838,38 @@ export default function StaffDetailPage() {
                 New Password <span className="text-error-500">*</span>
               </Label>
               <Input
+                className={fieldClass}
                 id="password"
                 type="password"
                 placeholder="Enter new password (min 8 characters)"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              <p className="mt-1.5 text-xs text-neutral-500 dark:text-white/45">
                 Minimum 8 characters. The staff member will need to use this password to sign in.
               </p>
             </div>
 
-            <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <Button
+            <div className="flex gap-3 pt-4">
+              <button
+                type="button"
                 onClick={() => {
                   setShowPasswordPanel(false);
                   setMutationError(null);
                   setNewPassword("");
                 }}
-                className="flex-1"
-                variant="outline"
+                className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
               >
                 Cancel
-              </Button>
-              <Button
+              </button>
+              <button
+                type="button"
                 onClick={handleResetPassword}
-                className="flex-1"
                 disabled={resetPasswordMutation.isPending || !newPassword || newPassword.length < 8}
+                className="flex-1 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {resetPasswordMutation.isPending ? "Resetting..." : "Reset Password"}
-              </Button>
+              </button>
             </div>
           </div>
         </SlidePanel>
@@ -944,13 +885,13 @@ export default function StaffDetailPage() {
         title="Upload Physical Form"
       >
         <div className="space-y-6">
-          <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-lg font-semibold text-white">
+          <div className="flex items-center gap-4 rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-sm font-semibold text-[#E4F56C]">
               {staff?.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
             </div>
             <div>
-              <div className="font-medium text-gray-900 dark:text-white">{staff?.name}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">{staff?.email}</div>
+              <div className="font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{staff?.name}</div>
+              <div className="text-sm text-neutral-500 dark:text-white/50">{staff?.email}</div>
             </div>
           </div>
 
@@ -961,32 +902,26 @@ export default function StaffDetailPage() {
               type="file"
               accept=".pdf,.jpg,.jpeg,.png,.webp"
               onChange={handlePhysicalFormFileChange}
-              className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 file:mr-4 file:rounded-lg file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-brand-600 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:file:bg-brand-600 dark:file:hover:bg-brand-700"
+              className="mt-1.5 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm text-neutral-950 file:mr-4 file:rounded-full file:border-0 file:bg-neutral-950 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#E4F56C] focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
             />
-            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+            <p className="mt-1.5 text-xs text-neutral-500 dark:text-white/45">
               Accepted formats: PDF, JPEG, PNG, WebP. Maximum file size: 10MB.
             </p>
             {physicalFormFile && (
-              <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                      {physicalFormFile.name}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {(physicalFormFile.size / 1024 / 1024).toFixed(2)} MB
-                    </p>
-                  </div>
-                </div>
+              <div className="mt-2 rounded-[22px] border border-neutral-200/80 bg-white p-3 dark:border-white/10 dark:bg-white/5">
+                <p className="truncate text-sm font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">
+                  {physicalFormFile.name}
+                </p>
+                <p className="text-xs text-neutral-500">
+                  {(physicalFormFile.size / 1024 / 1024).toFixed(2)} MB
+                </p>
               </div>
             )}
           </div>
 
           {staff?.physicalFormUrl && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
-              <p className="text-sm text-amber-800 dark:text-amber-200">
-                <strong>Note:</strong> Uploading a new file will replace the existing physical form.
-              </p>
+            <div className="rounded-[22px] bg-[#E4F56C]/40 p-4 text-sm text-neutral-950">
+              Uploading a new file will replace the existing physical form.
             </div>
           )}
 
@@ -996,16 +931,16 @@ export default function StaffDetailPage() {
                 setIsUploadPanelOpen(false);
                 setPhysicalFormFile(null);
               }}
-              className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
             >
               Cancel
             </button>
             <button
               onClick={handleUploadPhysicalForm}
               disabled={!physicalFormFile || isUploading}
-              className="flex-1 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex-1 rounded-full bg-[#E4F56C] px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-[#d5e45c] disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {isUploading ? 'Uploading...' : 'Upload Form'}
+              {isUploading ? "Uploading..." : "Upload Form"}
             </button>
           </div>
         </div>
@@ -1030,13 +965,13 @@ export default function StaffDetailPage() {
         title="Edit Staff"
       >
         <div className="space-y-6">
-          <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-600 text-lg font-semibold text-white">
+          <div className="flex items-center gap-4 rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-950 text-sm font-semibold text-[#E4F56C]">
               {staff?.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
             </div>
             <div>
-              <div className="font-medium text-gray-900 dark:text-white">{staff?.name}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">{staff?.email}</div>
+              <div className="font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{staff?.name}</div>
+              <div className="text-sm text-neutral-500 dark:text-white/50">{staff?.email}</div>
             </div>
           </div>
 
@@ -1045,6 +980,7 @@ export default function StaffDetailPage() {
               Full Name <span className="text-error-500">*</span>
             </Label>
             <Input
+              className={fieldClass}
               id="editName"
               type="text"
               value={editForm.name}
@@ -1057,6 +993,7 @@ export default function StaffDetailPage() {
               Email Address <span className="text-error-500">*</span>
             </Label>
             <Input
+              className={fieldClass}
               id="editEmail"
               type="email"
               value={editForm.email}
@@ -1067,6 +1004,7 @@ export default function StaffDetailPage() {
           <div>
             <Label htmlFor="editPhone">Phone Number</Label>
             <Input
+              className={fieldClass}
               id="editPhone"
               type="tel"
               value={editForm.phone}
@@ -1076,32 +1014,26 @@ export default function StaffDetailPage() {
 
           <div>
             <Label htmlFor="editDateOfBirth">Date of Birth</Label>
-            <Input
+            <StudioDate
               id="editDateOfBirth"
-              type="date"
+              block
+              clearable
+              ariaLabel="Date of birth"
+              placeholder="Date of birth"
               value={editForm.dateOfBirth}
-              onChange={(e) => setEditForm({ ...editForm, dateOfBirth: e.target.value })}
+              onChange={(value) => setEditForm({ ...editForm, dateOfBirth: value })}
             />
           </div>
 
           <div>
             <Label htmlFor="editBloodGroup">Blood Group</Label>
-            <select
+            <StudioMenu
               id="editBloodGroup"
               value={editForm.bloodGroup}
-              onChange={(e) => setEditForm({ ...editForm, bloodGroup: e.target.value })}
-              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-            >
-              <option value="">Select blood group</option>
-              <option value="A+">A+</option>
-              <option value="A-">A-</option>
-              <option value="B+">B+</option>
-              <option value="B-">B-</option>
-              <option value="AB+">AB+</option>
-              <option value="AB-">AB-</option>
-              <option value="O+">O+</option>
-              <option value="O-">O-</option>
-            </select>
+              onChange={(bloodGroup) => setEditForm({ ...editForm, bloodGroup })}
+              placeholder="Select blood group"
+              options={bloodGroupOptions}
+            />
           </div>
 
           <div className="flex gap-3 pt-4">
@@ -1118,16 +1050,16 @@ export default function StaffDetailPage() {
                   });
                 }
               }}
-              className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
             >
               Cancel
             </button>
             <button
               onClick={handleUpdateStaff}
               disabled={!editForm.name || !editForm.email || isUpdating}
-              className="flex-1 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex-1 rounded-full bg-[#E4F56C] px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-[#d5e45c] disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {isUpdating ? 'Updating...' : 'Update Staff'}
+              {isUpdating ? "Updating..." : "Update Staff"}
             </button>
           </div>
         </div>

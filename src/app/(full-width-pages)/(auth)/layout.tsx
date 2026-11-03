@@ -1,9 +1,6 @@
-import GridShape from "@/components/common/GridShape";
 import ThemeTogglerTwo from "@/components/common/ThemeTogglerTwo";
-
 import { ThemeProvider } from "@/context/ThemeContext";
-import BrandLogo from "@/components/common/BrandLogo";
-import Link from "next/link";
+import Image from "next/image";
 import React from "react";
 
 export default function AuthLayout({
@@ -12,26 +9,24 @@ export default function AuthLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="relative p-6 bg-white z-1 dark:bg-gray-900 sm:p-0">
+    <div className="relative z-1 bg-neutral-50 dark:bg-[#0e0e0e]">
       <ThemeProvider>
-        <div className="relative flex lg:flex-row w-full h-screen justify-center flex-col  dark:bg-gray-900 sm:p-0">
+        <div className="relative flex h-screen w-full flex-col justify-center dark:bg-[#0e0e0e] lg:flex-row">
           {children}
-          <div className="lg:w-1/2 w-full h-full bg-brand-950 dark:bg-white/5 lg:grid items-center hidden">
-            <div className="relative items-center justify-center  flex z-1">
-              {/* <!-- ===== Common Grid Shape Start ===== --> */}
-              <GridShape />
-              <div className="flex flex-col items-center max-w-sm">
-                <Link href="/" className="flex items-center gap-3 mb-4">
-                  <BrandLogo
-                    alt="One Step Fitness Logo"
-                    width={320}
-                    height={107}
-                    className="h-36 w-auto"
-                    priority
-                  />
-                </Link>
-                <p className="text-center text-gray-400 dark:text-white/60">
-                  Dance Fitness Studio Management Platform
+          <div className="hidden h-full items-center bg-[#171717] lg:grid lg:w-1/2">
+            <div className="relative z-1 flex items-center justify-center px-10">
+              <div className="flex max-w-sm flex-col items-center">
+                <Image
+                  src="/images/logo/One step fitness logo.png"
+                  alt="One Step Fitness"
+                  width={320}
+                  height={107}
+                  className="h-28 w-auto"
+                  priority
+                />
+                <p className="mt-6 text-xs font-semibold uppercase tracking-[0.22em] text-[#E4F56C]">Studio admin</p>
+                <p className="mt-3 text-center text-sm leading-6 text-white/60">
+                  Classes, members, bookings, and the front desk. One place for the studio.
                 </p>
               </div>
             </div>

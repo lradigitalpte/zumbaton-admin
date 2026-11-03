@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
+import { useEffect, useState, useMemo } from "react";
+import StudioDate from "@/components/ui/StudioDate";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -11,8 +10,11 @@ import {
   useBulkCheckIn,
   useMarkNoShow,
   type ClassSession,
-  type Attendee,
 } from "@/hooks/useAttendance";
+
+const card = "rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800";
+const pillOff = "rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white";
+const field = "h-12 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm text-neutral-950 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white";
 
 function todayYMD(): string {
   const d = new Date();
@@ -24,7 +26,6 @@ function todayYMD(): string {
 
 export default function AttendancePage() {
   const { user } = useAuth();
-  const router = useRouter();
   const { showToast } = useToast();
   const [selectedDate, setSelectedDate] = useState<string>(() => todayYMD());
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
@@ -62,12 +63,16 @@ export default function AttendancePage() {
     noShows: 0,
   };
 
-  // Auto-select first session when data loads
-  useMemo(() => {
-    if (sessions.length > 0 && !selectedSession) {
-      setSelectedSession(sessions[0]);
+  useEffect(() => {
+    if (sessions.length === 0) {
+      setSelectedSession(null);
+      return;
     }
-  }, [sessions, selectedSession]);
+    setSelectedSession((current) => {
+      if (!current) return sessions[0];
+      return sessions.find((session) => session.id === current.id) ?? sessions[0];
+    });
+  }, [sessions]);
 
   const currentTime = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Singapore" });
   const viewingDateFormatted = new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Singapore" });
@@ -162,664 +167,255 @@ export default function AttendancePage() {
     return name.split(" ").map((n) => n[0]).join("").toUpperCase();
   };
 
-  // Loading state
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <PageBreadCrumb pageTitle="Attendance Check-In" />
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500"></div>
-        </div>
+      <div className="flex items-center justify-center py-24">
+        <div className="h-12 w-12 animate-spin rounded-full border-2 border-neutral-200 border-t-neutral-950" />
       </div>
     );
   }
 
-  // Error state
   if (error) {
     return (
-      <div className="space-y-6">
-        <PageBreadCrumb pageTitle="Attendance Check-In" />
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="text-red-500 mb-4">
-            <svg className="h-16 w-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Failed to load attendance data</h3>
-          <p className="text-gray-500 dark:text-gray-400 mb-4">{error.message}</p>
-          <button
-            onClick={() => refetch()}
-            className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600"
-          >
-            Try Again
-          </button>
-        </div>
+      <div className={`${card} flex flex-col items-center justify-center px-6 py-20 text-center`}>
+        <h3 className="text-lg font-semibold text-neutral-950 dark:text-white">Could not load attendance</h3>
+        <p className="mt-2 text-sm text-neutral-500">{error.message}</p>
+        <button onClick={() => refetch()} className="mt-5 rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white">
+          Try again
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <PageBreadCrumb pageTitle="Attendance Check-In" />
-
-      {/* Header with Date/Time and Quick Actions */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="min-w-0 space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-brand-500 to-brand-600 text-white">
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Check-In Station</h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {isViewingToday ? viewingDateFormatted + " • " + currentTime : viewingDateFormatted}
-                {isViewingPast && (
-                  <span className="ml-2 inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                    Past day (read-only)
-                  </span>
-                )}
-              </p>
-            </div>
-            {/* Date picker: roll back to past days or today */}
-            <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
-              <label htmlFor="attendance-date" className="text-xs font-medium text-gray-500 dark:text-gray-400">View date</label>
-              <input
-                id="attendance-date"
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-              />
-              {!isViewingToday && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedDate(todayYMD())}
-                  className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600"
-                >
-                  Today
-                </button>
-              )}
-            </div>
-          </div>
+          <h1 className="text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white">Check-In</h1>
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-neutral-500">
+            <span>{isViewingToday ? `${viewingDateFormatted} · ${currentTime}` : viewingDateFormatted}</span>
+            {isViewingPast && <span className="rounded-full bg-neutral-950 px-2.5 py-1 text-[11px] font-semibold text-[#E4F56C]">Past day · read only</span>}
+          </p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Quick Check-In Toggle – only for today */}
+        <div className="flex flex-wrap items-center gap-2">
+          <StudioDate id="attendance-date" ariaLabel="View date" value={selectedDate} onChange={setSelectedDate} />
+          {!isViewingToday && (
+            <button type="button" onClick={() => setSelectedDate(todayYMD())} className="rounded-full bg-[#E4F56C] px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-[#d5e45c]">
+              Today
+            </button>
+          )}
           <button
             onClick={() => isViewingToday && setShowQuickCheckIn(!showQuickCheckIn)}
             disabled={!isViewingToday}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-              showQuickCheckIn
-                ? "bg-brand-500 text-white"
-                : "bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-600 dark:hover:bg-gray-700"
-            }`}
+            className={showQuickCheckIn ? "rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-[#E4F56C] disabled:opacity-50" : pillOff}
           >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
             Quick Check-In
           </button>
-
-          {/* Refresh Button */}
-          <button 
-            onClick={() => refetch()}
-            className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-600 dark:hover:bg-gray-700"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Refresh
-          </button>
+          <button onClick={() => refetch()} className={pillOff}>Refresh</button>
         </div>
       </div>
 
-      {/* Quick Check-In Bar */}
       {showQuickCheckIn && (
-        <div className="overflow-hidden rounded-2xl bg-linear-to-r from-brand-500 to-brand-600 p-6 shadow-lg">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="flex-1">
-              <label className="mb-2 block text-sm font-medium text-white/90">
-                Enter Booking ID or Email
-              </label>
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  value={quickCheckInId}
-                  onChange={(e) => setQuickCheckInId(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleQuickCheckIn()}
-                  placeholder="e.g., B001 or email@example.com"
-                  className="flex-1 rounded-xl border-0 bg-white/20 px-4 py-3 text-white placeholder-white/60 backdrop-blur focus:outline-none focus:ring-2 focus:ring-white/50"
-                  autoFocus
-                />
-                <button
-                  onClick={handleQuickCheckIn}
-                  className="rounded-xl bg-white px-6 py-3 font-semibold text-brand-600 transition-all hover:bg-white/90"
-                >
-                  Check In
-                </button>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowQuickCheckIn(false)}
-              className="self-start rounded-lg p-2 text-white/80 hover:bg-white/10 hover:text-white sm:self-center"
-            >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+        <div className="rounded-[28px] bg-neutral-950 p-5 text-white">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="min-w-0 flex-1">
+              <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#E4F56C]">Booking ID or email</span>
+              <input
+                type="text"
+                value={quickCheckInId}
+                onChange={(e) => setQuickCheckInId(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleQuickCheckIn()}
+                placeholder="Paste a booking ID or type an email"
+                className="mt-1.5 h-12 w-full rounded-2xl border border-white/10 bg-white/10 px-4 text-sm text-white placeholder:text-white/40 focus:border-[#E4F56C] focus:outline-none"
+                autoFocus
+              />
+            </label>
+            <button onClick={handleQuickCheckIn} className="h-12 rounded-full bg-[#E4F56C] px-6 text-sm font-semibold text-neutral-950">Check in</button>
+            <button onClick={() => setShowQuickCheckIn(false)} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-lg" aria-label="Close quick check-in">×</button>
           </div>
         </div>
       )}
 
-      {/* Overview Stats */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 dark:bg-gray-800">
-              <svg className="h-5 w-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">{todayStats.totalClasses}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">{isViewingToday ? "Classes Today" : "Classes"}</div>
-            </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        {[
+          { label: isViewingToday ? "Classes today" : "Classes", value: todayStats.totalClasses, tone: "bg-white text-neutral-950 dark:bg-gray-800 dark:text-white" },
+          { label: "Bookings", value: todayStats.totalBookings, tone: "bg-neutral-950 text-white" },
+          { label: "Checked in", value: todayStats.checkedIn, tone: "bg-[#E4F56C] text-neutral-950" },
+          { label: "Pending", value: todayStats.pending, tone: "bg-white text-neutral-950 dark:bg-gray-800 dark:text-white" },
+          { label: "No shows", value: todayStats.noShows, tone: "bg-white text-neutral-950 dark:bg-gray-800 dark:text-white" },
+        ].map((stat) => (
+          <div key={stat.label} className={`rounded-[28px] border border-neutral-200/80 p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 ${stat.tone}`}>
+            <p className="text-3xl font-semibold tracking-tight">{stat.value}</p>
+            <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.14em] opacity-60">{stat.label}</p>
           </div>
-        </div>
-
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-500/20">
-              <svg className="h-5 w-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">{todayStats.totalBookings}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Total Bookings</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-500/20">
-              <svg className="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{todayStats.checkedIn}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Checked In</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-500/20">
-              <svg className="h-5 w-5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{todayStats.pending}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Pending</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 dark:bg-red-500/20">
-              <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-red-600 dark:text-red-400">{todayStats.noShows}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">No Shows</div>
-            </div>
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Class Selection Cards */}
       <div>
-        <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
-          {isViewingToday ? "Today's Classes" : `Classes on ${viewingDateFormatted}`}
+        <h2 className="mb-4 text-lg font-semibold text-neutral-950 dark:text-white">
+          {isViewingToday ? "Today's classes" : `Classes on ${viewingDateFormatted}`}
         </h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {sessions.length === 0 ? (
+          <div className={`${card} p-12 text-center text-sm text-neutral-500`}>No classes on this day.</div>
+        ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {sessions.map((session) => {
             const stats = getSessionStats(session);
             const isSelected = selectedSession?.id === session.id;
             const isPast = parseInt(session.endTime.replace(":", "")) < parseInt(new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }).replace(":", ""));
-            const isActive = !isPast && parseInt(session.time.replace(":", "")) <= parseInt(new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }).replace(":", ""));
-            
+            const isActive = isViewingToday && !isPast && parseInt(session.time.replace(":", "")) <= parseInt(new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }).replace(":", ""));
+            const fill = session.capacity > 0 ? Math.min(100, Math.round((stats.total / session.capacity) * 100)) : 0;
+
             return (
               <button
                 key={session.id}
                 onClick={() => setSelectedSession(session)}
-                className={`group relative overflow-hidden rounded-2xl p-5 text-left transition-all ${
+                className={`relative rounded-[28px] border p-5 text-left ${
                   isSelected
-                    ? "bg-brand-500 text-white shadow-lg shadow-brand-500/25"
-                    : "bg-white shadow-sm ring-1 ring-gray-200 hover:shadow-md hover:ring-gray-300 dark:bg-gray-900 dark:ring-gray-800 dark:hover:ring-gray-700"
+                    ? "border-neutral-950 bg-neutral-950 text-white"
+                    : "border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800"
                 }`}
               >
-                {/* Active Indicator */}
-                {isActive && !isSelected && (
-                  <div className="absolute right-3 top-3">
-                    <span className="relative flex h-3 w-3">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-500"></span>
-                    </span>
-                  </div>
-                )}
-                
-                {/* Time Badge */}
-                <div className={`mb-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold ${
-                  isSelected
-                    ? "bg-white/20 text-white"
-                    : isPast
-                    ? "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-                    : "bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-400"
-                }`}>
-                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  {session.time} - {session.endTime}
-                </div>
-
-                {/* Class Name */}
-                <h3 className={`text-lg font-bold ${isSelected ? "text-white" : "text-gray-900 dark:text-white"}`}>
+                {isActive && <span className="absolute right-5 top-5 h-2.5 w-2.5 rounded-full bg-[#E4F56C]" />}
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${isSelected ? "bg-[#E4F56C] text-neutral-950" : isPast ? "bg-neutral-100 text-neutral-400" : "bg-neutral-100 text-neutral-700 dark:bg-white/10 dark:text-white"}`}>
+                  {session.time} – {session.endTime}
+                </span>
+                <h3 className={`mt-3 text-lg font-semibold uppercase tracking-wide ${isSelected ? "text-white" : "text-neutral-950 dark:text-white"}`}>
                   {session.className}
                 </h3>
-
-                {/* Instructor & Room */}
-                <div className={`mt-1 flex items-center gap-2 text-sm ${isSelected ? "text-white/80" : "text-gray-500 dark:text-gray-400"}`}>
-                  <span>{session.instructor}</span>
-                  <span>•</span>
-                  <span>{session.room}</span>
-                </div>
-
-                {/* Stats */}
-                <div className="mt-4 flex items-center gap-2">
-                  <div className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-                    isSelected ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400"
-                  }`}>
-                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    {stats.checkedIn}
+                <p className={`mt-1 text-sm ${isSelected ? "text-white/60" : "text-neutral-500"}`}>
+                  {session.instructor} · {session.room}
+                </p>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <div>
+                    <p className={`text-lg font-semibold ${isSelected ? "text-[#E4F56C]" : "text-neutral-950 dark:text-white"}`}>{stats.checkedIn}</p>
+                    <p className={`text-[10px] font-medium uppercase tracking-[0.14em] ${isSelected ? "text-white/45" : "text-neutral-400"}`}>In</p>
                   </div>
-                  <div className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-                    isSelected ? "bg-white/20 text-white" : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400"
-                  }`}>
-                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    {stats.pending}
+                  <div>
+                    <p className={`text-lg font-semibold ${isSelected ? "text-white" : "text-neutral-950 dark:text-white"}`}>{stats.pending}</p>
+                    <p className={`text-[10px] font-medium uppercase tracking-[0.14em] ${isSelected ? "text-white/45" : "text-neutral-400"}`}>Waiting</p>
                   </div>
-                  {stats.noShows > 0 && (
-                    <div className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-                      isSelected ? "bg-white/20 text-white" : "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400"
-                    }`}>
-                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                      {stats.noShows}
-                    </div>
-                  )}
+                  <div>
+                    <p className={`text-lg font-semibold ${isSelected ? "text-white" : "text-neutral-950 dark:text-white"}`}>{stats.noShows}</p>
+                    <p className={`text-[10px] font-medium uppercase tracking-[0.14em] ${isSelected ? "text-white/45" : "text-neutral-400"}`}>No show</p>
+                  </div>
                 </div>
-
-                {/* Capacity Bar */}
                 <div className="mt-4">
-                  <div className={`mb-1 flex justify-between text-xs ${isSelected ? "text-white/80" : "text-gray-500 dark:text-gray-400"}`}>
-                    <span>Capacity</span>
+                  <div className={`mb-1 flex justify-between text-[11px] ${isSelected ? "text-white/50" : "text-neutral-400"}`}>
+                    <span>Booked</span>
                     <span>{stats.total}/{session.capacity}</span>
                   </div>
-                  <div className={`h-1.5 overflow-hidden rounded-full ${isSelected ? "bg-white/20" : "bg-gray-200 dark:bg-gray-700"}`}>
-                    <div
-                      className={`h-full rounded-full transition-all ${isSelected ? "bg-white" : "bg-brand-500"}`}
-                      style={{ width: `${(stats.total / session.capacity) * 100}%` }}
-                    />
+                  <div className={`h-1.5 overflow-hidden rounded-full ${isSelected ? "bg-white/10" : "bg-neutral-100 dark:bg-white/10"}`}>
+                    <div className={`h-full rounded-full ${isSelected ? "bg-[#E4F56C]" : "bg-neutral-950 dark:bg-[#E4F56C]"}`} style={{ width: `${fill}%` }} />
                   </div>
                 </div>
-
               </button>
             );
           })}
         </div>
+        )}
       </div>
 
-      {/* Attendee List */}
       {selectedSession && (
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-800">
-          {/* Header */}
-          <div className="border-b border-gray-200 px-6 py-5 dark:border-gray-800">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-100 dark:bg-brand-500/20">
-                  <svg className="h-6 w-6 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                    {selectedSession.className}
-                  </h2>
-                  <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-                    <span>{selectedSession.time} - {selectedSession.endTime}</span>
-                    <span>•</span>
-                    <span>{selectedSession.instructor}</span>
-                    <span>•</span>
-                    <span>{selectedSession.room}</span>
-                  </div>
-                </div>
-              </div>
+        <div className={`${card} p-5`}>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{selectedSession.className}</h2>
+              <p className="mt-1 text-sm text-neutral-500">{selectedSession.time} – {selectedSession.endTime} · {selectedSession.instructor} · {selectedSession.room}</p>
+            </div>
+            {isViewingToday && selectedSession.attendees.some((a) => a.status === "pending") && (
+              <button
+                onClick={handleBulkCheckIn}
+                disabled={bulkCheckIn.isPending}
+                className="rounded-full bg-[#E4F56C] px-4 py-2.5 text-sm font-semibold text-neutral-950 disabled:opacity-50"
+              >
+                {bulkCheckIn.isPending ? "Checking in…" : `Check in all (${selectedSession.attendees.filter((a) => a.status === "pending").length})`}
+              </button>
+            )}
+          </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-
-                {/* Bulk Check-In – only when viewing today */}
-                {isViewingToday && selectedSession.attendees.some((a) => a.status === "pending") && (
+          <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {(["all", "pending", "checked-in", "no-show"] as const).map((status) => {
+                const count = status === "all"
+                  ? selectedSession.attendees.length
+                  : selectedSession.attendees.filter((a) => a.status === status).length;
+                const label = status === "all" ? "All" : status === "checked-in" ? "Checked in" : status === "no-show" ? "No show" : "Pending";
+                return (
                   <button
-                    onClick={handleBulkCheckIn}
-                    disabled={bulkCheckIn.isPending}
-                    className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
+                    key={status}
+                    onClick={() => setStatusFilter(status)}
+                    className={`rounded-full px-3.5 py-2 text-xs font-semibold ${statusFilter === status ? "bg-neutral-950 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-white/10 dark:text-white"}`}
                   >
-                    {bulkCheckIn.isPending ? (
-                      <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                    ) : (
-                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    )}
-                    Check In All ({selectedSession.attendees.filter((a) => a.status === "pending").length})
+                    {label} {count}
                   </button>
-                )}
-              </div>
+                );
+              })}
             </div>
+            <input
+              type="text"
+              placeholder="Search name, email, or booking ID"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={`${field} w-full lg:w-80`}
+            />
           </div>
 
-          {/* Filters */}
-          <div className="border-b border-gray-200 px-6 py-4 dark:border-gray-800">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              {/* Status Tabs */}
-              <div className="flex items-center gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
-                {(["all", "pending", "checked-in", "no-show"] as const).map((status) => {
-                  const count = status === "all" 
-                    ? selectedSession.attendees.length 
-                    : selectedSession.attendees.filter((a) => a.status === status).length;
-                  return (
-                    <button
-                      key={status}
-                      onClick={() => setStatusFilter(status)}
-                      className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                        statusFilter === status
-                          ? "bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white"
-                          : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-                      }`}
-                    >
-                      {status === "all" ? "All" : status === "checked-in" ? "Checked In" : status === "no-show" ? "No Show" : "Pending"}
-                      <span className={`rounded-full px-1.5 py-0.5 text-xs ${
-                        statusFilter === status
-                          ? "bg-gray-100 text-gray-600 dark:bg-gray-600 dark:text-gray-300"
-                          : "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
-                      }`}>
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })}
+          <div className="mt-4 space-y-3">
+            {filteredAttendees.map((attendee) => (
+              <article key={attendee.id} className="rounded-[22px] bg-neutral-50 p-4 dark:bg-white/5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    {attendee.avatarUrl ? (
+                      <img src={attendee.avatarUrl} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-xs font-semibold text-[#E4F56C]">
+                        {getInitials(attendee.name).slice(0, 3)}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{attendee.name}</p>
+                      <p className="truncate text-sm text-neutral-500">{attendee.email}</p>
+                      <p className="truncate font-mono text-[11px] text-neutral-400">{attendee.bookingId}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 lg:w-[360px]">
+                    <div className="rounded-2xl bg-white px-3 py-2 dark:bg-gray-800">
+                      <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-neutral-400">Tokens</p>
+                      <p className="mt-1 text-lg font-semibold text-neutral-950 dark:text-white">{attendee.tokenBalance}<span className="text-xs font-medium text-neutral-400"> left</span></p>
+                    </div>
+                    <div className={`rounded-2xl px-3 py-2 ${attendee.status === "checked-in" ? "bg-[#E4F56C] text-neutral-950" : attendee.status === "no-show" ? "bg-neutral-200 text-neutral-600" : "bg-neutral-950 text-[#E4F56C]"}`}>
+                      <p className="text-[10px] font-medium uppercase tracking-[0.14em] opacity-60">Status</p>
+                      <p className="mt-1 text-sm font-semibold">{attendee.status === "checked-in" ? "In" : attendee.status === "no-show" ? "No show" : "Waiting"}</p>
+                    </div>
+                    <div className="rounded-2xl bg-white px-3 py-2 dark:bg-gray-800">
+                      <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-neutral-400">Time</p>
+                      <p className="mt-1 text-sm font-semibold text-neutral-950 dark:text-white">{attendee.checkedInAt || "—"}</p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    {attendee.status === "pending" && !isViewingPast && (
+                      <>
+                        <button onClick={() => handleCheckIn(attendee.bookingId)} disabled={checkIn.isPending} className="rounded-full bg-[#E4F56C] px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">Check in</button>
+                        <button onClick={() => handleMarkNoShow(attendee.bookingId)} disabled={markNoShow.isPending} className="rounded-full border border-neutral-200 px-4 py-2 text-sm font-semibold text-red-600 disabled:opacity-50">No show</button>
+                      </>
+                    )}
+                    {attendee.status === "pending" && isViewingPast && <span className="text-sm text-neutral-400">Read only</span>}
+                  </div>
+                </div>
+              </article>
+            ))}
+            {filteredAttendees.length === 0 && (
+              <div className="rounded-[22px] bg-neutral-50 px-6 py-12 text-center text-sm text-neutral-500 dark:bg-white/5">
+                {searchQuery ? "No one matches that search." : "No one has booked this class yet."}
               </div>
-
-              {/* Search */}
-              <div className="relative">
-                <svg className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Search by name, email, or booking ID..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full rounded-xl border border-gray-300 bg-white py-2.5 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400 sm:w-80"
-                />
-              </div>
-            </div>
+            )}
           </div>
 
-          {/* Attendee Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-800/50">
-                  <th className="whitespace-nowrap px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Attendee
-                  </th>
-                  <th className="whitespace-nowrap px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Booking ID
-                  </th>
-                  <th className="whitespace-nowrap px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Tokens
-                  </th>
-                  <th className="whitespace-nowrap px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Status
-                  </th>
-                  <th className="whitespace-nowrap px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Check-In Time
-                  </th>
-                  <th className="whitespace-nowrap px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-                {filteredAttendees.map((attendee) => (
-                  <tr
-                    key={attendee.id}
-                    className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                  >
-                    <td className="whitespace-nowrap px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="relative h-10 w-10 shrink-0">
-                          {attendee.avatarUrl ? (
-                            <img
-                              src={attendee.avatarUrl}
-                              alt={attendee.name}
-                              className="h-10 w-10 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white ${
-                              attendee.status === "checked-in"
-                                ? "bg-emerald-500"
-                                : attendee.status === "no-show"
-                                ? "bg-red-500"
-                                : "bg-linear-to-br from-brand-500 to-brand-600"
-                            }`}>
-                              {getInitials(attendee.name)}
-                            </div>
-                          )}
-                          {attendee.avatarUrl && (
-                            <div className={`absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full text-white text-xs font-bold ${
-                              attendee.status === "checked-in"
-                                ? "bg-emerald-500"
-                                : attendee.status === "no-show"
-                                ? "bg-red-500"
-                                : "bg-brand-500"
-                            }`}>
-                              {attendee.status === "checked-in" ? (
-                                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                </svg>
-                              ) : attendee.status === "no-show" ? (
-                                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              ) : (
-                                "○"
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="truncate font-medium text-gray-900 dark:text-white">
-                            {attendee.name}
-                          </div>
-                          <div className="truncate text-sm text-gray-500 dark:text-gray-400">
-                            {attendee.email}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4">
-                      <span className="rounded-lg bg-gray-100 px-2.5 py-1 font-mono text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                        {attendee.bookingId}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-lg font-bold ${
-                          attendee.tokenBalance <= 2
-                            ? "text-red-600 dark:text-red-400"
-                            : attendee.tokenBalance <= 5
-                            ? "text-amber-600 dark:text-amber-400"
-                            : "text-emerald-600 dark:text-emerald-400"
-                        }`}>
-                          {attendee.tokenBalance}
-                        </span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">left</span>
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${
-                        attendee.status === "checked-in"
-                          ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20"
-                          : attendee.status === "no-show"
-                          ? "bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-500/20"
-                          : "bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/20"
-                      }`}>
-                        {attendee.status === "checked-in" && (
-                          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                        {attendee.status === "no-show" && (
-                          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        )}
-                        {attendee.status === "pending" && (
-                          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        )}
-                        {attendee.status === "checked-in" ? "Checked In" : attendee.status === "no-show" ? "No Show" : "Pending"}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900 dark:text-white">
-                      {attendee.checkedInAt ? (
-                        <span className="flex items-center gap-1.5">
-                          <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          {attendee.checkedInAt}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4">
-                      <div className="flex items-center justify-end gap-2">
-                        {attendee.status === "pending" && (
-                          <>
-                            {!isViewingPast ? (
-                              <>
-                                <button
-                                  onClick={() => handleCheckIn(attendee.bookingId)}
-                                  disabled={checkIn.isPending}
-                                  className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
-                                >
-                                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                  </svg>
-                                  Check In
-                                </button>
-                                <button
-                                  onClick={() => handleMarkNoShow(attendee.bookingId)}
-                                  disabled={markNoShow.isPending}
-                                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 ring-1 ring-red-200 transition-colors hover:bg-red-50 dark:text-red-400 dark:ring-red-500/30 dark:hover:bg-red-500/10 disabled:opacity-50"
-                                >
-                                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                  No Show
-                                </button>
-                              </>
-                            ) : (
-                              <span className="text-sm text-gray-400">Past day (read-only)</span>
-                            )}
-                          </>
-                        )}
-                        {attendee.status !== "pending" && (
-                          <span className="text-sm text-gray-400">—</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Empty State */}
-          {filteredAttendees.length === 0 && (
-            <div className="px-6 py-12 text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-                <svg className="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-              </div>
-              <h3 className="text-sm font-medium text-gray-900 dark:text-white">No attendees found</h3>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {searchQuery ? "Try adjusting your search criteria." : "No one has booked this class yet."}
-              </p>
-            </div>
-          )}
-
-          {/* Footer Stats */}
           {selectedSession.attendees.length > 0 && (
-            <div className="border-t border-gray-200 bg-gray-50 px-6 py-4 dark:border-gray-800 dark:bg-gray-800/50">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center gap-6 text-sm">
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-emerald-500"></div>
-                    <span className="text-gray-600 dark:text-gray-400">
-                      Checked In: <span className="font-semibold text-gray-900 dark:text-white">{getSessionStats(selectedSession).checkedIn}</span>
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-amber-500"></div>
-                    <span className="text-gray-600 dark:text-gray-400">
-                      Pending: <span className="font-semibold text-gray-900 dark:text-white">{getSessionStats(selectedSession).pending}</span>
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-red-500"></div>
-                    <span className="text-gray-600 dark:text-gray-400">
-                      No Shows: <span className="font-semibold text-gray-900 dark:text-white">{getSessionStats(selectedSession).noShows}</span>
-                    </span>
-                  </div>
-                </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
-                  Showing {filteredAttendees.length} of {selectedSession.attendees.length} attendees
-                </div>
-              </div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-neutral-500">
+              <span>In {getSessionStats(selectedSession).checkedIn} · Waiting {getSessionStats(selectedSession).pending} · No show {getSessionStats(selectedSession).noShows}</span>
+              <span>Showing {filteredAttendees.length} of {selectedSession.attendees.length}</span>
             </div>
           )}
         </div>

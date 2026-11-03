@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import { BlogEditorForm, formToPayload } from "@/components/blog/BlogEditorForm";
 import { useBlogMutations } from "@/hooks/useBlogPosts";
 import { useToast } from "@/components/ui/Toast";
@@ -30,11 +29,10 @@ export default function NewBlogPostPage() {
   };
 
   return (
-    <div>
-      <PageBreadCrumb pageTitle="New blog post" />
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Create blog post</h2>
-        <p className="text-sm text-gray-500">Write your article, add images and SEO, then publish to the website.</p>
+    <div className="min-w-0 space-y-5">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">New post</h1>
+        <p className="mt-1 max-w-xl text-sm text-neutral-500">Write the article, add an image, then save a draft or publish it.</p>
       </div>
       <BlogEditorForm saving={saving} onSave={handleSave} onCancel={() => router.push("/blog")} />
     </div>

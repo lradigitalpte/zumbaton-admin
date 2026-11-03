@@ -1,11 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Archivo, Work_Sans, IBM_Plex_Mono } from "next/font/google";
-
-const archivo = Archivo({ subsets: ["latin"], weight: ["800", "900"], style: ["italic"], variable: "--font-archivo" });
-const workSans = Work_Sans({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-work-sans" });
-const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-plex-mono" });
+const FONT_STYLESHEET =
+  "https://fonts.googleapis.com/css2?family=Archivo:ital,wght@1,800;1,900&family=IBM+Plex+Mono:wght@500;600&family=Work+Sans:wght@400;500;600&display=swap";
 
 const STORE_KEY = "zumbaton-shot-list-v1";
 
@@ -25,8 +22,7 @@ const PRIORITY_CARDS: ShotCard[] = [
     instructor: "Coach Robert",
     title: "Zumba Step",
     currentFile: "hero2.jpeg",
-    currentNote:
-      "a generic landscape stock photo, and the exact same file used on Thunderbolt · Resistance & Dance below.",
+    currentNote: "a generic landscape stock photo; still needs a dedicated Zumba Step shoot.",
     shots: [
       { id: "zs-1", label: "Full group mid-step-routine, steppers in frame, formation synced" },
       { id: "zs-2", label: "Robert front-and-center, cueing the class" },
@@ -37,14 +33,14 @@ const PRIORITY_CARDS: ShotCard[] = [
   {
     badge: "Needs Photo",
     instructor: "Coach Fizah",
-    title: "Thunderbolt · Resistance & Dance",
-    currentFile: "hero2.jpeg",
-    currentNote: "same duplicate file as Zumba Step above, on a completely different class.",
+    title: "Pilates Flow",
+    currentFile: "951E5D9F + 477E6FED (detail gallery)",
+    currentNote: "Both client JPEGs on class detail; 951E5D9F is the card thumbnail.",
     shots: [
-      { id: "tr-1", label: "Resistance band stretched mid-rep, visible tension" },
-      { id: "tr-2", label: "Fizah demonstrating band form, front-on" },
-      { id: "tr-3", label: "Floor-based full-body movement, group mid-set" },
-      { id: "tr-4", label: "Close-up on effort/strain during a resistance hold" },
+      { id: "pf-1", label: "Floor Pilates sequence, group in aligned posture" },
+      { id: "pf-2", label: "Fizah cueing breath and core engagement, front-on" },
+      { id: "pf-3", label: "Controlled stretch or mobility transition mid-flow" },
+      { id: "pf-4", label: "Close-up on precise alignment during a stabilising hold" },
     ],
   },
   {
@@ -148,10 +144,17 @@ export default function PhotoShotListPage() {
   const checkedCount = hydrated ? Object.values(checked).filter(Boolean).length : 0;
 
   return (
-    <div
-      className={`${archivo.variable} ${workSans.variable} ${plexMono.variable} min-h-screen bg-[#f6f4ee] text-[#14140d] dark:bg-black dark:text-[#f5f4ec]`}
-      style={{ fontFamily: "var(--font-work-sans), ui-sans-serif, system-ui, sans-serif" }}
-    >
+    <>
+      <link rel="stylesheet" href={FONT_STYLESHEET} />
+      <div
+        className="min-h-screen bg-[#f6f4ee] text-[#14140d] dark:bg-black dark:text-[#f5f4ec]"
+        style={{
+          "--font-archivo": "'Archivo', sans-serif",
+          "--font-work-sans": "'Work Sans', ui-sans-serif, system-ui, sans-serif",
+          "--font-plex-mono": "'IBM Plex Mono', monospace",
+          fontFamily: "var(--font-work-sans), ui-sans-serif, system-ui, sans-serif",
+        } as React.CSSProperties}
+      >
       <div className="mx-auto max-w-5xl px-5 pb-24 pt-8">
         {/* header */}
         <header className="border border-black/10 bg-[#ece7d8] p-6 dark:border-white/10 dark:bg-zinc-950 sm:p-8">
@@ -458,5 +461,6 @@ export default function PhotoShotListPage() {
         </footer>
       </div>
     </div>
+    </>
   );
 }

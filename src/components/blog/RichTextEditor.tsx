@@ -52,8 +52,8 @@ function ToolbarButton({
       onClick={onClick}
       className={`rounded-md p-2 transition-colors ${
         active
-          ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
-          : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+          ? "bg-[#E4F56C] text-neutral-950"
+          : "text-neutral-600 hover:bg-neutral-100 dark:text-white/70 dark:hover:bg-white/10"
       } disabled:opacity-40`}
     >
       {children}
@@ -129,15 +129,15 @@ export function RichTextEditor({
 
   if (!editor) {
     return (
-      <div className="flex min-h-[360px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-950">
+      <div className="flex min-h-[360px] items-center justify-center rounded-[20px] border border-neutral-200 bg-neutral-50 dark:border-white/10 dark:bg-white/5">
         <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-950">
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-gray-200 bg-gray-50 px-2 py-1.5 dark:border-gray-700 dark:bg-gray-900">
+    <div className="overflow-hidden rounded-[20px] border border-neutral-200 bg-white dark:border-white/10 dark:bg-gray-800">
+      <div className="flex flex-wrap items-center gap-0.5 border-b border-neutral-200 bg-neutral-50 px-2 py-1.5 dark:border-white/10 dark:bg-white/5">
         <ToolbarButton
           title="Bold"
           onClick={() => editor.chain().focus().toggleBold().run()}

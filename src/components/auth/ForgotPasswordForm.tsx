@@ -1,12 +1,12 @@
 "use client";
 import Input from "@/components/form/input/InputField";
-import Label from "@/components/form/Label";
 import Button from "@/components/ui/button/Button";
 import { ChevronLeftIcon } from "@/icons";
 import Link from "next/link";
 import BrandLogo from "@/components/common/BrandLogo";
 import { useRouter } from "next/navigation";
 import React, { useState } from "react";
+import { studioBack, studioButton, studioError, studioInput, studioLead, studioLink, studioTitle } from "./studio";
 
 export default function ForgotPasswordForm() {
   const router = useRouter();
@@ -64,11 +64,11 @@ export default function ForgotPasswordForm() {
   };
 
   return (
-    <div className="flex flex-col flex-1 lg:w-1/2 w-full">
+    <div className="flex h-full w-full flex-1 flex-col overflow-y-auto px-6 py-8 lg:w-1/2">
       <div className="w-full max-w-md sm:pt-10 mx-auto mb-5">
         <Link
           href="/signin"
-          className="inline-flex items-center text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+          className={studioBack}
         >
           <ChevronLeftIcon />
           Back to sign in
@@ -82,34 +82,33 @@ export default function ForgotPasswordForm() {
               alt="One Step Fitness Logo"
               width={400}
               height={133}
-              className="h-32 w-auto"
+              className="h-16 w-auto"
               priority
             />
           </div>
 
           <div className="mb-5 sm:mb-8">
-            <h1 className="mb-2 font-semibold text-gray-800 text-title-sm dark:text-white/90 sm:text-title-md">
-              Forgot Password?
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Enter your email address and we&apos;ll send you a 6-digit verification code to reset your password.
+            <h1 className={studioTitle}>Forgot password</h1>
+            <p className={studioLead}>
+              Enter your email and we&apos;ll send a 6-digit code to reset your password.
             </p>
           </div>
 
           <form onSubmit={handleSubmit}>
             <div className="space-y-6">
               {error && (
-                <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                <div className={studioError}>
                   {error}
                 </div>
               )}
 
               <div>
-                <Label>
-                  Email Address <span className="text-error-500">*</span>
-                </Label>
+                <label className="mb-2 block text-sm font-medium text-neutral-800 dark:text-white/90">
+                  Email address
+                </label>
                 <Input
-                  placeholder="Enter your email"
+                  className={studioInput}
+                  placeholder="you@onestepfitness.sg"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -117,21 +116,18 @@ export default function ForgotPasswordForm() {
               </div>
 
               <div>
-                <Button className="w-full" size="sm" type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? "Sending..." : "Send Verification Code"}
+                <Button className={studioButton} size="sm" type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Sending…" : "Send code"}
                 </Button>
               </div>
             </div>
           </form>
 
           <div className="mt-5">
-            <p className="text-sm font-normal text-center text-gray-700 dark:text-gray-400 sm:text-start">
+            <p className="text-center text-sm text-neutral-500 sm:text-start">
               Remember your password?{" "}
-              <Link
-                href="/signin"
-                className="text-brand-500 hover:text-brand-600 dark:text-brand-400"
-              >
-                Sign In
+              <Link href="/signin" className={studioLink}>
+                Sign in
               </Link>
             </p>
           </div>

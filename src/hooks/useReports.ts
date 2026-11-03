@@ -332,10 +332,12 @@ async function fetchAuditReport(params: {
   startDate?: string
   endDate?: string
   search?: string
+  scope?: 'changes' | 'all'
   page?: number
   pageSize?: number
 }): Promise<AuditReportData> {
   const queryParams = new URLSearchParams()
+  if (params.scope) queryParams.append('scope', params.scope)
   if (params.action) queryParams.append('action', params.action)
   if (params.resourceType) queryParams.append('resourceType', params.resourceType)
   if (params.startDate) queryParams.append('startDate', params.startDate)
@@ -367,6 +369,7 @@ async function fetchAuditReport(params: {
       uniqueUsers: 0,
       uniqueActions: 0,
       uniqueResources: 0,
+      hiddenReads: 0,
     },
     total: 0,
     page: 1,
@@ -398,6 +401,7 @@ export interface AuditStats {
   uniqueUsers: number
   uniqueActions: number
   uniqueResources: number
+  hiddenReads?: number
 }
 
 export interface AuditReportData {
@@ -456,6 +460,7 @@ export function useAuditReport(params: {
   startDate?: string
   endDate?: string
   search?: string
+  scope?: 'changes' | 'all'
   page?: number
   pageSize?: number
 } = {}) {

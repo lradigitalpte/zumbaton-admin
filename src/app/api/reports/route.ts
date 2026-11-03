@@ -285,10 +285,8 @@ export async function GET(request: NextRequest) {
     for (const cls of classes) {
       if (cls.scheduled_at) {
         const classDate = new Date(cls.scheduled_at)
-        const dayName = classDate.toLocaleDateString('en-US', { weekday: 'long' })
-        const hour = classDate.getHours()
-        const minute = classDate.getMinutes()
-        const timeStr = `${hour === 0 ? 12 : hour > 12 ? hour - 12 : hour}:${minute.toString().padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`
+        const dayName = classDate.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Singapore' })
+        const timeStr = classDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Singapore' })
         
         dayCounts[dayName] = (dayCounts[dayName] || 0) + 1
         timeCounts[timeStr] = (timeCounts[timeStr] || 0) + 1

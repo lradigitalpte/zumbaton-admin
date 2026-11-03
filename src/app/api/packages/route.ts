@@ -2,10 +2,11 @@
 // Handles package CRUD operations
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createPackage, listPackagesWithStats, updatePackage, deactivatePackage } from '@/services/package.service'
+import { createPackage, listPackagesWithStats, updatePackage, deactivatePackage, getPackage } from '@/services/package.service'
 import { CreatePackageRequestSchema, PackageListQuerySchema, UpdatePackageRequestSchema } from '@/api/schemas'
 import { ApiError } from '@/lib/api-error'
 import { getAuthenticatedUser } from '@/middleware/rbac'
+import { createAuditLog } from '@/services/rbac.service'
 
 // GET /api/packages - List all packages with stats
 export async function GET(request: NextRequest) {
@@ -64,6 +65,18 @@ export async function POST(request: NextRequest) {
 
     // Create package
     const result = await createPackage(validatedData)
+    await createAuditLog({
+      userId: user.id,
+      action: 'package.create',
+      resourceType: 'packages',
+      resourceId: result.package?.id,
+      newValues: {
+        name: result.package?.name,
+        tokenCount: result.package?.tokenCount,
+        priceCents: result.package?.priceCents,
+        validityDays: result.package?.validityDays,
+      },
+    })
 
     return NextResponse.json({
       success: true,
@@ -112,9 +125,24 @@ export async function PATCH(request: NextRequest) {
 
     // Validate request body
     const validatedData = UpdatePackageRequestSchema.parse(body)
+    const before = await getPackage(id).catch(() => null)
 
     // Update package
     const result = await updatePackage(id, validatedData)
+    await createAuditLog({
+      userId: user.id,
+      action: validatedData.isActive === false ? 'package.deactivate' : 'package.update',
+      resourceType: 'packages',
+      resourceId: id,
+      oldValues: before?.package ? {
+        name: before.package.name,
+        tokenCount: before.package.tokenCount,
+        priceCents: before.package.priceCents,
+        validityDays: before.package.validityDays,
+        isActive: before.package.isActive,
+      } : undefined,
+      newValues: validatedData as Record<string, unknown>,
+    })
 
     return NextResponse.json({
       success: true,
@@ -161,6 +189,13 @@ export async function DELETE(request: NextRequest) {
 
     // Deactivate package
     const result = await deactivatePackage(id)
+    await createAuditLog({
+      userId: user.id,
+      action: 'package.deactivate',
+      resourceType: 'packages',
+      resourceId: id,
+      newValues: { isActive: false },
+    })
 
     return NextResponse.json({
       success: true,

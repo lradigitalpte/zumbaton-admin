@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import Pagination from "@/components/tables/Pagination";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/components/ui/Toast";
 import { Modal } from "@/components/ui/modal";
-import Button from "@/components/ui/button/Button";
+import StudioDate from "@/components/ui/StudioDate";
+import StudioMenu from "@/components/ui/StudioMenu";
 
 interface Enrollment {
   id: string;
@@ -27,6 +27,27 @@ interface Enrollment {
 }
 
 const PAGE_SIZE = 20;
+const card = "rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800";
+const field = "h-12 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm text-neutral-950 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white";
+const area = "w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-950 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white";
+const label = "mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400";
+const sheet = "max-h-[90vh] w-[min(760px,calc(100vw-2rem))] overflow-y-auto !rounded-[28px] !border-neutral-200/80 !bg-white p-6 dark:!border-white/10 dark:!bg-gray-800";
+const programOptions = [
+  { value: "zt_fiesta", label: "ZT Fiesta" },
+  { value: "individual_lesson", label: "Individual lesson" },
+];
+const paymentOptions = [
+  { value: "pending", label: "Pending" },
+  { value: "paid", label: "Paid" },
+  { value: "partially_paid", label: "Partially paid" },
+  { value: "waived", label: "Waived" },
+  { value: "cancelled", label: "Cancelled" },
+];
+const attendanceOptions = [
+  { value: "not_started", label: "Not started" },
+  { value: "in_progress", label: "In progress" },
+  { value: "completed", label: "Completed" },
+];
 
 export default function OutdoorTrackingPage() {
   const { showToast } = useToast();
@@ -166,7 +187,7 @@ export default function OutdoorTrackingPage() {
     setForm({
       programType: row.program_type,
       customerName: row.customer_name,
-      customer_email: row.customer_email, // Note: form uses customerEmail, but Enrollment has customer_email
+      customerEmail: row.customer_email,
       customerPhone: row.customer_phone,
       participantName: row.participant_name || "",
       packageLabel: row.package_label || "",
@@ -177,7 +198,7 @@ export default function OutdoorTrackingPage() {
       attendanceStatus: row.attendance_status,
       validUntil: row.valid_until ? new Date(row.valid_until).toISOString().split("T")[0] : "",
       notes: row.notes || "",
-    } as any);
+    });
     setEditModalOpen(true);
   };
 
@@ -206,470 +227,186 @@ export default function OutdoorTrackingPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <PageBreadCrumb pageTitle="Outdoor Tracking" />
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="min-w-0 space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Outdoor & Manual Tracking</h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Manage ZT Fiesta and individual lesson records manually
-          </p>
+          <h1 className="text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white">Outdoor tracking</h1>
+          <p className="mt-1 text-sm text-neutral-500">ZT Fiesta and individual lessons recorded by hand.</p>
         </div>
-        <button
-          onClick={() => setCreateModalOpen(true)}
-          className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white"
-        >
-          Add Record
-        </button>
+        <button onClick={() => setCreateModalOpen(true)} className="rounded-full bg-[#E4F56C] px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-[#d5e45c]">Add record</button>
       </div>
 
       {setupMessage && (
-        <div className="rounded-xl border border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/20 p-4">
-          <p className="text-sm text-yellow-800 dark:text-yellow-200">
-            {setupMessage}
-          </p>
-        </div>
+        <div className="rounded-[28px] bg-[#E4F56C]/40 px-5 py-4 text-sm font-medium text-neutral-950">{setupMessage}</div>
       )}
 
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <input
-            placeholder="Search customer / email / phone"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
-          />
-          <select value={programType} onChange={(e) => { setProgramType(e.target.value); setPage(1); }} className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-            <option value="all">All Programs</option>
-            <option value="zt_fiesta">ZT Fiesta</option>
-            <option value="individual_lesson">Individual Lesson</option>
-          </select>
-          <select value={paymentStatus} onChange={(e) => { setPaymentStatus(e.target.value); setPage(1); }} className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-            <option value="all">All Payments</option>
-            <option value="pending">Pending</option>
-            <option value="paid">Paid</option>
-            <option value="partially_paid">Partially Paid</option>
-            <option value="waived">Waived</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+      <div className={`${card} p-5`}>
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_200px_200px]">
+          <input placeholder="Search name, email, or phone" value={search} onChange={(e) => setSearch(e.target.value)} className={field} />
+          <StudioMenu value={programType} onChange={(value) => { setProgramType(value); setPage(1); }} placeholder="All programs" options={[{ value: "all", label: "All programs" }, ...programOptions]} />
+          <StudioMenu value={paymentStatus} onChange={(value) => { setPaymentStatus(value); setPage(1); }} placeholder="All payments" options={[{ value: "all", label: "All payments" }, ...paymentOptions]} />
         </div>
-      </div>
 
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-x-auto">
-        {loading ? (
-          <div className="p-8 text-center text-gray-500">Loading records...</div>
-        ) : (
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
-            <thead className="bg-gray-50 dark:bg-gray-800">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Customer</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Program</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Sessions</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Payment</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Attendance</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Validity</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-200">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-              {rows.map((row) => (
-                <tr key={row.id}>
-                  <td className="px-4 py-3 text-sm">
-                    <p className="font-medium text-gray-900 dark:text-white">{row.customer_name}</p>
-                    <p className="text-gray-500">{row.customer_email}</p>
-                    <p className="text-gray-500">{row.customer_phone}</p>
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    <p className="capitalize text-gray-900 dark:text-white">{row.program_type.replace("_", " ")}</p>
-                    <p className="text-gray-500">{row.package_label || "-"}</p>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-                    {row.sessions_used}/{row.sessions_purchased}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-                    <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${
-                      row.payment_status === "paid"
-                        ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
-                        : row.payment_status === "pending"
-                        ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
-                        : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                    }`}>
-                      {row.payment_status.replace("_", " ")}
-                    </span>
-                    <p>${(row.price_cents / 100).toFixed(2)}</p>
-                  </td>
-                  <td className="px-4 py-3 text-sm capitalize text-gray-700 dark:text-gray-300">
-                    <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${
-                      row.attendance_status === "completed"
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                        : row.attendance_status === "in_progress"
-                        ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
-                        : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                    }`}>
-                      {row.attendance_status.replace("_", " ")}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-                    {row.valid_until ? new Date(row.valid_until).toLocaleDateString("en-SG") : "-"}
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    <div className="flex gap-2">
-                      {row.payment_status !== "paid" && (
-                        <button 
-                          onClick={() => { setSelectedRow(row); setConfirmPaidModalOpen(true); }} 
-                          className="px-2 py-1 text-xs rounded bg-brand-500 hover:bg-brand-600 text-white whitespace-nowrap"
-                        >
-                          Mark Paid
-                        </button>
-                      )}
-                      <button 
-                        onClick={() => { setSelectedRow(row); setConfirmAttendanceModalOpen(true); }} 
-                        className="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 text-white whitespace-nowrap"
-                      >
-                        + Attendance
-                      </button>
-                      <button 
-                        onClick={() => openEditModal(row)} 
-                        className="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap"
-                      >
-                        Update Status
-                      </button>
-                      <button 
-                        onClick={() => { setSelectedRow(row); setConfirmDeleteModalOpen(true); }} 
-                        className="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700 text-white whitespace-nowrap"
-                      >
-                        Delete
-                      </button>
+        <div className="mt-4 space-y-3">
+          {loading ? (
+            <div className="rounded-[22px] px-6 py-12 text-center text-sm text-neutral-500">Loading records…</div>
+          ) : rows.length === 0 ? (
+            <div className="rounded-[22px] px-6 py-12 text-center text-sm text-neutral-500">No records match these filters.</div>
+          ) : rows.map((row) => {
+            const fill = row.sessions_purchased > 0 ? Math.min(100, Math.round((row.sessions_used / row.sessions_purchased) * 100)) : 0;
+            const paymentTone = row.payment_status === "paid" ? "bg-[#E4F56C] text-neutral-950" : row.payment_status === "pending" ? "bg-neutral-950 text-[#E4F56C]" : "bg-neutral-100 text-neutral-600 dark:bg-white/10 dark:text-white";
+            const attendanceTone = row.attendance_status === "completed" ? "bg-neutral-950 text-white" : row.attendance_status === "in_progress" ? "bg-[#E4F56C] text-neutral-950" : "bg-neutral-100 text-neutral-600 dark:bg-white/10 dark:text-white";
+            return (
+              <article key={row.id} className="rounded-[22px] bg-neutral-50 p-4 dark:bg-white/5">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-xs font-semibold text-[#E4F56C]">
+                      {(row.customer_name || "?").slice(0, 1).toUpperCase()}
                     </div>
-                  </td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">No records found</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        )}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-800 flex justify-end">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{row.customer_name}</p>
+                      <p className="truncate text-sm text-neutral-500">{row.customer_email}</p>
+                      <p className="truncate text-sm text-neutral-400">{row.customer_phone}</p>
+                    </div>
+                  </div>
+                  <div className="min-w-0 xl:w-44">
+                    <p className="text-sm font-semibold capitalize text-neutral-950 dark:text-white">{row.program_type.replaceAll("_", " ")}</p>
+                    <p className="truncate text-sm text-neutral-500">{row.package_label || "No package"}</p>
+                  </div>
+                  <div className="xl:w-28">
+                    <p className="text-lg font-semibold text-neutral-950 dark:text-white">{row.sessions_used}<span className="text-sm font-medium text-neutral-400">/{row.sessions_purchased}</span></p>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-white/10">
+                      <div className="h-full rounded-full bg-neutral-950 dark:bg-[#E4F56C]" style={{ width: `${fill}%` }} />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 xl:w-52">
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${paymentTone}`}>{row.payment_status.replaceAll("_", " ")}</span>
+                    <span className="text-sm font-semibold text-neutral-950 dark:text-white">${(row.price_cents / 100).toFixed(2)}</span>
+                  </div>
+                  <span className={`w-fit rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${attendanceTone}`}>{row.attendance_status.replaceAll("_", " ")}</span>
+                  <p className="text-sm text-neutral-500 xl:w-24">{row.valid_until ? new Date(row.valid_until).toLocaleDateString("en-SG") : "No expiry"}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {row.payment_status !== "paid" && (
+                      <button onClick={() => { setSelectedRow(row); setConfirmPaidModalOpen(true); }} className="rounded-full bg-[#E4F56C] px-3 py-1.5 text-xs font-semibold text-neutral-950">Mark paid</button>
+                    )}
+                    <button onClick={() => { setSelectedRow(row); setConfirmAttendanceModalOpen(true); }} className="rounded-full bg-neutral-950 px-3 py-1.5 text-xs font-semibold text-white">+ Attendance</button>
+                    <button onClick={() => openEditModal(row)} className="rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-950 dark:border-white/10 dark:bg-transparent dark:text-white">Update</button>
+                    <button onClick={() => { setSelectedRow(row); setConfirmDeleteModalOpen(true); }} className="rounded-full px-3 py-1.5 text-xs font-semibold text-red-600">Delete</button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        <div className="mt-4 flex justify-end">
           <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       </div>
 
-      <Modal
-        isOpen={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
-        className="max-w-[760px] w-full"
-      >
-        <form onSubmit={handleCreate} className="p-6 space-y-5">
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Add Outdoor Tracking Record</h3>
-          {/* ... form content ... */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Program Type *</label>
-              <select
-                value={form.programType}
-                onChange={(e) => setForm((prev) => ({ ...prev, programType: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-              >
-                <option value="zt_fiesta">ZT Fiesta</option>
-                <option value="individual_lesson">Individual Lesson</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Package Label *</label>
-              <input
-                required
-                placeholder="e.g. 2 sessions / Individual Lesson"
-                value={form.packageLabel}
-                onChange={(e) => setForm((prev) => ({ ...prev, packageLabel: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-              />
+      <Modal isOpen={createModalOpen} onClose={() => setCreateModalOpen(false)} showCloseButton={false} className={sheet}>
+        <form onSubmit={handleCreate} className="space-y-5">
+          <div className="flex items-start justify-between gap-4">
+            <h3 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">Add record</h3>
+            <button type="button" onClick={() => setCreateModalOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-950 text-lg text-white" aria-label="Close">×</button>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label><span className={label}>Program</span><StudioMenu value={form.programType} onChange={(value) => setForm((prev) => ({ ...prev, programType: value }))} placeholder="Program" options={programOptions} /></label>
+            <label><span className={label}>Package</span><input required placeholder="2 sessions" value={form.packageLabel} onChange={(e) => setForm((prev) => ({ ...prev, packageLabel: e.target.value }))} className={field} /></label>
+          </div>
+          <div className="rounded-[22px] bg-neutral-50 p-4 dark:bg-white/5">
+            <p className="mb-3 text-sm font-semibold text-neutral-950 dark:text-white">Contact</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <input required placeholder="Name" value={form.customerName} onChange={(e) => setForm((prev) => ({ ...prev, customerName: e.target.value }))} className={field} />
+              <input required type="email" placeholder="Email" value={form.customerEmail} onChange={(e) => setForm((prev) => ({ ...prev, customerEmail: e.target.value }))} className={field} />
+              <input required placeholder="Phone" value={form.customerPhone} onChange={(e) => setForm((prev) => ({ ...prev, customerPhone: e.target.value }))} className={`${field} md:col-span-2`} />
             </div>
           </div>
-
-          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-            <h4 className="font-medium text-gray-900 dark:text-white mb-3">Primary Contact</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input required placeholder="Contact Name *" value={form.customerName} onChange={(e) => setForm((prev) => ({ ...prev, customerName: e.target.value }))} className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800" />
-              <input required type="email" placeholder="Contact Email *" value={form.customerEmail} onChange={(e) => setForm((prev) => ({ ...prev, customerEmail: e.target.value }))} className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800" />
-              <input required placeholder="Contact Phone *" value={form.customerPhone} onChange={(e) => setForm((prev) => ({ ...prev, customerPhone: e.target.value }))} className="md:col-span-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800" />
-            </div>
+          <label><span className={label}>Participant, if different</span><input placeholder="Participant name" value={form.participantName} onChange={(e) => setForm((prev) => ({ ...prev, participantName: e.target.value }))} className={field} /></label>
+          <div className="grid gap-4 md:grid-cols-3">
+            <label><span className={label}>Sessions bought</span><input type="number" min={1} value={form.sessionsPurchased} onChange={(e) => setForm((prev) => ({ ...prev, sessionsPurchased: Number(e.target.value) }))} className={field} /></label>
+            <label><span className={label}>Sessions used</span><input type="number" min={0} value={form.sessionsUsed} onChange={(e) => setForm((prev) => ({ ...prev, sessionsUsed: Number(e.target.value) }))} className={field} /></label>
+            <label><span className={label}>Price in cents</span><input type="number" min={0} value={form.priceCents} onChange={(e) => setForm((prev) => ({ ...prev, priceCents: Number(e.target.value) }))} className={field} /><p className="mt-1 text-xs text-neutral-400">2800 = SGD 28.00</p></label>
           </div>
-
-          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-            <h4 className="font-medium text-gray-900 dark:text-white mb-3">Participant (optional if same as contact)</h4>
-            <input placeholder="Participant Name" value={form.participantName} onChange={(e) => setForm((prev) => ({ ...prev, participantName: e.target.value }))} className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800" />
+          <div className="grid gap-4 md:grid-cols-2">
+            <label><span className={label}>Valid until</span><StudioDate block clearable ariaLabel="Valid until" placeholder="No expiry" value={form.validUntil} onChange={(value) => setForm((prev) => ({ ...prev, validUntil: value }))} /></label>
+            <label><span className={label}>Notes</span><textarea placeholder="Notes" value={form.notes} onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))} className={area} /></label>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sessions Purchased *</label>
-              <input
-                type="number"
-                min={1}
-                value={form.sessionsPurchased}
-                onChange={(e) => setForm((prev) => ({ ...prev, sessionsPurchased: Number(e.target.value) }))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sessions Used</label>
-              <input
-                type="number"
-                min={0}
-                value={form.sessionsUsed}
-                onChange={(e) => setForm((prev) => ({ ...prev, sessionsUsed: Number(e.target.value) }))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price (cents) *</label>
-              <input
-                type="number"
-                min={0}
-                value={form.priceCents}
-                onChange={(e) => setForm((prev) => ({ ...prev, priceCents: Number(e.target.value) }))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Example: 2800 = SGD 28.00
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input type="date" value={form.validUntil} onChange={(e) => setForm((prev) => ({ ...prev, validUntil: e.target.value }))} className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800" />
-            <textarea placeholder="Notes" value={form.notes} onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))} className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800" />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="outline" onClick={() => setCreateModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Saving..." : "Save Record"}
-            </Button>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setCreateModalOpen(false)} className="rounded-full border border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-950">Cancel</button>
+            <button type="submit" disabled={submitting} className="rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{submitting ? "Saving…" : "Save record"}</button>
           </div>
         </form>
       </Modal>
 
-      <Modal
-        isOpen={editModalOpen}
-        onClose={() => setEditModalOpen(false)}
-        className="max-w-[760px] w-full"
-      >
-        <form onSubmit={handleEdit} className="p-6 space-y-5">
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Update Outdoor Tracking Record</h3>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Program Type *</label>
-              <select
-                value={form.programType}
-                onChange={(e) => setForm((prev) => ({ ...prev, programType: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-              >
-                <option value="zt_fiesta">ZT Fiesta</option>
-                <option value="individual_lesson">Individual Lesson</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Package Label *</label>
-              <input
-                required
-                placeholder="e.g. 2 sessions / Individual Lesson"
-                value={form.packageLabel}
-                onChange={(e) => setForm((prev) => ({ ...prev, packageLabel: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-              />
-            </div>
+      <Modal isOpen={editModalOpen} onClose={() => setEditModalOpen(false)} showCloseButton={false} className={sheet}>
+        <form onSubmit={handleEdit} className="space-y-5">
+          <div className="flex items-start justify-between gap-4">
+            <h3 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">Update record</h3>
+            <button type="button" onClick={() => setEditModalOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-950 text-lg text-white" aria-label="Close">×</button>
           </div>
-
-          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-            <h4 className="font-medium text-gray-900 dark:text-white mb-3">Primary Contact</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input required placeholder="Contact Name *" value={form.customerName} onChange={(e) => setForm((prev) => ({ ...prev, customerName: e.target.value }))} className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800" />
-              <input required type="email" placeholder="Contact Email *" value={(form as any).customer_email || form.customerEmail} onChange={(e) => setForm((prev) => ({ ...prev, customerEmail: e.target.value, customer_email: e.target.value } as any))} className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800" />
-              <input required placeholder="Contact Phone *" value={form.customerPhone} onChange={(e) => setForm((prev) => ({ ...prev, customerPhone: e.target.value }))} className="md:col-span-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800" />
-            </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label><span className={label}>Program</span><StudioMenu value={form.programType} onChange={(value) => setForm((prev) => ({ ...prev, programType: value }))} placeholder="Program" options={programOptions} /></label>
+            <label><span className={label}>Package</span><input required value={form.packageLabel} onChange={(e) => setForm((prev) => ({ ...prev, packageLabel: e.target.value }))} className={field} /></label>
           </div>
-
-          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-            <h4 className="font-medium text-gray-900 dark:text-white mb-3">Participant (optional if same as contact)</h4>
-            <input placeholder="Participant Name" value={form.participantName} onChange={(e) => setForm((prev) => ({ ...prev, participantName: e.target.value }))} className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800" />
+          <div className="grid gap-3 md:grid-cols-2">
+            <label><span className={label}>Name</span><input required value={form.customerName} onChange={(e) => setForm((prev) => ({ ...prev, customerName: e.target.value }))} className={field} /></label>
+            <label><span className={label}>Email</span><input required type="email" value={form.customerEmail} onChange={(e) => setForm((prev) => ({ ...prev, customerEmail: e.target.value }))} className={field} /></label>
+            <label className="md:col-span-2"><span className={label}>Phone</span><input required value={form.customerPhone} onChange={(e) => setForm((prev) => ({ ...prev, customerPhone: e.target.value }))} className={field} /></label>
+            <label className="md:col-span-2"><span className={label}>Participant</span><input value={form.participantName} onChange={(e) => setForm((prev) => ({ ...prev, participantName: e.target.value }))} className={field} /></label>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sessions Purchased *</label>
-              <input
-                type="number"
-                min={1}
-                value={form.sessionsPurchased}
-                onChange={(e) => setForm((prev) => ({ ...prev, sessionsPurchased: Number(e.target.value) }))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sessions Used</label>
-              <input
-                type="number"
-                min={0}
-                value={form.sessionsUsed}
-                onChange={(e) => setForm((prev) => ({ ...prev, sessionsUsed: Number(e.target.value) }))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price (cents) *</label>
-              <input
-                type="number"
-                min={0}
-                value={form.priceCents}
-                onChange={(e) => setForm((prev) => ({ ...prev, priceCents: Number(e.target.value) }))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-              />
-            </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <label><span className={label}>Sessions bought</span><input type="number" min={1} value={form.sessionsPurchased} onChange={(e) => setForm((prev) => ({ ...prev, sessionsPurchased: Number(e.target.value) }))} className={field} /></label>
+            <label><span className={label}>Sessions used</span><input type="number" min={0} value={form.sessionsUsed} onChange={(e) => setForm((prev) => ({ ...prev, sessionsUsed: Number(e.target.value) }))} className={field} /></label>
+            <label><span className={label}>Price in cents</span><input type="number" min={0} value={form.priceCents} onChange={(e) => setForm((prev) => ({ ...prev, priceCents: Number(e.target.value) }))} className={field} /></label>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Payment Status</label>
-              <select
-                value={form.paymentStatus}
-                onChange={(e) => setForm((prev) => ({ ...prev, paymentStatus: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-              >
-                <option value="pending">Pending</option>
-                <option value="paid">Paid</option>
-                <option value="partially_paid">Partially Paid</option>
-                <option value="waived">Waived</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Attendance Status</label>
-              <select
-                value={form.attendanceStatus}
-                onChange={(e) => setForm((prev) => ({ ...prev, attendanceStatus: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-              >
-                <option value="not_started">Not Started</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Completed</option>
-              </select>
-            </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label><span className={label}>Payment</span><StudioMenu value={form.paymentStatus} onChange={(value) => setForm((prev) => ({ ...prev, paymentStatus: value }))} placeholder="Payment" options={paymentOptions} /></label>
+            <label><span className={label}>Attendance</span><StudioMenu value={form.attendanceStatus} onChange={(value) => setForm((prev) => ({ ...prev, attendanceStatus: value }))} placeholder="Attendance" options={attendanceOptions} /></label>
+            <label><span className={label}>Valid until</span><StudioDate block clearable ariaLabel="Valid until" placeholder="No expiry" value={form.validUntil} onChange={(value) => setForm((prev) => ({ ...prev, validUntil: value }))} /></label>
+            <label><span className={label}>Notes</span><textarea value={form.notes} onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))} className={area} /></label>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Valid Until</label>
-              <input type="date" value={form.validUntil} onChange={(e) => setForm((prev) => ({ ...prev, validUntil: e.target.value }))} className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
-              <textarea placeholder="Notes" value={form.notes} onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))} className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800" />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="outline" onClick={() => setEditModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Updating..." : "Update Record"}
-            </Button>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setEditModalOpen(false)} className="rounded-full border border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-950">Cancel</button>
+            <button type="submit" disabled={submitting} className="rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{submitting ? "Updating…" : "Update record"}</button>
           </div>
         </form>
       </Modal>
 
-      <Modal
-        isOpen={confirmPaidModalOpen}
-        onClose={() => setConfirmPaidModalOpen(false)}
-        className="max-w-[400px] w-full"
-      >
-        <div className="p-6 text-center">
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Confirm Payment</h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Are you sure you want to mark the payment for <strong>{selectedRow?.customer_name}</strong> as paid?
-          </p>
-          <div className="flex justify-center gap-3">
-            <Button variant="outline" onClick={() => setConfirmPaidModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={async () => {
-                if (selectedRow) {
-                  await updateRow(selectedRow.id, { markPaid: true });
-                  setConfirmPaidModalOpen(false);
-                }
-              }}
-            >
-              Confirm
-            </Button>
-          </div>
+      <Modal isOpen={confirmPaidModalOpen} onClose={() => setConfirmPaidModalOpen(false)} showCloseButton={false} className="w-[min(420px,calc(100vw-2rem))] !rounded-[28px] p-6">
+        <h3 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">Mark as paid</h3>
+        <p className="mt-2 text-sm text-neutral-500">Mark the payment for {selectedRow?.customer_name} as paid.</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={() => setConfirmPaidModalOpen(false)} className="rounded-full border border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-950">Cancel</button>
+          <button type="button" onClick={async () => { if (selectedRow) { await updateRow(selectedRow.id, { markPaid: true }); setConfirmPaidModalOpen(false); } }} className="rounded-full bg-[#E4F56C] px-4 py-2.5 text-sm font-semibold text-neutral-950">Confirm</button>
         </div>
       </Modal>
 
-      <Modal
-        isOpen={confirmAttendanceModalOpen}
-        onClose={() => setConfirmAttendanceModalOpen(false)}
-        className="max-w-[400px] w-full"
-      >
-        <div className="p-6 text-center">
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Confirm Attendance</h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Add 1 session to attendance for <strong>{selectedRow?.customer_name}</strong>?
-            <br />
-            <span className="text-sm text-gray-500">
-              Current: {selectedRow?.sessions_used}/{selectedRow?.sessions_purchased}
-            </span>
-          </p>
-          <div className="flex justify-center gap-3">
-            <Button variant="outline" onClick={() => setConfirmAttendanceModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={async () => {
-                if (selectedRow) {
-                  const newUsed = Math.min(selectedRow.sessions_purchased, selectedRow.sessions_used + 1);
-                  await updateRow(selectedRow.id, { 
-                    sessionsUsed: newUsed, 
-                    attendanceStatus: newUsed >= selectedRow.sessions_purchased ? "completed" : "in_progress" 
-                  });
-                  setConfirmAttendanceModalOpen(false);
-                }
-              }}
-            >
-              Confirm
-            </Button>
-          </div>
+      <Modal isOpen={confirmAttendanceModalOpen} onClose={() => setConfirmAttendanceModalOpen(false)} showCloseButton={false} className="w-[min(420px,calc(100vw-2rem))] !rounded-[28px] p-6">
+        <h3 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">Add attendance</h3>
+        <p className="mt-2 text-sm text-neutral-500">Add 1 session for {selectedRow?.customer_name}. Currently {selectedRow?.sessions_used}/{selectedRow?.sessions_purchased}.</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={() => setConfirmAttendanceModalOpen(false)} className="rounded-full border border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-950">Cancel</button>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!selectedRow) return;
+              const newUsed = Math.min(selectedRow.sessions_purchased, selectedRow.sessions_used + 1);
+              await updateRow(selectedRow.id, { sessionsUsed: newUsed, attendanceStatus: newUsed >= selectedRow.sessions_purchased ? "completed" : "in_progress" });
+              setConfirmAttendanceModalOpen(false);
+            }}
+            className="rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white"
+          >
+            Add session
+          </button>
         </div>
       </Modal>
-      <Modal
-        isOpen={confirmDeleteModalOpen}
-        onClose={() => setConfirmDeleteModalOpen(false)}
-        className="max-w-[400px] w-full"
-      >
-        <div className="p-6 text-center">
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Confirm Delete</h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Are you sure you want to delete the record for <strong>{selectedRow?.customer_name}</strong>? This action cannot be undone.
-          </p>
-          <div className="flex justify-center gap-3">
-            <Button variant="outline" onClick={() => setConfirmDeleteModalOpen(false)} disabled={submitting}>
-              Cancel
-            </Button>
-            <Button 
-              className="bg-red-600 hover:bg-red-700 text-white"
-              disabled={submitting}
-              onClick={() => selectedRow && deleteRow(selectedRow.id)}
-            >
-              {submitting ? "Deleting..." : "Delete"}
-            </Button>
-          </div>
+
+      <Modal isOpen={confirmDeleteModalOpen} onClose={() => setConfirmDeleteModalOpen(false)} showCloseButton={false} className="w-[min(420px,calc(100vw-2rem))] !rounded-[28px] p-6">
+        <h3 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">Delete record</h3>
+        <p className="mt-2 text-sm text-neutral-500">Delete the record for {selectedRow?.customer_name}. This cannot be undone.</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={() => setConfirmDeleteModalOpen(false)} disabled={submitting} className="rounded-full border border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-950 disabled:opacity-50">Cancel</button>
+          <button type="button" disabled={submitting} onClick={() => selectedRow && deleteRow(selectedRow.id)} className="rounded-full bg-red-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{submitting ? "Deleting…" : "Delete"}</button>
         </div>
       </Modal>
     </div>

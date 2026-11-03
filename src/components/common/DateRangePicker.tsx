@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import StudioDate from "@/components/ui/StudioDate";
 
 export interface DateRangeValue {
   from: string; // YYYY-MM-DD or ""
@@ -73,7 +74,9 @@ export default function DateRangePicker({
   useEffect(() => {
     if (!open) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as HTMLElement;
+      if (target.closest?.("[data-studio-date]")) return;
+      if (containerRef.current && !containerRef.current.contains(target)) {
         setOpen(false);
       }
     };
@@ -306,22 +309,9 @@ export default function DateRangePicker({
             <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Custom range
             </p>
-            <div className="mb-3 flex items-center gap-2">
-              <input
-                type="date"
-                value={value.from}
-                onChange={(e) => onChange(e.target.value, value.to)}
-                className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:focus:border-gray-500 dark:focus:ring-gray-500"
-                title="From date"
-              />
-              <span className="text-xs text-gray-400 dark:text-gray-500">to</span>
-              <input
-                type="date"
-                value={value.to}
-                onChange={(e) => onChange(value.from, e.target.value)}
-                className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:focus:border-gray-500 dark:focus:ring-gray-500"
-                title="To date"
-              />
+            <div className="mb-3 flex flex-col gap-2">
+              <StudioDate block clearable ariaLabel="From date" placeholder="From" value={value.from} onChange={(next) => onChange(next, value.to)} />
+              <StudioDate block clearable ariaLabel="To date" placeholder="To" value={value.to} onChange={(next) => onChange(value.from, next)} />
             </div>
             <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
               Or pick on calendar

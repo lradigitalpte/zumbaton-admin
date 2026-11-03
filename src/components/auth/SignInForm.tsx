@@ -1,7 +1,6 @@
 "use client";
 import Checkbox from "@/components/form/input/Checkbox";
 import Input from "@/components/form/input/InputField";
-import Label from "@/components/form/Label";
 import Button from "@/components/ui/button/Button";
 import { EyeCloseIcon, EyeIcon } from "@/icons";
 import Link from "next/link";
@@ -9,6 +8,7 @@ import BrandLogo from "@/components/common/BrandLogo";
 import { useRouter } from "next/navigation";
 import React, { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { studioButton, studioError, studioInput, studioInputIcon, studioLead, studioLink, studioTitle } from "./studio";
 
 export default function SignInForm() {
   const [showPassword, setShowPassword] = useState(false);
@@ -69,15 +69,15 @@ export default function SignInForm() {
   };
 
   return (
-    <div className="flex flex-col flex-1 lg:w-1/2 w-full">
+    <div className="flex h-full w-full flex-1 flex-col overflow-y-auto px-6 py-8 lg:w-1/2">
       <div className="w-full max-w-md sm:pt-10 mx-auto mb-5">
         {/* One Step Fitness Logo */}
-        <div className="flex items-center justify-center gap-2">
+        <div className="flex items-center justify-center">
           <BrandLogo
             alt="One Step Fitness Logo"
-            width={400}
-            height={133}
-            className="h-32 w-auto"
+            width={280}
+            height={93}
+            className="h-16 w-auto"
             priority
           />
         </div>
@@ -85,38 +85,38 @@ export default function SignInForm() {
       <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto">
         <div>
           <div className="mb-5 sm:mb-8">
-            <h1 className="mb-2 font-semibold text-gray-800 text-title-sm dark:text-white/90 sm:text-title-md">
-              Sign In
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Enter your email or username and password to sign in!
+            <h1 className={studioTitle}>Sign in</h1>
+            <p className={studioLead}>
+              Use your studio email and password. A username without @ signs in as @zumbaton.com.
             </p>
           </div>
           <div>
             <form onSubmit={handleSubmit}>
               <div className="space-y-6">
                 {error && (
-                  <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                  <div className={studioError}>
                     {error}
                   </div>
                 )}
                 <div>
-                  <Label>
-                    Email or Username <span className="text-error-500">*</span>{" "}
-                  </Label>
+                  <label className="mb-2 block text-sm font-medium text-neutral-800 dark:text-white/90">
+                    Email or username
+                  </label>
                   <Input
-                    placeholder="demo@onestepfitness.sg or demouser"
+                    className={studioInput}
+                    placeholder="you@onestepfitness.sg"
                     type="text"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                   />
                 </div>
                 <div>
-                  <Label>
-                    Password <span className="text-error-500">*</span>{" "}
-                  </Label>
+                  <label className="mb-2 block text-sm font-medium text-neutral-800 dark:text-white/90">
+                    Password
+                  </label>
                   <div className="relative">
                     <Input
+                      className={studioInputIcon}
                       type={showPassword ? "text" : "password"}
                       placeholder="Enter your password"
                       value={password}
@@ -137,20 +137,17 @@ export default function SignInForm() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Checkbox checked={isChecked} onChange={setIsChecked} />
-                    <span className="block font-normal text-gray-700 text-theme-sm dark:text-gray-400">
+                    <span className="block text-sm text-neutral-600 dark:text-neutral-300">
                       Keep me logged in
                     </span>
                   </div>
-                  <Link
-                    href="/forgot-password"
-                    className="text-sm text-brand-500 hover:text-brand-600 dark:text-brand-400"
-                  >
+                  <Link href="/forgot-password" className={`text-sm ${studioLink}`}>
                     Forgot password?
                   </Link>
                 </div>
                 <div>
-                  <Button className="w-full" size="sm" type="submit" disabled={isSubmitting}>
-                    {isSubmitting ? "Signing in..." : "Sign in"}
+                  <Button className={studioButton} size="sm" type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? "Signing in…" : "Sign in"}
                   </Button>
                 </div>
               </div>

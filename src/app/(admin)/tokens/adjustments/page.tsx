@@ -129,25 +129,40 @@ export default function TokenAdjustmentsPage() {
   }, [adjustments, searchQuery, statusFilter, typeFilter]);
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString("en-US", {
-      month: "short",
+    return new Date(dateStr).toLocaleString("en-SG", {
       day: "numeric",
-      hour: "2-digit",
+      month: "short",
+      hour: "numeric",
       minute: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Singapore",
     });
   };
 
   const getInitials = (name: string) => {
-    return name.split(" ").map((n) => n[0]).join("").toUpperCase();
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    return ((parts[0]?.[0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?";
   };
 
   const getAvatarColor = (name: string) => {
     const colors = [
-      "bg-blue-500", "bg-emerald-500", "bg-purple-500", "bg-amber-500",
-      "bg-pink-500", "bg-cyan-500", "bg-indigo-500", "bg-rose-500",
+      "bg-[#E4F56C] text-neutral-950",
+      "bg-sky-100 text-sky-800",
+      "bg-orange-100 text-orange-800",
+      "bg-violet-100 text-violet-800",
+      "bg-emerald-100 text-emerald-800",
+      "bg-pink-100 text-pink-800",
     ];
-    return colors[name.charCodeAt(0) % colors.length];
+    return colors[(name?.charCodeAt(0) || 0) % colors.length];
   };
+
+  const statusTabs: { value: string; label: string; hint: string; count: number }[] = [
+    { value: "all", label: "All", hint: "Every adjustment", count: stats.total },
+    { value: "pending", label: "Pending", hint: "Waiting for approval", count: stats.pending },
+    { value: "approved", label: "Approved", hint: "Ready to apply", count: stats.approved },
+    { value: "completed", label: "Completed", hint: "Already on the balance", count: stats.completed },
+    { value: "rejected", label: "Rejected", hint: "Declined", count: stats.rejected },
+  ];
 
   const handleCreateAdjustment = async () => {
     if (!newAdjustment.userId || !newAdjustment.amount || !newAdjustment.reason) return;
@@ -204,33 +219,26 @@ export default function TokenAdjustmentsPage() {
     }
   };
 
-  // Loading state
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="min-w-0 space-y-5">
         <PageBreadCrumb pageTitle="Token Adjustments" />
-        <div className="flex flex-col items-center justify-center py-12">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-purple-500 border-t-transparent"></div>
-          <p className="mt-4 text-gray-500 dark:text-gray-400">Loading adjustments...</p>
+        <div className="flex items-center gap-3 py-16 text-sm text-neutral-500">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-950 border-t-transparent dark:border-white dark:border-t-transparent" />
+          Loading adjustments…
         </div>
       </div>
     );
   }
 
-  // Error state
   if (error) {
     return (
-      <div className="space-y-6">
+      <div className="min-w-0 space-y-5">
         <PageBreadCrumb pageTitle="Token Adjustments" />
-        <div className="flex flex-col items-center justify-center py-12">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30 mb-4">
-            <svg className="h-8 w-8 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Failed to load adjustments</h3>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {error instanceof Error ? error.message : 'An error occurred'}
+        <div className="rounded-[28px] border border-red-200 bg-red-50 px-6 py-10 text-center dark:border-red-900/40 dark:bg-red-950/20">
+          <h3 className="text-lg font-semibold text-neutral-950 dark:text-white">Couldn’t load adjustments</h3>
+          <p className="mt-1 text-sm text-neutral-500">
+            {error instanceof Error ? error.message : "An error occurred"}
           </p>
         </div>
       </div>
@@ -238,27 +246,20 @@ export default function TokenAdjustmentsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-5">
       <PageBreadCrumb pageTitle="Token Adjustments" />
 
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-purple-500 to-indigo-600 text-white shadow-lg">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Token Adjustments</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Manage manual token credits, debits, and corrections
-            </p>
-          </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">Token Adjustments</h1>
+          <p className="mt-1 max-w-xl text-sm text-neutral-500">
+            Manual credits, debits, and corrections. Approve first, then apply them to the balance.
+          </p>
         </div>
         <button
+          type="button"
           onClick={() => setShowCreatePanel(true)}
-          className="inline-flex items-center gap-2 rounded-xl bg-linear-to-r from-purple-500 to-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition-all hover:shadow-xl hover:scale-105"
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-neutral-950 px-5 py-2.5 text-sm font-semibold text-white dark:bg-[#E4F56C] dark:text-neutral-950"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -267,326 +268,134 @@ export default function TokenAdjustmentsPage() {
         </button>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 dark:bg-gray-700">
-              <svg className="h-5 w-5 text-gray-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Total</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
-            </div>
-          </div>
+      <div className="flex flex-wrap gap-2">
+        <div className="rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs dark:border-white/10 dark:bg-gray-800">
+          <span className="text-neutral-400">Credits applied</span>{" "}
+          <span className="font-semibold text-emerald-600 dark:text-emerald-400">+{stats.totalCredits}</span>
         </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
-              <svg className="h-5 w-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Pending</p>
-              <p className="text-xl font-bold text-amber-600 dark:text-amber-400">{stats.pending}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-900/30">
-              <svg className="h-5 w-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Approved</p>
-              <p className="text-xl font-bold text-blue-600 dark:text-blue-400">{stats.approved}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/30">
-              <svg className="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Completed</p>
-              <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{stats.completed}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/30">
-              <svg className="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11l5-5m0 0l5 5m-5-5v12" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Credits</p>
-              <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">+{stats.totalCredits}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 dark:bg-red-900/30">
-              <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 13l-5 5m0 0l-5-5m5 5V6" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Debits</p>
-              <p className="text-xl font-bold text-red-600 dark:text-red-400">-{stats.totalDebits}</p>
-            </div>
-          </div>
+        <div className="rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs dark:border-white/10 dark:bg-gray-800">
+          <span className="text-neutral-400">Debits applied</span>{" "}
+          <span className="font-semibold text-red-600 dark:text-red-400">-{stats.totalDebits}</span>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          {/* Status Filter Tabs */}
-          <div className="flex flex-wrap gap-2">
-            {[
-              { value: "all", label: "All" },
-              { value: "pending", label: "Pending" },
-              { value: "approved", label: "Approved" },
-              { value: "completed", label: "Completed" },
-              { value: "rejected", label: "Rejected" },
-            ].map((filter) => {
-              const count = filter.value === "all"
-                ? adjustments.length
-                : adjustments.filter((a) => a.status === filter.value).length;
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {statusTabs.map((tab) => {
+          const selected = statusFilter === tab.value;
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => setStatusFilter(tab.value)}
+              aria-pressed={selected}
+              className={`relative min-h-[124px] rounded-[28px] border p-5 text-left shadow-[0_10px_30px_rgba(16,24,40,0.05)] ${
+                selected
+                  ? "border-neutral-950 bg-[#E4F56C] text-neutral-950 ring-2 ring-neutral-950"
+                  : "border-neutral-200/80 bg-white text-neutral-950 hover:border-neutral-300 dark:border-white/10 dark:bg-gray-800 dark:text-white"
+              }`}
+            >
+              <span className={`absolute right-4 top-4 flex h-5 w-5 items-center justify-center rounded-full border ${selected ? "border-neutral-950 bg-neutral-950 text-[#E4F56C]" : "border-neutral-300 bg-white dark:border-white/20 dark:bg-gray-900"}`}>
+                {selected ? (
+                  <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3.5 8.5l3 3 6-6.5" /></svg>
+                ) : null}
+              </span>
+              <p className={`pr-6 text-xs font-semibold uppercase tracking-wide ${selected ? "text-neutral-950/70" : "text-neutral-400"}`}>{tab.label}</p>
+              <p className="mt-3 text-4xl font-semibold tracking-tight">{tab.count}</p>
+              <p className={`mt-1 text-xs ${selected ? "text-neutral-950/70" : "text-neutral-400"}`}>{selected ? "Viewing now" : tab.hint}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="rounded-[28px] border border-neutral-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-950 dark:border-white/10 dark:bg-gray-900 dark:text-white"
+          >
+            <option value="all">All types</option>
+            <option value="credit">Credit</option>
+            <option value="debit">Debit</option>
+            <option value="correction">Correction</option>
+            <option value="promo">Promo</option>
+            <option value="refund">Refund</option>
+          </select>
+          <div className="relative min-w-0 flex-1">
+            <Input
+              type="text"
+              placeholder="Search by name, email, or reason"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {filteredAdjustments.length === 0 ? (
+          <div className="px-2 py-14 text-center">
+            <h3 className="text-base font-semibold text-neutral-950 dark:text-white">No adjustments found</h3>
+            <p className="mt-1 text-sm text-neutral-500">Try another filter, or create a new adjustment.</p>
+          </div>
+        ) : (
+          <ul className="mt-4 divide-y divide-neutral-100 dark:divide-white/10">
+            {filteredAdjustments.map((adj) => {
+              const tConfig = typeConfig[adj.type];
+              const sConfig = statusConfig[adj.status];
               return (
-                <button
-                  key={filter.value}
-                  onClick={() => setStatusFilter(filter.value)}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
-                    statusFilter === filter.value
-                      ? "bg-purple-600 text-white shadow-md"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                  }`}
-                >
-                  {filter.label}
-                  <span className={`rounded-full px-1.5 py-0.5 text-xs ${
-                    statusFilter === filter.value ? "bg-white/20" : "bg-gray-200 dark:bg-gray-600"
-                  }`}>
-                    {count}
-                  </span>
-                </button>
+                <li key={adj.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center">
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold ${getAvatarColor(adj.userName)}`}>
+                    {getInitials(adj.userName)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-neutral-950 dark:text-white">{adj.userName}</p>
+                    <p className="truncate text-xs text-neutral-500">{adj.userEmail || "No email"} · {adj.reason}</p>
+                    {adj.notes && <p className="truncate text-[11px] text-neutral-400">{adj.notes}</p>}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${tConfig.bg} ${tConfig.color}`}>{tConfig.label}</span>
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${sConfig.bg} ${sConfig.color}`}>{sConfig.label}</span>
+                  </div>
+                  <div className="sm:w-24 sm:text-right">
+                    <p className={`text-sm font-semibold ${adj.amount > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                      {adj.amount > 0 ? `+${adj.amount}` : adj.amount}
+                    </p>
+                    <p className="text-[11px] text-neutral-400">{formatDate(adj.requestedAt)}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => setSelectedAdjustment(adj)} className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-white/10 dark:text-neutral-200 dark:hover:bg-white/5">
+                      View
+                    </button>
+                    {adj.status === "pending" && (
+                      <>
+                        <button type="button" onClick={() => handleApprove(adj.id)} className="rounded-full bg-neutral-950 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-neutral-950">
+                          Approve
+                        </button>
+                        <button type="button" onClick={() => handleReject(adj.id)} className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white">
+                          Reject
+                        </button>
+                      </>
+                    )}
+                    {adj.status === "approved" && (
+                      <button type="button" onClick={() => handleComplete(adj.id)} className="rounded-full bg-[#E4F56C] px-3 py-1.5 text-xs font-semibold text-neutral-950">
+                        Apply
+                      </button>
+                    )}
+                  </div>
+                </li>
               );
             })}
-          </div>
-
-          {/* Type Filter & Search */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-            >
-              <option value="all">All Types</option>
-              <option value="credit">Credit</option>
-              <option value="debit">Debit</option>
-              <option value="correction">Correction</option>
-              <option value="promo">Promo</option>
-              <option value="refund">Refund</option>
-            </select>
-
-            <div className="relative">
-              <Input
-                type="text"
-                placeholder="Search adjustments..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Adjustments Table */}
-      <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  ID
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  User
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  Type
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  Amount
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  Reason
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  Status
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  Requested
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {filteredAdjustments.map((adj) => {
-                const tConfig = typeConfig[adj.type];
-                const sConfig = statusConfig[adj.status];
-                return (
-                  <tr key={adj.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-sm font-medium text-gray-900 dark:text-white">
-                        {adj.id}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`flex h-9 w-9 items-center justify-center rounded-full ${getAvatarColor(adj.userName)} text-white text-sm font-semibold`}>
-                          {getInitials(adj.userName)}
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900 dark:text-white text-sm">{adj.userName}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">{adj.userEmail}</p>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-semibold ${tConfig.bg} ${tConfig.color}`}>
-                        {tConfig.label}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex items-center justify-center min-w-12 rounded-lg px-2 py-1 text-sm font-bold ${
-                        adj.amount > 0
-                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                          : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                      }`}>
-                        {adj.amount > 0 ? `+${adj.amount}` : adj.amount}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <div className="max-w-xs">
-                        <p className="text-sm text-gray-900 dark:text-white truncate">{adj.reason}</p>
-                        {adj.notes && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{adj.notes}</p>
-                        )}
-                      </div>
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-semibold ${sConfig.bg} ${sConfig.color}`}>
-                        {sConfig.label}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="text-sm text-gray-900 dark:text-white">{adj.requestedBy}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{formatDate(adj.requestedAt)}</p>
-                      </div>
-                    </td>
-
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => setSelectedAdjustment(adj)}
-                          className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 transition-colors"
-                          title="View details"
-                        >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                        </button>
-                        {adj.status === "pending" && (
-                          <>
-                            <button
-                              onClick={() => handleApprove(adj.id)}
-                              className="rounded-lg p-2 text-emerald-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 transition-colors"
-                              title="Approve"
-                            >
-                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => handleReject(adj.id)}
-                              className="rounded-lg p-2 text-red-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 transition-colors"
-                              title="Reject"
-                            >
-                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          </>
-                        )}
-                        {adj.status === "approved" && (
-                          <button
-                            onClick={() => handleComplete(adj.id)}
-                            className="rounded-lg p-2 text-blue-400 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 transition-colors"
-                            title="Complete"
-                          >
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {filteredAdjustments.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 mb-4">
-              <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No adjustments found</h3>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Try adjusting your filters or create a new adjustment
-            </p>
-          </div>
+          </ul>
         )}
       </div>
 
@@ -636,7 +445,7 @@ export default function TokenAdjustmentsPage() {
                           className="w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                         >
                           <div className="flex items-center gap-3">
-                            <div className={`flex h-8 w-8 items-center justify-center rounded-full ${getAvatarColor(u.name)} text-white text-xs font-semibold`}>
+                            <div className={`flex h-8 w-8 items-center justify-center rounded-full ${getAvatarColor(u.name)} text-xs font-semibold`}>
                               {getInitials(u.name)}
                             </div>
                             <div>
@@ -651,7 +460,7 @@ export default function TokenAdjustmentsPage() {
                 )}
                 {selectedUser && (
                   <div className="mt-2 flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-700/50">
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-full ${getAvatarColor(selectedUser.name)} text-white text-xs font-semibold`}>
+                    <div className={`flex h-8 w-8 items-center justify-center rounded-full ${getAvatarColor(selectedUser.name)} text-xs font-semibold`}>
                       {getInitials(selectedUser.name)}
                     </div>
                     <div className="flex-1">
@@ -733,7 +542,7 @@ export default function TokenAdjustmentsPage() {
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Preview</p>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-full ${getAvatarColor(selectedUser.name)} text-white text-xs font-semibold`}>
+                      <div className={`flex h-8 w-8 items-center justify-center rounded-full ${getAvatarColor(selectedUser.name)} text-xs font-semibold`}>
                         {getInitials(selectedUser.name)}
                       </div>
                       <span className="text-sm font-medium text-gray-900 dark:text-white">{selectedUser.name}</span>
@@ -758,7 +567,7 @@ export default function TokenAdjustmentsPage() {
               <button
                 onClick={handleCreateAdjustment}
                 disabled={!newAdjustment.userId || !newAdjustment.amount || !newAdjustment.reason}
-                className="flex-1 rounded-xl bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex-1 rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-[#E4F56C] dark:text-neutral-950"
               >
                 Submit Adjustment
               </button>
@@ -801,7 +610,7 @@ export default function TokenAdjustmentsPage() {
 
               {/* User Info */}
               <div className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${getAvatarColor(selectedAdjustment.userName)} text-white font-semibold`}>
+                <div className={`flex h-12 w-12 items-center justify-center rounded-full ${getAvatarColor(selectedAdjustment.userName)} font-semibold`}>
                   {getInitials(selectedAdjustment.userName)}
                 </div>
                 <div>
@@ -876,7 +685,7 @@ export default function TokenAdjustmentsPage() {
                   </button>
                   <button
                     onClick={() => handleApprove(selectedAdjustment.id)}
-                    className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors"
+                    className="flex-1 rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white dark:bg-[#E4F56C] dark:text-neutral-950"
                   >
                     Approve
                   </button>
@@ -885,7 +694,7 @@ export default function TokenAdjustmentsPage() {
               {selectedAdjustment.status === "approved" && (
                 <button
                   onClick={() => handleComplete(selectedAdjustment.id)}
-                  className="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+                  className="flex-1 rounded-full bg-[#E4F56C] px-4 py-2.5 text-sm font-semibold text-neutral-950"
                 >
                   Complete Adjustment
                 </button>

@@ -1,7 +1,7 @@
 import { supabase, getSupabaseAdminClient, TABLES } from '@/lib/supabase'
 import { ApiError } from '@/lib/api-error'
 import { getUserTokenBalance } from './token.service'
-import { updateUserStreak, incrementUserStat, updateLastClassAt } from './user.service'
+import { updateUserStreak, incrementUserStat } from './user.service'
 import type {
   CheckInRequest,
   CheckInResponse,
@@ -99,7 +99,6 @@ export async function checkIn(params: {
   try {
     await incrementUserStat(booking.user_id, 'totalClassesAttended', 1)
     await updateUserStreak(booking.user_id, classTime)
-    await updateLastClassAt(booking.user_id)
   } catch (statsError) {
     // Log but don't fail - check-in was successful
     console.error('[AttendanceService] Failed to update user stats:', statsError)
@@ -273,6 +272,14 @@ export async function markNoShow(params: {
     console.error('[AttendanceService] Failed to update user_stats:', JSON.stringify(statsUpdateError))
   } else {
     console.log('[AttendanceService] Successfully updated user_stats')
+  }
+
+  if (booking.user_id) {
+    try {
+      await updateUserStreak(booking.user_id)
+    } catch (streakError) {
+      console.error('[AttendanceService] Failed to recompute streak after no-show:', streakError)
+    }
   }
 
   // 6. Send no-show warning notification to user

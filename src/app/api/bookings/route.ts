@@ -6,6 +6,7 @@ import { createBooking, createBatchBooking, getUserBookings } from '@/services/b
 import { UuidSchema } from '@/api/schemas'
 import { ApiError } from '@/lib/api-error'
 import { getAuthenticatedUser, hasRequiredRole } from '@/middleware/rbac'
+import { createAuditLog } from '@/services/rbac.service'
 import { z } from 'zod'
 
 // Members may only read or book for themselves; staff and above may act for anyone.
@@ -78,6 +79,21 @@ export async function POST(request: NextRequest) {
       const validatedData = BatchBookingSchema.parse(body)
       await assertCanActForUser(request, validatedData.userId)
       const result = await createBatchBooking(validatedData)
+      const actor = await getAuthenticatedUser(request)
+      const bookings = (result as { bookings?: { bookingId?: string }[] }).bookings || []
+      if (actor) {
+        await createAuditLog({
+          userId: actor.id,
+          action: 'booking.create',
+          resourceType: 'bookings',
+          resourceId: bookings[0]?.bookingId,
+          newValues: {
+            userId: validatedData.userId,
+            classCount: validatedData.classIds.length,
+            bookingCount: bookings.length,
+          },
+        })
+      }
       return NextResponse.json({
         success: true,
         data: result,
@@ -87,6 +103,20 @@ export async function POST(request: NextRequest) {
       const validatedData = CreateBookingSchema.parse(body)
       await assertCanActForUser(request, validatedData.userId)
       const result = await createBooking(validatedData)
+      const actor = await getAuthenticatedUser(request)
+      const bookingId = (result as { booking?: { id?: string } }).booking?.id
+      if (actor) {
+        await createAuditLog({
+          userId: actor.id,
+          action: 'booking.create',
+          resourceType: 'bookings',
+          resourceId: bookingId,
+          newValues: {
+            userId: validatedData.userId,
+            classId: validatedData.classId,
+          },
+        })
+      }
       return NextResponse.json({
         success: true,
         data: result,

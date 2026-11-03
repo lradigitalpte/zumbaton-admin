@@ -1,436 +1,315 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
-import Input from "@/components/form/input/InputField";
+import { useState } from "react";
+import StudioMenu from "@/components/ui/StudioMenu";
+import StudioDate from "@/components/ui/StudioDate";
+import Pagination from "@/components/tables/Pagination";
 import { useAuditReport, AuditLog } from "@/hooks/useReports";
 import { useAuth } from "@/context/AuthContext";
 import { isRoleAtLeast } from "@/services/rbac.service";
-import Pagination from "@/components/tables/Pagination";
+
+const card = "rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800";
+const metric = "flex min-h-[168px] flex-col rounded-[28px] p-5 sm:p-6";
+const field = "h-9 w-full rounded-full border border-neutral-200 bg-white px-4 text-sm text-neutral-950 outline-none placeholder:text-neutral-400 dark:border-white/10 dark:bg-gray-800 dark:text-white";
 
 const actionFilters = [
-  { value: "all", label: "All Actions" },
-  { value: "create", label: "Create" },
-  { value: "update", label: "Update" },
-  { value: "delete", label: "Delete" },
-  { value: "view", label: "View" },
-  { value: "edit", label: "Edit" },
-  { value: "adjust", label: "Adjust" },
-  { value: "flag", label: "Flag" },
-  { value: "unflag", label: "Unflag" },
-  { value: "suspend", label: "Suspend" },
-  { value: "activate", label: "Activate" },
-  { value: "reset_password", label: "Reset Password" },
+  { value: "all", label: "All actions" },
+  { value: "create", label: "Creates" },
+  { value: "update", label: "Updates" },
+  { value: "delete", label: "Deletes and cancels" },
+  { value: "adjust", label: "Token adjustments" },
+  { value: "payment", label: "Payments" },
+  { value: "attendance", label: "Check-in and no-show" },
 ];
 
-const resourceTypeFilters = [
-  { value: "all", label: "All Resources" },
-  { value: "user", label: "User" },
-  { value: "package", label: "Package" },
-  { value: "class", label: "Class" },
-  { value: "booking", label: "Booking" },
-  { value: "token", label: "Token" },
-  { value: "payment", label: "Payment" },
-  { value: "notification", label: "Notification" },
+const resourceFilters = [
+  { value: "all", label: "All resources" },
+  { value: "user", label: "Users" },
+  { value: "class", label: "Classes" },
+  { value: "booking", label: "Bookings" },
+  { value: "package", label: "Packages" },
+  { value: "token", label: "Tokens" },
+  { value: "payment", label: "Payments" },
 ];
 
-const getActionColor = (action: string) => {
-  if (action.includes("create") || action.includes("activate")) return "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30";
-  if (action.includes("delete") || action.includes("suspend")) return "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30";
-  if (action.includes("update") || action.includes("edit") || action.includes("adjust")) return "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30";
-  if (action.includes("view")) return "text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/30";
-  return "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30";
-};
+const hiddenKeys = new Set(["updated_at", "created_at", "updatedAt", "createdAt", "password", "filters"]);
 
-const formatAction = (action: string) => {
-  return action.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
-};
+function formatAction(action: string) {
+  return action.replace(/[._]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function actionTone(action: string) {
+  if (/create|activate|succeeded|check_in/.test(action)) return "bg-[#E4F56C] text-neutral-950";
+  if (/delete|cancel|deactivat|suspend|no_show/.test(action)) return "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300";
+  if (/update|edit|adjust|sync/.test(action)) return "bg-neutral-950 text-white dark:bg-white dark:text-neutral-950";
+  return "bg-neutral-100 text-neutral-600 dark:bg-white/10 dark:text-white";
+}
+
+function preview(value: unknown) {
+  if (value == null || value === "") return "empty";
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  if (typeof value === "object") {
+    const text = JSON.stringify(value);
+    return text.length > 90 ? `${text.slice(0, 87)}…` : text;
+  }
+  return String(value);
+}
+
+function changeRows(log: AuditLog) {
+  const previous = log.oldValues || {};
+  const next = log.newValues || {};
+  const keys = [...new Set([...Object.keys(previous), ...Object.keys(next)])].filter((key) => !hiddenKeys.has(key));
+  return keys.flatMap((key) => {
+    const from = previous[key];
+    const to = key in next ? next[key] : undefined;
+    if (JSON.stringify(from) === JSON.stringify(to)) return [];
+    return [{
+      key,
+      from: key in previous ? preview(from) : null,
+      to: key in next ? preview(to) : null,
+    }];
+  });
+}
+
+function formatWhen(dateStr: string) {
+  return new Date(dateStr).toLocaleString("en-SG", {
+    timeZone: "Asia/Singapore",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 export default function AuditsPage() {
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [resourceTypeFilter, setResourceTypeFilter] = useState("all");
+  const [scope, setScope] = useState<"changes" | "all">("changes");
   const [currentPage, setCurrentPage] = useState(1);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [openId, setOpenId] = useState<string | null>(null);
 
-  // Check if user has access
   const hasAccess = user && isRoleAtLeast(user.role, "admin");
-
-  const { data, isLoading, error } = useAuditReport({
+  const { data, isLoading, isFetching, error } = useAuditReport({
     action: actionFilter !== "all" ? actionFilter : undefined,
     resourceType: resourceTypeFilter !== "all" ? resourceTypeFilter : undefined,
     search: searchQuery || undefined,
     startDate: startDate || undefined,
     endDate: endDate || undefined,
+    scope,
     page: currentPage,
     pageSize: 50,
   });
 
-  const logs = data?.logs || [];
-  const stats = {
-    totalLogs: data?.stats?.totalLogs ?? 0,
-    todayLogs: data?.stats?.todayLogs ?? 0,
-    uniqueUsers: data?.stats?.uniqueUsers ?? 0,
-    uniqueActions: data?.stats?.uniqueActions ?? 0,
-    uniqueResources: data?.stats?.uniqueResources ?? 0,
-  };
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const formatJson = (obj: Record<string, unknown> | null) => {
-    if (!obj) return null;
-    try {
-      return JSON.stringify(obj, null, 2);
-    } catch {
-      return String(obj);
-    }
-  };
-
-  // Check if any log has IP address
-  const hasIpAddresses = useMemo(() => {
-    return logs.some((log) => log.ipAddress);
-  }, [logs]);
-
-  // Check if any log has changes
-  const hasChanges = useMemo(() => {
-    return logs.some((log) => log.oldValues || log.newValues);
-  }, [logs]);
-
   if (!hasAccess) {
     return (
-      <div className="space-y-6">
-        <PageBreadCrumb pageTitle="Audit Logs" />
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center dark:border-red-800 dark:bg-red-900/20">
-          <h2 className="text-xl font-semibold text-red-600 dark:text-red-400">Access Denied</h2>
-          <p className="mt-2 text-red-500 dark:text-red-400">
-            Only administrators can view audit logs.
-          </p>
-        </div>
+      <div className={`${card} px-6 py-10 text-center`}>
+        <h1 className="text-xl font-semibold text-neutral-950 dark:text-white">Audits</h1>
+        <p className="mt-2 text-sm text-neutral-500">Only administrators can view the audit trail.</p>
       </div>
     );
   }
 
-  return (
-    <div className="space-y-6">
-      <PageBreadCrumb pageTitle="Audit Logs" />
+  const logs = data?.logs || [];
+  const stats = data?.stats;
+  const showInitialLoading = isLoading && !data;
 
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white shadow-lg">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Audit Logs</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Comprehensive system activity audit trail
-              {isLoading && <span className="ml-2 text-blue-500">(Loading...)</span>}
-            </p>
-          </div>
+  return (
+    <div className="min-w-0 space-y-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">Audits</h1>
+          <p className="mt-1 max-w-2xl text-sm text-neutral-500">
+            Changes to people, classes, bookings, packages, tokens, and payments. Times are Singapore.
+            {isFetching && !isLoading ? " Updating…" : ""}
+          </p>
+        </div>
+        <div className="flex rounded-full bg-neutral-100 p-1 dark:bg-white/10">
+          {(["changes", "all"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => {
+                setScope(item);
+                setCurrentPage(1);
+              }}
+              className={`rounded-full px-3.5 py-1.5 text-xs font-semibold ${scope === item ? "bg-neutral-950 text-white dark:bg-white dark:text-neutral-950" : "text-neutral-500"}`}
+            >
+              {item === "changes" ? "Changes" : "All activity"}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Stats Cards */}
-      {isLoading ? (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800 animate-pulse">
-              <div className="h-12 w-12 rounded-xl bg-gray-200 dark:bg-gray-700 mb-3" />
-              <div className="h-4 w-20 rounded bg-gray-200 dark:bg-gray-700 mb-2" />
-              <div className="h-8 w-24 rounded bg-gray-200 dark:bg-gray-700" />
-            </div>
-          ))}
+      {showInitialLoading ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((item) => <div key={item} className={`${metric} animate-pulse border border-neutral-200/80 bg-white dark:border-white/10 dark:bg-gray-800`} />)}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-900/30">
-                <svg className="h-6 w-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Total Logs</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.totalLogs.toLocaleString()}</p>
-              </div>
-            </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className={`${metric} border border-[#d5e45c] bg-[#E4F56C] text-neutral-950`}>
+            <p className="text-sm font-medium">Changes</p>
+            <p className="mt-5 text-4xl font-semibold leading-none tracking-tight">{(stats?.totalLogs ?? 0).toLocaleString()}</p>
+            <p className="mt-2 text-xs text-neutral-950/60">{(stats?.hiddenReads ?? 0).toLocaleString()} list views are hidden</p>
           </div>
-
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/30">
-                <svg className="h-6 w-6 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Today</p>
-                <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.todayLogs.toLocaleString()}</p>
-              </div>
-            </div>
+          <div className={`${metric} border border-neutral-950 bg-neutral-950 text-white`}>
+            <p className="text-sm font-medium text-white/70">Today</p>
+            <p className="mt-5 text-4xl font-semibold leading-none tracking-tight">{(stats?.todayLogs ?? 0).toLocaleString()}</p>
+            <p className="mt-2 text-xs text-white/50">Changes since midnight, Singapore time</p>
           </div>
-
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-purple-100 dark:bg-purple-900/30">
-                <svg className="h-6 w-6 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Unique Users</p>
-                <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{stats.uniqueUsers.toLocaleString()}</p>
-              </div>
-            </div>
+          <div className={`${metric} border border-neutral-200/80 bg-white text-neutral-950 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 dark:text-white`}>
+            <p className="text-sm font-medium text-neutral-600 dark:text-white/70">People</p>
+            <p className="mt-5 text-4xl font-semibold leading-none tracking-tight">{(stats?.uniqueUsers ?? 0).toLocaleString()}</p>
+            <p className="mt-2 text-xs text-neutral-400">Staff who made a change</p>
           </div>
-
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-100 dark:bg-cyan-900/30">
-                <svg className="h-6 w-6 text-cyan-600 dark:text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Actions</p>
-                <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">{stats.uniqueActions.toLocaleString()}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
-                <svg className="h-6 w-6 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Resources</p>
-                <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{stats.uniqueResources.toLocaleString()}</p>
-              </div>
-            </div>
+          <div className={`${metric} border border-neutral-200/80 bg-white text-neutral-950 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 dark:text-white`}>
+            <p className="text-sm font-medium text-neutral-600 dark:text-white/70">Action types</p>
+            <p className="mt-5 text-4xl font-semibold leading-none tracking-tight">{(stats?.uniqueActions ?? 0).toLocaleString()}</p>
+            <p className="mt-2 text-xs text-neutral-400">{stats?.uniqueResources ?? 0} resources touched</p>
           </div>
         </div>
       )}
 
-      {/* Filters */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Search</label>
-            <Input
-              type="text"
-              placeholder="Search users, actions, resources..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-            />
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Action</label>
-            <select
-              value={actionFilter}
-              onChange={(e) => {
-                setActionFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-            >
-              {actionFilters.map((filter) => (
-                <option key={filter.value} value={filter.value}>
-                  {filter.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Resource Type</label>
-            <select
-              value={resourceTypeFilter}
-              onChange={(e) => {
-                setResourceTypeFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-            >
-              {resourceTypeFilters.map((filter) => (
-                <option key={filter.value} value={filter.value}>
-                  {filter.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Start Date</label>
-            <Input
-              type="date"
-              value={startDate}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setCurrentPage(1);
-              }}
-            />
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">End Date</label>
-            <Input
-              type="date"
-              value={endDate}
-              onChange={(e) => {
-                setEndDate(e.target.value);
-                setCurrentPage(1);
-              }}
-            />
-          </div>
+      <section className={`${card} p-5 sm:p-6`}>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+          <input
+            type="search"
+            value={searchQuery}
+            placeholder="Search name, email, or action"
+            onChange={(event) => {
+              setSearchQuery(event.target.value);
+              setCurrentPage(1);
+            }}
+            className={field}
+          />
+          <StudioMenu
+            size="sm"
+            value={actionFilter}
+            onChange={(value) => {
+              setActionFilter(value);
+              setCurrentPage(1);
+            }}
+            placeholder="Action"
+            options={actionFilters}
+          />
+          <StudioMenu
+            size="sm"
+            value={resourceTypeFilter}
+            onChange={(value) => {
+              setResourceTypeFilter(value);
+              setCurrentPage(1);
+            }}
+            placeholder="Resource"
+            options={resourceFilters}
+          />
+          <StudioDate
+            block
+            clearable
+            ariaLabel="Start date"
+            placeholder="From"
+            value={startDate}
+            onChange={(value) => {
+              setStartDate(value);
+              setCurrentPage(1);
+            }}
+          />
+          <StudioDate
+            block
+            clearable
+            ariaLabel="End date"
+            placeholder="To"
+            value={endDate}
+            onChange={(value) => {
+              setEndDate(value);
+              setCurrentPage(1);
+            }}
+          />
         </div>
-      </div>
+      </section>
 
-      {/* Audit Logs Table */}
-      <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
+      <section className={`${card} overflow-hidden`}>
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 dark:bg-gray-800/50">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="border-b border-neutral-200 text-[11px] uppercase tracking-[0.14em] text-neutral-400 dark:border-white/10">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">User</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Action</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Resource</th>
-                {hasChanges && (
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Changes</th>
-                )}
-                {hasIpAddresses && (
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">IP Address</th>
-                )}
+                <th className="px-5 py-3">When</th>
+                <th className="px-5 py-3">Who</th>
+                <th className="px-5 py-3">Action</th>
+                <th className="px-5 py-3">What changed</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
-              {isLoading ? (
-                [...Array(5)].map((_, i) => (
-                  <tr key={i}>
-                    <td className="px-6 py-4">
-                      <div className="h-4 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="h-4 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="h-4 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="h-4 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    </td>
-                    {hasChanges && (
-                      <td className="px-6 py-4">
-                        <div className="h-4 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                      </td>
-                    )}
-                    {hasIpAddresses && (
-                      <td className="px-6 py-4">
-                        <div className="h-4 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                      </td>
-                    )}
+            <tbody className="divide-y divide-neutral-100 dark:divide-white/10">
+              {showInitialLoading ? (
+                [0, 1, 2, 3, 4].map((item) => (
+                  <tr key={item}>
+                    <td colSpan={4} className="px-5 py-4"><div className="h-4 w-full animate-pulse rounded bg-neutral-100 dark:bg-white/10" /></td>
                   </tr>
                 ))
               ) : error ? (
                 <tr>
-                  <td colSpan={hasChanges && hasIpAddresses ? 6 : hasChanges || hasIpAddresses ? 5 : 4} className="px-6 py-8 text-center text-red-600 dark:text-red-400">
-                    {error instanceof Error ? error.message : "Failed to load audit logs"}
-                  </td>
+                  <td colSpan={4} className="px-5 py-10 text-center text-red-600">{error instanceof Error ? error.message : "Could not load audits"}</td>
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan={hasChanges && hasIpAddresses ? 6 : hasChanges || hasIpAddresses ? 5 : 4} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                    No audit logs found
+                  <td colSpan={4} className="px-5 py-10 text-center text-neutral-500">
+                    {scope === "changes" ? "No changes in this view. List views stay under All activity." : "No audit rows match these filters."}
                   </td>
                 </tr>
-              ) : (
-                logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                      {formatDate(log.createdAt)}
+              ) : logs.map((log) => {
+                const rows = changeRows(log);
+                const open = openId === log.id;
+                return (
+                  <tr key={log.id} className="align-top">
+                    <td className="whitespace-nowrap px-5 py-3.5 text-neutral-600 dark:text-white/70">{formatWhen(log.createdAt)}</td>
+                    <td className="px-5 py-3.5">
+                      <p className="font-semibold text-neutral-950 dark:text-white">{log.userName}</p>
+                      {log.userEmail && <p className="text-xs text-neutral-500">{log.userEmail}</p>}
+                      {log.userRole && <p className="text-[11px] uppercase tracking-[0.12em] text-neutral-400">{log.userRole.replace(/_/g, " ")}</p>}
                     </td>
-                    <td className="px-6 py-4 text-sm">
-                      <div>
-                        <div className="font-medium text-gray-900 dark:text-white">{log.userName}</div>
-                        {log.userEmail && (
-                          <div className="text-gray-500 dark:text-gray-400">{log.userEmail}</div>
-                        )}
-                        {log.userRole && (
-                          <div className="text-xs text-gray-400 dark:text-gray-500">{log.userRole}</div>
-                        )}
-                      </div>
+                    <td className="px-5 py-3.5">
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${actionTone(log.action)}`}>{formatAction(log.action)}</span>
+                      <p className="mt-1 text-xs text-neutral-500">{log.resourceType.replace(/_/g, " ")}</p>
                     </td>
-                    <td className="px-6 py-4 text-sm">
-                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getActionColor(log.action)}`}>
-                        {formatAction(log.action)}
-                      </span>
+                    <td className="px-5 py-3.5">
+                      {rows.length === 0 ? (
+                        <p className="text-neutral-400">No field changes stored</p>
+                      ) : (
+                        <div>
+                          <div className="space-y-1">
+                            {(open ? rows : rows.slice(0, 2)).map((row) => (
+                              <p key={row.key} className="text-neutral-700 dark:text-white/80">
+                                <span className="font-medium text-neutral-950 dark:text-white">{row.key.replace(/_/g, " ")}</span>
+                                {row.from != null && <span className="text-neutral-400"> {row.from}</span>}
+                                <span className="text-neutral-400"> → </span>
+                                <span>{row.to ?? "removed"}</span>
+                              </p>
+                            ))}
+                          </div>
+                          {rows.length > 2 && (
+                            <button
+                              type="button"
+                              onClick={() => setOpenId(open ? null : log.id)}
+                              className="mt-2 text-xs font-semibold text-neutral-950 underline decoration-neutral-300 underline-offset-2 dark:text-white"
+                            >
+                              {open ? "Show less" : `${rows.length - 2} more fields`}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </td>
-                    <td className="px-6 py-4 text-sm">
-                      <div>
-                        <div className="font-medium text-gray-900 dark:text-white">{log.resourceType}</div>
-                        {log.resourceId && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400 font-mono">{log.resourceId.substring(0, 8)}...</div>
-                        )}
-                      </div>
-                    </td>
-                    {hasChanges && (
-                      <td className="px-6 py-4 text-sm">
-                        {(log.oldValues || log.newValues) ? (
-                          <details className="cursor-pointer group">
-                            <summary className="text-blue-600 dark:text-blue-400 hover:underline text-xs">
-                              View Details
-                            </summary>
-                            <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-900 rounded text-xs font-mono max-h-60 overflow-auto border border-gray-200 dark:border-gray-700">
-                              {log.oldValues && (
-                                <div className="mb-3">
-                                  <div className="text-red-600 dark:text-red-400 font-semibold mb-1 text-xs">Previous Values:</div>
-                                  <pre className="whitespace-pre-wrap text-xs bg-white dark:bg-gray-800 p-2 rounded">{formatJson(log.oldValues)}</pre>
-                                </div>
-                              )}
-                              {log.newValues && (
-                                <div>
-                                  <div className="text-emerald-600 dark:text-emerald-400 font-semibold mb-1 text-xs">New Values:</div>
-                                  <pre className="whitespace-pre-wrap text-xs bg-white dark:bg-gray-800 p-2 rounded">{formatJson(log.newValues)}</pre>
-                                </div>
-                              )}
-                            </div>
-                          </details>
-                        ) : (
-                          <span className="text-gray-400 text-xs">-</span>
-                        )}
-                      </td>
-                    )}
-                    {hasIpAddresses && (
-                      <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                        {log.ipAddress || "-"}
-                      </td>
-                    )}
                   </tr>
-                ))
-              )}
+                );
+              })}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      {/* Pagination */}
-      {data && data.total > 0 && (
+      {data && data.total > 50 && (
         <div className="flex justify-center">
           <Pagination
             currentPage={currentPage}
@@ -439,6 +318,15 @@ export default function AuditsPage() {
           />
         </div>
       )}
+
+      <section className={`${card} px-5 py-5 sm:px-6`}>
+        <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">What gets recorded</h2>
+        <ul className="mt-3 space-y-1.5 text-sm text-neutral-500">
+          <li>Creates, updates, cancels, check-ins, no-shows, token changes, and payments are kept.</li>
+          <li>Opening the users list no longer writes a row. Older list views are under All activity.</li>
+          <li>A change shows the previous value and the new value when both were stored.</li>
+        </ul>
+      </section>
     </div>
   );
 }

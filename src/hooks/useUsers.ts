@@ -16,6 +16,7 @@ export interface User {
   // Stats
   tokenBalance: number
   totalClasses: number
+  classesAttended: number
   noShows: number
   joinedDate: string
   lastActive: string
@@ -117,8 +118,9 @@ async function fetchUsers(filters: UseUsersQueryParams = {}, cacheBuster?: numbe
       updatedAt: user.updatedAt,
       // Enhanced data from API
       tokenBalance: user.currentTokenBalance || 0,
-      totalClasses: user.totalClassesBooked || user.stats?.totalClassesBooked || 0,
-      noShows: user.totalNoShows || user.stats?.totalNoShows || 0,
+      totalClasses: user.classesBooked ?? user.totalClassesBooked ?? user.stats?.totalClassesBooked ?? 0,
+      classesAttended: user.classesAttended ?? user.stats?.totalClassesAttended ?? 0,
+      noShows: user.totalNoShows ?? user.stats?.totalNoShows ?? 0,
       joinedDate: user.createdAt, // Map createdAt to joinedDate for UI
       lastActive: user.updatedAt || user.createdAt,
       avatar: user.avatarUrl || undefined, // Map avatarUrl to avatar for compatibility

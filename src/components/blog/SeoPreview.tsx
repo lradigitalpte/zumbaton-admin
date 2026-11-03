@@ -18,18 +18,16 @@ export function SeoPreview({ title, description, slug, imageUrl, siteUrl }: SeoP
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Google preview</p>
+      <div className="rounded-[20px] border border-neutral-200 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Google preview</p>
         <p className="truncate text-sm text-[#202124] dark:text-gray-300">{url}</p>
         <p className="mt-1 text-xl text-[#1a0dab] dark:text-blue-400">{displayTitle}</p>
         <p className="mt-1 line-clamp-2 text-sm text-[#4d5156] dark:text-gray-400">{displayDesc}</p>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-          Social preview (Open Graph)
-        </p>
-        <div className="overflow-hidden rounded-lg border border-gray-100 dark:border-gray-800">
+      <div className="rounded-[20px] border border-neutral-200 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+        <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Social preview</p>
+        <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-white/10 dark:bg-gray-800">
           {imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={imageUrl} alt="" className="aspect-[1.91/1] w-full object-cover" />

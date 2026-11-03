@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import SlidePanel from "@/components/ui/SlidePanel";
 import Label from "@/components/form/Label";
 import Input from "@/components/form/input/InputField";
-import Button from "@/components/ui/button/Button";
 import { useCreateCategory, useUpdateCategory, ClassCategory } from "@/hooks/useClassCategories";
 
 interface CategoryCreatePanelProps {
@@ -133,6 +132,7 @@ export default function CategoryCreatePanel({
             placeholder="e.g., Dance Fitness"
             value={formData.name}
             onChange={(e) => handleChange("name")(e.target.value)}
+            className="!h-12 !rounded-2xl !border-neutral-200 !bg-neutral-50 !shadow-none focus:!border-neutral-950 focus:!ring-neutral-950/10 dark:!border-white/10 dark:!bg-white/5"
           />
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Slug will be auto-generated from the name
@@ -143,7 +143,7 @@ export default function CategoryCreatePanel({
           <Label htmlFor="category-description">Description</Label>
           <textarea
             id="category-description"
-            className="h-24 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
+            className="h-28 w-full rounded-[22px] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 focus:border-neutral-950 focus:outline-hidden focus:ring-3 focus:ring-neutral-950/10 dark:border-white/10 dark:bg-white/5 dark:text-white"
             placeholder="Brief description of this category..."
             value={formData.description}
             onChange={(e) => handleChange("description")(e.target.value)}
@@ -158,10 +158,10 @@ export default function CategoryCreatePanel({
                 key={color.value}
                 type="button"
                 onClick={() => handleChange("color")(color.value)}
-                className={`h-12 rounded-lg border-2 transition-all ${
+                className={`h-12 rounded-full border-2 transition-all ${
                   formData.color === color.value
-                    ? "border-gray-900 dark:border-white scale-110"
-                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                    ? "scale-105 border-neutral-950 ring-2 ring-[#E4F56C] dark:border-white"
+                    : "border-transparent hover:scale-105"
                 }`}
                 style={{ backgroundColor: color.value }}
                 title={color.label}
@@ -185,26 +185,24 @@ export default function CategoryCreatePanel({
           </div>
         )}
 
-        <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <Button
+        <div className="flex gap-3 pt-2">
+          <button
             type="button"
-            variant="outline"
             onClick={onClose}
-            className="flex-1"
+            className="flex-1 rounded-full border border-neutral-200 px-4 py-3 text-sm font-semibold text-neutral-950 dark:border-white/10 dark:text-white"
           >
             Cancel
-          </Button>
-          <Button
+          </button>
+          <button
             type="submit"
-            variant="primary"
-            className="flex-1"
+            className="flex-1 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
             disabled={!formData.name.trim() || isPending}
           >
-            {isPending 
-              ? (editingCategory ? "Updating..." : "Creating...") 
+            {isPending
+              ? (editingCategory ? "Updating..." : "Creating...")
               : (editingCategory ? "Update Category" : "Create Category")
             }
-          </Button>
+          </button>
         </div>
       </form>
     </SlidePanel>

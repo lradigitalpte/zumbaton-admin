@@ -2,12 +2,11 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
 import SlidePanel from "@/components/ui/SlidePanel";
+import StudioMenu from "@/components/ui/StudioMenu";
+import StudioDate from "@/components/ui/StudioDate";
 import Label from "@/components/form/Label";
 import Input from "@/components/form/input/InputField";
-import Button from "@/components/ui/button/Button";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api-client";
 import { useStaff, useInvalidateStaff, type StaffRole, type StaffMember } from "@/hooks/useStaff";
@@ -51,7 +50,7 @@ const StaffCardSkeleton = () => (
 );
 
 const StaffTableSkeleton = () => (
-  <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden animate-pulse">
+  <div className="overflow-hidden rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 animate-pulse">
     <div className="overflow-x-auto">
       <table className="w-full">
         <thead className="bg-gray-50 dark:bg-gray-700/50">
@@ -94,38 +93,47 @@ const StaffTableSkeleton = () => (
 type Status = "active" | "inactive";
 const LOADING_TIMEOUT = 15000; // 15 seconds
 
-const roleConfig: Record<StaffRole, { label: string; color: string; bgColor: string; description: string }> = {
+const fieldClass =
+  "!h-12 !rounded-2xl !border-neutral-200 !bg-neutral-50 !shadow-none focus:!border-neutral-950 focus:!ring-neutral-950/10 dark:!border-white/10 dark:!bg-white/5";
+
+const roleConfig: Record<StaffRole, { label: string; pill: string; description: string }> = {
   super_admin: {
     label: "Super Admin",
-    color: "text-purple-700 dark:text-purple-400",
-    bgColor: "bg-purple-100 dark:bg-purple-900/30",
+    pill: "bg-neutral-950 text-[#E4F56C]",
     description: "Full system access, user management, system settings",
   },
   admin: {
     label: "Admin",
-    color: "text-blue-700 dark:text-blue-400",
-    bgColor: "bg-blue-100 dark:bg-blue-900/30",
+    pill: "bg-[#E4F56C] text-neutral-950",
     description: "Day-to-day operations, reports, user management",
   },
   staff: {
     label: "Staff",
-    color: "text-indigo-700 dark:text-indigo-400",
-    bgColor: "bg-indigo-100 dark:bg-indigo-900/30",
+    pill: "bg-neutral-100 text-neutral-950 dark:bg-white/10 dark:text-white",
     description: "General staff access, bookings, attendance",
   },
   receptionist: {
     label: "Reception",
-    color: "text-emerald-700 dark:text-emerald-400",
-    bgColor: "bg-emerald-100 dark:bg-emerald-900/30",
+    pill: "border border-neutral-200 bg-white text-neutral-950 dark:border-white/15 dark:bg-transparent dark:text-white",
     description: "Bookings, check-ins, customer service",
   },
   instructor: {
     label: "Instructor",
-    color: "text-amber-700 dark:text-amber-400",
-    bgColor: "bg-amber-100 dark:bg-amber-900/30",
+    pill: "bg-neutral-800 text-white",
     description: "Class management, attendance, student info",
   },
 };
+
+const roleOptions = (Object.keys(roleConfig) as StaffRole[]).map((role) => ({
+  value: role,
+  label: roleConfig[role].label,
+  hint: roleConfig[role].description,
+}));
+
+const bloodGroupOptions = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((group) => ({
+  value: group,
+  label: group,
+}));
 
 
 export default function StaffManagementPage() {
@@ -376,110 +384,85 @@ export default function StaffManagementPage() {
       .slice(0, 2);
   };
 
-  const getRoleColor = (role: StaffRole) => {
-    switch (role) {
-      case "super_admin":
-        return "from-purple-500 to-purple-600";
-      case "admin":
-        return "from-blue-500 to-blue-600";
-      case "staff":
-        return "from-indigo-500 to-indigo-600";
-      case "receptionist":
-        return "from-emerald-500 to-emerald-600";
-      case "instructor":
-        return "from-amber-500 to-amber-600";
-      default:
-        return "from-gray-500 to-gray-600";
-    }
-  };
-
   return (
     <div className="space-y-6">
-      <PageBreadCrumb pageTitle="Staff Management" />
-
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-violet-500 to-purple-600 text-white shadow-lg">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Staff Management</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Manage internal users and their access permissions
-            </p>
-          </div>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">
+            Staff{" "}
+            <span className="inline-flex h-7 w-9 translate-y-[-1px] items-center justify-center rounded-full bg-[#E4F56C] align-middle text-neutral-950">
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </span>
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500 dark:text-white/50">
+            Manage internal users and their access permissions
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={handleRefresh}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-            title="Refresh data"
+            onClick={() => setShowCreatePanel(true)}
+            className="inline-flex items-center gap-2 rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-medium text-white hover:bg-neutral-800"
           >
-            <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            <span className="text-base leading-none">+</span>
+            Add Staff Member
           </button>
           <button
-            onClick={() => setShowCreatePanel(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors"
+            onClick={handleRefresh}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-950 hover:bg-neutral-50 disabled:opacity-50 dark:border-white/10 dark:bg-transparent dark:text-white"
+            title="Refresh data"
           >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-            </svg>
-            Add Staff Member
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
           </button>
         </div>
       </div>
 
       {/* Error Messages */}
       {(queryError || createError) && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+        <div className="rounded-[22px] border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
           <p className="text-sm text-red-600 dark:text-red-400">
             {queryError instanceof Error ? queryError.message : createError || "An error occurred"}
           </p>
         </div>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-7">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Total Staff</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Active</p>
-          <p className="text-2xl font-bold text-emerald-600">{stats.active}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Super Admins</p>
-          <p className="text-2xl font-bold text-purple-600">{stats.superAdmins}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Admins</p>
-          <p className="text-2xl font-bold text-blue-600">{stats.admins}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Staff</p>
-          <p className="text-2xl font-bold text-indigo-600">{stats.staff}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Reception</p>
-          <p className="text-2xl font-bold text-emerald-600">{stats.reception}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Instructors</p>
-          <p className="text-2xl font-bold text-amber-600">{stats.instructors}</p>
-        </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
+        {[
+          { label: "Total Staff", value: stats.total, tone: "white" },
+          { label: "Active", value: stats.active, tone: "lime" },
+          { label: "Super Admins", value: stats.superAdmins, tone: "black" },
+          { label: "Admins", value: stats.admins, tone: "white" },
+          { label: "Staff", value: stats.staff, tone: "white" },
+          { label: "Reception", value: stats.reception, tone: "white" },
+          { label: "Instructors", value: stats.instructors, tone: "white" },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            className={
+              stat.tone === "lime"
+                ? "rounded-[28px] border border-[#d5e45c] bg-[#E4F56C] p-4 text-neutral-950 shadow-[0_10px_30px_rgba(16,24,40,0.06)]"
+                : stat.tone === "black"
+                ? "rounded-[28px] border border-neutral-950 bg-neutral-950 p-4 text-white shadow-[0_10px_30px_rgba(16,24,40,0.14)]"
+                : "rounded-[28px] border border-neutral-200/80 bg-white p-4 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800"
+            }
+          >
+            <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${stat.tone === "black" ? "text-white/50" : stat.tone === "lime" ? "text-neutral-950/60" : "text-neutral-400"}`}>
+              {stat.label}
+            </p>
+            <p className={`mt-2 text-3xl font-semibold tracking-tight ${stat.tone === "white" ? "text-neutral-950 dark:text-white" : ""}`}>
+              {stat.value}
+            </p>
+          </div>
+        ))}
       </div>
 
-      {/* Filters */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
-            <svg className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="rounded-[28px] border border-neutral-200/80 bg-white p-4 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 sm:p-5">
+        <div className="flex flex-col gap-4">
+          <div className="relative">
+            <svg className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <input
@@ -487,31 +470,44 @@ export default function StaffManagementPage() {
               placeholder="Search staff by name or email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-4 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+              className="h-12 w-full rounded-full border border-neutral-200 bg-neutral-50 py-2.5 pl-11 pr-4 text-sm text-neutral-950 placeholder:text-neutral-400 focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
             />
           </div>
-          <div className="flex gap-3">
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as StaffRole | "all")}
-              className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-            >
-              <option value="all">All Roles</option>
-              <option value="super_admin">Super Admin</option>
-              <option value="admin">Admin</option>
-              <option value="staff">Staff</option>
-              <option value="receptionist">Reception</option>
-              <option value="instructor">Instructor</option>
-            </select>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as "all" | "active" | "inactive")}
-              className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-            >
-              <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
+          <div className="flex flex-wrap gap-2">
+            {([{ value: "all", label: "All Roles" }, ...roleOptions.map((role) => ({ value: role.value, label: role.label }))] as { value: StaffRole | "all"; label: string }[]).map((role) => (
+              <button
+                key={role.value}
+                type="button"
+                onClick={() => setRoleFilter(role.value)}
+                className={`rounded-full px-3.5 py-2 text-xs font-semibold ${
+                  roleFilter === role.value
+                    ? "bg-neutral-950 text-white"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70"
+                }`}
+              >
+                {role.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {([
+              { value: "all", label: "All Status" },
+              { value: "active", label: "Active" },
+              { value: "inactive", label: "Inactive" },
+            ] as { value: "all" | "active" | "inactive"; label: string }[]).map((status) => (
+              <button
+                key={status.value}
+                type="button"
+                onClick={() => setStatusFilter(status.value)}
+                className={`rounded-full px-3.5 py-2 text-xs font-semibold ${
+                  statusFilter === status.value
+                    ? "bg-[#E4F56C] text-neutral-950"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70"
+                }`}
+              >
+                {status.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -520,66 +516,65 @@ export default function StaffManagementPage() {
       {loading ? (
         <StaffTableSkeleton />
       ) : (
-        <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
+        <div className="overflow-hidden rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 dark:bg-gray-700/50">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Staff Member</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Role</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Status</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Last Login</th>
-                  <th className="px-6 py-4 text-right text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Actions</th>
+            <table className="w-full min-w-[760px]">
+              <thead>
+                <tr className="border-b border-neutral-200/80 dark:border-white/10">
+                  <th className="px-6 py-4 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Staff Member</th>
+                  <th className="px-6 py-4 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Role</th>
+                  <th className="px-6 py-4 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Status</th>
+                  <th className="px-6 py-4 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Last Login</th>
+                  <th className="px-6 py-4 text-right text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              <tbody>
                 {filteredStaff.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
-                      {loading ? "Loading..." : "No staff members found"}
+                    <td colSpan={5} className="px-6 py-16 text-center text-sm text-neutral-500">
+                      No staff members found
                     </td>
                   </tr>
                 ) : (
                   filteredStaff.map((staff) => (
-                    <tr key={staff.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                    <tr key={staff.id} className="border-b border-neutral-100 last:border-0 dark:border-white/5">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-linear-to-br ${getRoleColor(staff.role)} text-sm font-semibold text-white`}>
-                            {staff.avatarUrl ? (
-                              <img src={staff.avatarUrl} alt={staff.name} className="h-full w-full rounded-full object-cover" />
-                            ) : (
-                              getInitials(staff.name)
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900 dark:text-white">{staff.name}</p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{staff.email}</p>
+                          {staff.avatarUrl ? (
+                            <img src={staff.avatarUrl} alt={staff.name} className="h-11 w-11 shrink-0 rounded-full object-cover" />
+                          ) : (
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-sm font-semibold text-[#E4F56C]">
+                              {getInitials(staff.name)}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{staff.name}</p>
+                            <p className="truncate text-sm text-neutral-500 dark:text-white/50">{staff.email}</p>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${roleConfig[staff.role].bgColor} ${roleConfig[staff.role].color}`}>
+                        <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${roleConfig[staff.role].pill}`}>
                           {roleConfig[staff.role].label}
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-                          staff.isActive 
-                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" 
-                            : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400"
+                        <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                          staff.isActive
+                            ? "bg-[#E4F56C] text-neutral-950"
+                            : "bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white/50"
                         }`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${staff.isActive ? "bg-emerald-500" : "bg-gray-400"}`} />
                           {staff.isActive ? "Active" : "Inactive"}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
+                      <td className="px-6 py-4 text-sm text-neutral-500 dark:text-white/50">
                         {formatLastLogin(staff.lastLogin)}
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex justify-end">
                           <button
                             onClick={() => handleViewStaff(staff.id)}
-                            className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                            className="rounded-full bg-neutral-950 px-4 py-2 text-xs font-semibold text-white hover:bg-neutral-800"
                           >
                             View
                           </button>
@@ -595,15 +590,15 @@ export default function StaffManagementPage() {
       )}
 
       {/* Role Legend */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Role Permissions Overview</h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="rounded-[28px] border border-neutral-200/80 bg-white p-6 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
+        <h3 className="mb-4 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Role Permissions</h3>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {(["super_admin", "admin", "staff", "receptionist", "instructor"] as StaffRole[]).map((role) => (
-            <div key={role} className={`p-4 rounded-xl ${roleConfig[role].bgColor}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <span className={`text-sm font-semibold ${roleConfig[role].color}`}>{roleConfig[role].label}</span>
-              </div>
-              <p className="text-xs text-gray-600 dark:text-gray-400">{roleConfig[role].description}</p>
+            <div key={role} className="rounded-[22px] border border-neutral-200/80 bg-neutral-50 p-4 dark:border-white/10 dark:bg-white/5">
+              <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${roleConfig[role].pill}`}>
+                {roleConfig[role].label}
+              </span>
+              <p className="mt-3 text-xs leading-5 text-neutral-500 dark:text-white/50">{roleConfig[role].description}</p>
             </div>
           ))}
         </div>
@@ -632,7 +627,7 @@ export default function StaffManagementPage() {
       >
         <div className="space-y-6">
           {createError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+            <div className="rounded-[22px] border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
               <p className="text-sm text-red-600 dark:text-red-400">{createError}</p>
             </div>
           )}
@@ -642,6 +637,7 @@ export default function StaffManagementPage() {
               Full Name <span className="text-error-500">*</span>
             </Label>
             <Input
+              className={fieldClass}
               id="name"
               type="text"
               placeholder="John Doe"
@@ -655,6 +651,7 @@ export default function StaffManagementPage() {
               Email Address <span className="text-error-500">*</span>
             </Label>
             <Input
+              className={fieldClass}
               id="email"
               type="email"
               placeholder="john.doe@zumbathon.com"
@@ -668,6 +665,7 @@ export default function StaffManagementPage() {
               Phone Number <span className="text-error-500">*</span>
             </Label>
             <Input
+              className={fieldClass}
               id="phone"
               type="tel"
               placeholder="+65 1234 5678"
@@ -681,21 +679,13 @@ export default function StaffManagementPage() {
             <Label htmlFor="role">
               Role <span className="text-error-500">*</span>
             </Label>
-            <select
+            <StudioMenu
               id="role"
               value={newStaff.role}
-              onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value as StaffRole })}
-              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-            >
-              <option value="receptionist">Reception</option>
-              <option value="instructor">Instructor</option>
-              <option value="staff">Staff</option>
-              <option value="admin">Admin</option>
-              <option value="super_admin">Super Admin</option>
-            </select>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {roleConfig[newStaff.role].description}
-            </p>
+              onChange={(role) => setNewStaff({ ...newStaff, role: role as StaffRole })}
+              placeholder="Select a role"
+              options={roleOptions}
+            />
           </div>
 
           <div>
@@ -703,92 +693,80 @@ export default function StaffManagementPage() {
               Temporary Password <span className="text-error-500">*</span>
             </Label>
             <Input
+              className={fieldClass}
               id="password"
               type="password"
               placeholder="Enter temporary password (min 8 characters)"
               value={newStaff.password}
               onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })}
             />
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            <p className="mt-1.5 text-xs text-neutral-500 dark:text-white/45">
               Minimum 8 characters. An email with these credentials will be sent to the staff member. They can change their password after signing in.
             </p>
           </div>
 
           <div>
-            <Label htmlFor="dateOfBirth">
-              Date of Birth
-            </Label>
-            <Input
+            <Label htmlFor="dateOfBirth">Date of Birth</Label>
+            <StudioDate
               id="dateOfBirth"
-              type="date"
+              block
+              clearable
+              ariaLabel="Date of birth"
+              placeholder="Date of birth"
               value={newStaff.dateOfBirth}
-              onChange={(e) => setNewStaff({ ...newStaff, dateOfBirth: e.target.value })}
+              onChange={(value) => setNewStaff({ ...newStaff, dateOfBirth: value })}
             />
           </div>
 
           <div>
-            <Label htmlFor="bloodGroup">
-              Blood Group
-            </Label>
-            <select
+            <Label htmlFor="bloodGroup">Blood Group</Label>
+            <StudioMenu
               id="bloodGroup"
               value={newStaff.bloodGroup}
-              onChange={(e) => setNewStaff({ ...newStaff, bloodGroup: e.target.value })}
-              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-            >
-              <option value="">Select blood group</option>
-              <option value="A+">A+</option>
-              <option value="A-">A-</option>
-              <option value="B+">B+</option>
-              <option value="B-">B-</option>
-              <option value="AB+">AB+</option>
-              <option value="AB-">AB-</option>
-              <option value="O+">O+</option>
-              <option value="O-">O-</option>
-            </select>
+              onChange={(bloodGroup) => setNewStaff({ ...newStaff, bloodGroup })}
+              placeholder="Select blood group"
+              options={bloodGroupOptions}
+            />
           </div>
 
           <div>
-            <Label htmlFor="physicalForm">
-              Physical Form (Registration Form)
-            </Label>
+            <Label htmlFor="physicalForm">Physical Form (Registration Form)</Label>
             <input
               id="physicalForm"
               type="file"
               accept=".pdf,.jpg,.jpeg,.png,.webp"
               onChange={handlePhysicalFormChange}
-              className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 file:mr-4 file:rounded-lg file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-brand-600 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:file:bg-brand-600 dark:file:hover:bg-brand-700"
+              className="mt-1.5 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm text-neutral-950 file:mr-4 file:rounded-full file:border-0 file:bg-neutral-950 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#E4F56C] focus:border-neutral-950 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
             />
-            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+            <p className="mt-1.5 text-xs text-neutral-500 dark:text-white/45">
               Accepted formats: PDF, JPEG, PNG, WebP. Maximum file size: 10MB.
             </p>
             {physicalFormUrl && (
-              <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
-                <p className="text-sm font-medium text-gray-900 dark:text-white">
-                  ✓ File uploaded successfully
-                </p>
+              <div className="mt-2 rounded-[22px] bg-[#E4F56C]/40 p-3 text-sm font-semibold text-neutral-950">
+                File uploaded
               </div>
             )}
           </div>
 
-          <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <Button
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
               onClick={() => {
                 setShowCreatePanel(false);
                 setCreateError(null);
               }}
-              className="flex-1"
-              variant="outline"
+              className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-950 hover:bg-neutral-50 dark:border-white/10 dark:bg-transparent dark:text-white"
             >
               Cancel
-            </Button>
-            <Button
+            </button>
+            <button
+              type="button"
               onClick={handleCreateStaff}
-              className="flex-1"
               disabled={!newStaff.name || !newStaff.email || !newStaff.password || newStaff.password.length < 8 || isCreating}
+              className="flex-1 rounded-full bg-neutral-950 px-4 py-3 text-sm font-semibold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {isCreating ? "Creating..." : "Create Staff Member"}
-            </Button>
+            </button>
           </div>
         </div>
       </SlidePanel>

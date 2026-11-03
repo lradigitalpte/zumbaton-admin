@@ -1,5 +1,6 @@
 import { getSupabaseAdminClient } from '@/lib/supabase'
 import { ApiError } from '@/lib/api-error'
+import { computeWeekStreak } from '@/lib/week-streak'
 import { createAuditLog, requirePermission, requireRole } from './rbac.service'
 import type {
   UserProfile,
@@ -207,6 +208,29 @@ export async function listUsers(
   }
   // For result sets > 50 users, skip last login fetch to maintain performance
 
+  // Live class counts from bookings. user_stats booked/attended often stay at 0
+  // while no-shows are written, so the list was hiding who actually goes.
+  const classCounts: Record<string, { attended: number; booked: number; noShows: number }> = {}
+  if (userIds.length > 0) {
+    const { data: bookingRows, error: bookingError } = await getSupabaseAdminClient()
+      .from('bookings')
+      .select('user_id, status')
+      .in('user_id', userIds)
+      .in('status', ['confirmed', 'attended', 'no-show'])
+
+    if (bookingError) {
+      console.warn('Failed to count class bookings for user list:', bookingError)
+    } else {
+      for (const row of bookingRows || []) {
+        const id = row.user_id as string
+        if (!classCounts[id]) classCounts[id] = { attended: 0, booked: 0, noShows: 0 }
+        classCounts[id].booked += 1
+        if (row.status === 'attended') classCounts[id].attended += 1
+        if (row.status === 'no-show') classCounts[id].noShows += 1
+      }
+    }
+  }
+
   // Map from view data (already has stats + balances) to UserProfile with stats
   const users = (data || []).map((row: Record<string, unknown>) => {
     const profile = toUserProfile(row)
@@ -236,8 +260,10 @@ export async function listUsers(
       stats,
       currentTokenBalance: (row.current_token_balance as number) || 0,
       currentAvailableTokens: (row.current_available_tokens as number) || 0,
-      totalClassesBooked: (row.total_classes_booked as number) || 0,
-      totalNoShows: (row.total_no_shows as number) || 0,
+      totalClassesBooked: classCounts[row.id as string]?.booked ?? ((row.total_classes_booked as number) || 0),
+      totalNoShows: classCounts[row.id as string]?.noShows ?? ((row.total_no_shows as number) || 0),
+      classesAttended: classCounts[row.id as string]?.attended ?? ((row.total_classes_attended as number) || 0),
+      classesBooked: classCounts[row.id as string]?.booked ?? ((row.total_classes_booked as number) || 0),
       lastLogin: lastLoginMap[row.id as string] || null,
     }
   })
@@ -871,81 +897,66 @@ export async function incrementUserStat(
   }
 }
 
-export async function updateLastClassAt(userId: string): Promise<void> {
-  await getSupabaseAdminClient()
-    .from('user_stats')
-    .update({ last_class_at: new Date().toISOString() })
-    .eq('user_id', userId)
+type AttendedClassRow = {
+  is_trial_booking?: boolean | null
+  classes?: { scheduled_at?: string | null } | { scheduled_at?: string | null }[] | null
+}
+
+function scheduledAtFromBooking(row: AttendedClassRow): string | null {
+  if (row.is_trial_booking) return null
+  const classes = row.classes
+  if (!classes) return null
+  const classRow = Array.isArray(classes) ? classes[0] : classes
+  return classRow?.scheduled_at ?? null
 }
 
 /**
- * Calculate and update user streak based on attendance
- * Streak logic:
- * - If last class was yesterday: increment streak
- * - If last class was today: keep streak (already counted)
- * - If last class was more than 1 day ago: reset to 1
- * - Update streak_longest if current exceeds it
+ * Rebuild the week streak from attended classes.
+ * One class per Singapore week (Monday–Sunday) counts. A missed week
+ * drops the current streak to 0 until the next attended class.
+ * `classDate` is unused: the booking status is already saved, so the
+ * class schedule is read from the database.
  */
-export async function updateUserStreak(userId: string, classDate: Date = new Date()): Promise<void> {
-  const adminClient = getSupabaseAdminClient()
-  
-  // Get current user stats
-  const { data: stats, error: fetchError } = await adminClient
-    .from('user_stats')
-    .select('streak_current, streak_longest, last_class_at')
-    .eq('user_id', userId)
-    .single()
+export async function updateUserStreak(userId: string, _classDate: Date = new Date()): Promise<void> {
+  if (!userId) return
 
-  if (fetchError) {
-    console.error('[UserService] Failed to fetch user stats for streak update:', fetchError)
+  const adminClient = getSupabaseAdminClient()
+  const { data, error } = await adminClient
+    .from('bookings')
+    .select('is_trial_booking, classes(scheduled_at)')
+    .eq('user_id', userId)
+    .eq('status', 'attended')
+    .limit(2000)
+
+  if (error) {
+    console.error('[UserService] Failed to load attended classes for streak:', error)
     return
   }
 
-  const currentStreak = stats?.streak_current || 0
-  const longestStreak = stats?.streak_longest || 0
-  const lastClassAt = stats?.last_class_at ? new Date(stats.last_class_at) : null
+  const classTimes = ((data || []) as AttendedClassRow[])
+    .map(scheduledAtFromBooking)
+    .filter((value): value is string => Boolean(value))
 
-  // Normalize dates to start of day for comparison
-  const today = new Date(classDate)
-  today.setHours(0, 0, 0, 0)
+  const { current, longest } = computeWeekStreak(classTimes)
+  const latestClassAt = classTimes.reduce<string | null>((latest, value) => {
+    if (!latest || new Date(value).getTime() > new Date(latest).getTime()) return value
+    return latest
+  }, null)
 
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
-
-  let newStreak = 1
-  let shouldUpdate = true
-
-  if (lastClassAt) {
-    const lastClassDate = new Date(lastClassAt)
-    lastClassDate.setHours(0, 0, 0, 0)
-
-    if (lastClassDate.getTime() === today.getTime()) {
-      // Already attended today - don't increment streak again
-      shouldUpdate = false
-    } else if (lastClassDate.getTime() === yesterday.getTime()) {
-      // Attended yesterday - continue streak
-      newStreak = currentStreak + 1
-    } else {
-      // More than 1 day gap - reset to 1
-      newStreak = 1
-    }
-  } else {
-    // First class ever - start streak at 1
-    newStreak = 1
+  const update: Record<string, unknown> = {
+    streak_current: current,
+    streak_longest: longest,
+    updated_at: new Date().toISOString(),
   }
+  if (latestClassAt) update.last_class_at = latestClassAt
 
-  if (shouldUpdate) {
-    const newLongestStreak = Math.max(longestStreak, newStreak)
+  const { error: updateError } = await adminClient
+    .from('user_stats')
+    .update(update)
+    .eq('user_id', userId)
 
-    await adminClient
-      .from('user_stats')
-      .update({
-        streak_current: newStreak,
-        streak_longest: newLongestStreak,
-        last_class_at: classDate.toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', userId)
+  if (updateError) {
+    console.error('[UserService] Failed to update week streak:', updateError)
   }
 }
 

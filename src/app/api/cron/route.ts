@@ -1,6 +1,7 @@
 // Cron Job API Route
 // Endpoint for running scheduled jobs (can be called by Vercel Cron or similar)
 
+import { after } from 'next/server'
 import { NextRequest, NextResponse } from 'next/server'
 import {
   runAllScheduledJobs,
@@ -9,115 +10,177 @@ import {
   runNoShowsJob,
   runWaitlistExpiryJob,
   sendTokenExpiryWarnings,
+  sendTokenBalanceLowWarnings,
   sendClassReminders,
+  sendStreakReminders,
+  sendBirthdayWishes,
   markCompletedClasses,
   runAutoGenerateClassesJob,
   runSyncPendingPaymentsJob,
+  runCheckoutRemindersJob,
   runProcessLeadOutreachJob,
   getJobSchedule,
 } from '@/services/scheduled-jobs.service'
 import { processLeadOutreachQueue } from '@/services/lead-outreach.service'
 import { ApiError } from '@/lib/api-error'
 import { getAuthenticatedUser, hasRequiredRole } from '@/middleware/rbac'
+import { withCronSource } from '@/lib/job-health'
 
-// GET /api/cron - Get job schedule info
-export async function GET() {
+// Vercel function time limit for scheduled jobs (seconds)
+export const maxDuration = 60
+
+// GET /api/cron — schedule info, or run a job when ?job=… and Authorization is set (cron-job.org often uses GET)
+export async function GET(request: NextRequest) {
   try {
-    const schedule = getJobSchedule()
+    const { searchParams } = new URL(request.url)
+    const job = searchParams.get('job')
 
-    return NextResponse.json({
-      success: true,
-      data: schedule,
-    })
+    if (!job) {
+      const schedule = getJobSchedule()
+      return NextResponse.json({
+        success: true,
+        data: schedule,
+        hint: 'To run a job, use POST or GET with ?job=<name> and header Authorization: Bearer <CRON_SECRET>',
+      })
+    }
+
+    return await executeCronJob(request, job)
   } catch (error) {
     return handleApiError(error)
   }
 }
 
-async function authorizeCronRequest(request: NextRequest): Promise<void> {
+type CronAuth = 'secret' | 'admin' | 'dev'
+
+async function authorizeCronRequest(request: NextRequest): Promise<CronAuth> {
   const authHeader = request.headers.get('authorization')
   const cronSecret = process.env.CRON_SECRET
 
   // Supabase pg_cron / external scheduler
   if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
-    return
+    return 'secret'
   }
 
   // Settings UI: logged-in admin running a job manually
   const user = await getAuthenticatedUser(request)
   if (user && hasRequiredRole(user.role, 'admin')) {
-    return
+    return 'admin'
   }
 
   // Local dev when CRON_SECRET is not configured
   if (!cronSecret) {
-    return
+    return 'dev'
   }
 
   throw new ApiError('AUTHENTICATION_ERROR', 'Invalid cron secret', 401)
 }
 
-// POST /api/cron - Run scheduled jobs
-export async function POST(request: NextRequest) {
-  try {
-    await authorizeCronRequest(request)
+/** External schedulers (cron-job.org) use short HTTP timeouts; run heavy jobs in after(). */
+async function executeCronJob(request: NextRequest, job: string) {
+  const auth = await authorizeCronRequest(request)
 
-    const { searchParams } = new URL(request.url)
-    const job = searchParams.get('job')
-
-    let results
-
-    switch (job) {
-      case 'expired-packages':
-        results = [await runExpiredPackagesJob()]
-        break
-      case 'frozen-packages':
-        results = [await runFrozenPackagesJob()]
-        break
-      case 'no-shows':
-        results = [await runNoShowsJob()]
-        break
-      case 'waitlist-expiry':
-        results = [await runWaitlistExpiryJob()]
-        break
-      case 'token-warnings':
-        results = [await sendTokenExpiryWarnings()]
-        break
-      case 'class-reminders':
-        results = [await sendClassReminders()]
-        break
-      case 'mark-completed-classes':
-        results = [await markCompletedClasses()]
-        break
-      case 'generate-future-classes':
-        results = [await runAutoGenerateClassesJob()]
-        break
-      case 'sync-pending-payments':
-        results = [await runSyncPendingPaymentsJob()]
-        break
-      case 'process-lead-outreach':
-        results = [await runProcessLeadOutreachJob()]
-        break
-      case 'all':
-      default:
-        results = await runAllScheduledJobs()
-        break
-    }
-
-    const summary = {
-      totalJobs: results.length,
-      successful: results.filter(r => r.success).length,
-      failed: results.filter(r => !r.success).length,
-      totalDuration: results.reduce((acc, r) => acc + r.duration, 0),
-    }
+  if (job === 'streak-reminders' && auth === 'secret') {
+    after(async () => {
+      try {
+        const result = await withCronSource('scheduled', () => sendStreakReminders())
+        console.log('[Cron] streak-reminders completed', JSON.stringify(result))
+      } catch (err) {
+        console.error('[Cron] streak-reminders failed', err)
+      }
+    })
 
     return NextResponse.json({
       success: true,
       data: {
-        results,
-        summary,
+        accepted: true,
+        job: 'streak-reminders',
+        message:
+          'Streak reminders started in the background (cron-job.org will see success immediately). Check Vercel logs for sendStreakReminders.',
       },
     })
+  }
+
+  return withCronSource(auth === 'secret' ? 'scheduled' : 'desk', () => runCronJobs(job))
+}
+
+async function runCronJobs(job: string | null) {
+  let results
+
+  switch (job) {
+    case 'expired-packages':
+      results = [await runExpiredPackagesJob()]
+      break
+    case 'frozen-packages':
+      results = [await runFrozenPackagesJob()]
+      break
+    case 'no-shows':
+      results = [await runNoShowsJob()]
+      break
+    case 'waitlist-expiry':
+      results = [await runWaitlistExpiryJob()]
+      break
+    case 'token-warnings':
+      results = [await sendTokenExpiryWarnings()]
+      break
+    case 'token-balance':
+      results = [await sendTokenBalanceLowWarnings()]
+      break
+    case 'class-reminders':
+      results = [await sendClassReminders()]
+      break
+    case 'streak-reminders':
+      results = [await sendStreakReminders()]
+      break
+    case 'birthday-wishes':
+      results = [await sendBirthdayWishes()]
+      break
+    case 'mark-completed-classes':
+      results = [await markCompletedClasses()]
+      break
+    case 'generate-future-classes':
+      results = [await runAutoGenerateClassesJob()]
+      break
+    case 'sync-pending-payments':
+      results = [await runSyncPendingPaymentsJob(), await runCheckoutRemindersJob()]
+      break
+    case 'checkout-reminders':
+      results = [await runCheckoutRemindersJob()]
+      break
+    case 'process-lead-outreach':
+      results = [await runProcessLeadOutreachJob()]
+      break
+    case 'all':
+    default:
+      results = await runAllScheduledJobs()
+      break
+  }
+
+  const summary = {
+    totalJobs: results.length,
+    successful: results.filter((r) => r.success).length,
+    failed: results.filter((r) => !r.success).length,
+    totalDuration: results.reduce((acc, r) => acc + r.duration, 0),
+  }
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      results,
+      summary,
+    },
+  })
+}
+
+// POST /api/cron - Run scheduled jobs
+export async function POST(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const job = searchParams.get('job')
+    if (!job) {
+      const auth = await authorizeCronRequest(request)
+      return withCronSource(auth === 'secret' ? 'scheduled' : 'desk', () => runCronJobs(null))
+    }
+    return await executeCronJob(request, job)
   } catch (error) {
     return handleApiError(error)
   }

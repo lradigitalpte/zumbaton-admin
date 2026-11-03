@@ -1,166 +1,53 @@
 /**
  * Send Birthday Email API Route
- * POST /api/users/birthdays/send - Send birthday email to a user
+ * POST /api/users/birthdays/send - Send a birthday wish to one member and record it,
+ * so the daily birthday-wishes job won't send it again.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { withAuth, AuthenticatedUser } from '@/middleware/rbac'
-import { getSupabaseAdminClient } from '@/lib/supabase'
+import { withAuth } from '@/middleware/rbac'
+import { getBirthdayMembers, sendBirthdayWish } from '@/services/birthday.service'
 import { z } from 'zod'
 
 const SendBirthdayEmailSchema = z.object({
   userId: z.string().uuid(),
+  resend: z.boolean().optional(),
 })
 
-/**
- * POST /api/users/birthdays/send - Send birthday email to a user
- */
-async function handleSendBirthdayEmail(
-  request: NextRequest,
-  context: { params: Promise<Record<string, unknown>>; user: AuthenticatedUser }
-): Promise<NextResponse> {
+function errorResponse(code: string, message: string, status: number) {
+  return NextResponse.json({ success: false, error: { code, message } }, { status })
+}
+
+async function handleSendBirthdayEmail(request: NextRequest): Promise<NextResponse> {
   try {
-    const body = await request.json()
-    const parseResult = SendBirthdayEmailSchema.safeParse(body)
-
+    const parseResult = SendBirthdayEmailSchema.safeParse(await request.json().catch(() => null))
     if (!parseResult.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid request body',
-            details: parseResult.error.issues,
-          },
-        },
-        { status: 400 }
-      )
+      return errorResponse('VALIDATION_ERROR', 'Invalid request body', 400)
     }
 
-    const { userId } = parseResult.data
-    const adminClient = getSupabaseAdminClient()
+    const { userId, resend } = parseResult.data
+    const member = (await getBirthdayMembers()).find((item) => item.id === userId)
 
-    // Get user profile with birthday
-    const { data: userProfile, error: userError } = await adminClient
-      .from('user_profiles')
-      .select('id, email, name, date_of_birth')
-      .eq('id', userId)
-      .single()
-
-    if (userError || !userProfile) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: {
-            code: 'USER_NOT_FOUND',
-            message: 'User not found',
-          },
-        },
-        { status: 404 }
-      )
+    if (!member) return errorResponse('NO_BIRTHDAY', 'Member not found or has no birthday saved', 404)
+    if (!member.email) return errorResponse('NO_EMAIL', 'Member has no email address', 400)
+    if (member.wished && !resend) {
+      return errorResponse('ALREADY_WISHED', `${member.name || 'This member'} was already wished for this birthday`, 409)
     }
 
-    if (!userProfile.date_of_birth) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: {
-            code: 'NO_BIRTHDAY',
-            message: 'User does not have a birthday date set',
-          },
-        },
-        { status: 400 }
-      )
+    const result = await sendBirthdayWish(member, { force: resend })
+    if (!result.success) {
+      return errorResponse(result.skipped ? 'ALREADY_WISHED' : 'EMAIL_ERROR', result.error || 'Failed to send email', result.skipped ? 409 : 502)
     }
 
-    // Calculate age
-    const birthDate = new Date(userProfile.date_of_birth)
-    const today = new Date()
-    const age = today.getFullYear() - birthDate.getFullYear()
-    const monthDiff = today.getMonth() - birthDate.getMonth()
-    const dayDiff = today.getDate() - birthDate.getDate()
-    const actualAge = monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age
-
-    // Send email via web app email API
-    const { getWebAppUrl } = await import('@/lib/email-url')
-    const webAppUrl = getWebAppUrl()
-    const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
-
-    try {
-      const response = await fetch(`${webAppUrl}/api/email/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'birthday',
-          secret: emailApiSecret,
-          data: {
-            userEmail: userProfile.email,
-            userName: userProfile.name,
-            age: actualAge,
-          },
-        }),
-      })
-
-      if (!response.ok) {
-        const errorBody = await response.text()
-        console.error(`[API /users/birthdays/send] Email API error:`, errorBody)
-        return NextResponse.json(
-          {
-            success: false,
-            error: {
-              code: 'EMAIL_ERROR',
-              message: `Failed to send email: ${response.status}`,
-            },
-          },
-          { status: 500 }
-        )
-      }
-
-      const result = await response.json()
-      if (!result.success) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: {
-              code: 'EMAIL_ERROR',
-              message: result.error || 'Failed to send email',
-            },
-          },
-          { status: 500 }
-        )
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: 'Birthday email sent successfully',
-        messageId: result.messageId,
-        userEmail: userProfile.email,
-      })
-    } catch (fetchError: any) {
-      console.error(`[API /users/birthdays/send] Fetch error:`, fetchError)
-      return NextResponse.json(
-        {
-          success: false,
-          error: {
-            code: 'EMAIL_ERROR',
-            message: fetchError.message || 'Failed to connect to email service',
-          },
-        },
-        { status: 500 }
-      )
-    }
+    return NextResponse.json({
+      success: true,
+      message: 'Birthday email sent successfully',
+      userEmail: member.email,
+      wishedAt: new Date().toISOString(),
+    })
   } catch (error) {
     console.error('[API /users/birthdays/send]', error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: {
-          code: 'SERVER_ERROR',
-          message: 'An unexpected error occurred',
-        },
-      },
-      { status: 500 }
-    )
+    return errorResponse('SERVER_ERROR', error instanceof Error ? error.message : 'An unexpected error occurred', 500)
   }
 }
 

@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { markNoShow } from '@/services/attendance.service'
 import { UuidSchema } from '@/api/schemas'
 import { ApiError } from '@/lib/api-error'
+import { getAuthenticatedUser } from '@/middleware/rbac'
+import { createAuditLog } from '@/services/rbac.service'
 import { z } from 'zod'
 
 // No-show request schema with markedBy
@@ -26,6 +28,14 @@ export async function POST(request: NextRequest) {
       bookingId: validatedData.bookingId,
       markedBy: validatedData.markedBy,
       notes: validatedData.notes,
+    })
+    const actor = await getAuthenticatedUser(request)
+    await createAuditLog({
+      userId: actor?.id || validatedData.markedBy,
+      action: 'attendance.no_show',
+      resourceType: 'bookings',
+      resourceId: validatedData.bookingId,
+      newValues: { notes: validatedData.notes || null },
     })
 
     return NextResponse.json({

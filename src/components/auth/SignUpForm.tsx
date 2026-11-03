@@ -1,20 +1,20 @@
 "use client";
 import Checkbox from "@/components/form/input/Checkbox";
 import Input from "@/components/form/input/InputField";
-import Label from "@/components/form/Label";
 import { ChevronLeftIcon, EyeCloseIcon, EyeIcon } from "@/icons";
 import Link from "next/link";
 import React, { useState } from "react";
+import { studioInput, studioInputIcon, studioLead, studioLink, studioTitle } from "./studio";
 
 export default function SignUpForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [isChecked, setIsChecked] = useState(false);
   return (
-    <div className="flex flex-col flex-1 lg:w-1/2 w-full overflow-y-auto no-scrollbar">
+    <div className="flex h-full w-full flex-1 flex-col overflow-y-auto px-6 py-8 lg:w-1/2">
       <div className="w-full max-w-md sm:pt-10 mx-auto mb-5">
         <Link
           href="/"
-          className="inline-flex items-center text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+          className="inline-flex items-center text-sm font-medium text-neutral-500 hover:text-neutral-950 dark:hover:text-white"
         >
           <ChevronLeftIcon />
           Back to dashboard
@@ -23,16 +23,12 @@ export default function SignUpForm() {
       <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto">
         <div>
           <div className="mb-5 sm:mb-8">
-            <h1 className="mb-2 font-semibold text-gray-800 text-title-sm dark:text-white/90 sm:text-title-md">
-              Sign Up
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Enter your email and password to sign up!
-            </p>
+            <h1 className={studioTitle}>Sign up</h1>
+            <p className={studioLead}>Create a studio admin account.</p>
           </div>
           <div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-5">
-              <button className="inline-flex items-center justify-center gap-3 py-3 text-sm font-normal text-gray-700 transition-colors bg-gray-100 rounded-lg px-7 hover:bg-gray-200 hover:text-gray-800 dark:bg-white/5 dark:text-white/90 dark:hover:bg-white/10">
+              <button type="button" className="inline-flex items-center justify-center gap-3 rounded-full border border-neutral-200 px-5 py-3 text-sm font-semibold text-neutral-800 dark:border-white/10 dark:text-white">
                 <svg
                   width="20"
                   height="20"
@@ -59,7 +55,7 @@ export default function SignUpForm() {
                 </svg>
                 Sign up with Google
               </button>
-              <button className="inline-flex items-center justify-center gap-3 py-3 text-sm font-normal text-gray-700 transition-colors bg-gray-100 rounded-lg px-7 hover:bg-gray-200 hover:text-gray-800 dark:bg-white/5 dark:text-white/90 dark:hover:bg-white/10">
+              <button type="button" className="inline-flex items-center justify-center gap-3 rounded-full border border-neutral-200 px-5 py-3 text-sm font-semibold text-neutral-800 dark:border-white/10 dark:text-white">
                 <svg
                   width="21"
                   className="fill-current"
@@ -88,10 +84,9 @@ export default function SignUpForm() {
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                   {/* <!-- First Name --> */}
                   <div className="sm:col-span-1">
-                    <Label>
-                      First Name<span className="text-error-500">*</span>
-                    </Label>
+                    <label className="mb-2 block text-sm font-medium text-neutral-800 dark:text-white/90">First name</label>
                     <Input
+                      className={studioInput}
                       type="text"
                       id="fname"
                       name="fname"
@@ -100,10 +95,9 @@ export default function SignUpForm() {
                   </div>
                   {/* <!-- Last Name --> */}
                   <div className="sm:col-span-1">
-                    <Label>
-                      Last Name<span className="text-error-500">*</span>
-                    </Label>
+                    <label className="mb-2 block text-sm font-medium text-neutral-800 dark:text-white/90">Last name</label>
                     <Input
+                      className={studioInput}
                       type="text"
                       id="lname"
                       name="lname"
@@ -113,10 +107,9 @@ export default function SignUpForm() {
                 </div>
                 {/* <!-- Email --> */}
                 <div>
-                  <Label>
-                    Email<span className="text-error-500">*</span>
-                  </Label>
+                  <label className="mb-2 block text-sm font-medium text-neutral-800 dark:text-white/90">Email</label>
                   <Input
+                    className={studioInput}
                     type="email"
                     id="email"
                     name="email"
@@ -125,11 +118,10 @@ export default function SignUpForm() {
                 </div>
                 {/* <!-- Password --> */}
                 <div>
-                  <Label>
-                    Password<span className="text-error-500">*</span>
-                  </Label>
+                  <label className="mb-2 block text-sm font-medium text-neutral-800 dark:text-white/90">Password</label>
                   <div className="relative">
                     <Input
+                      className={studioInputIcon}
                       placeholder="Enter your password"
                       type={showPassword ? "text" : "password"}
                     />
@@ -165,8 +157,8 @@ export default function SignUpForm() {
                 </div>
                 {/* <!-- Button --> */}
                 <div>
-                  <button className="flex items-center justify-center w-full px-4 py-3 text-sm font-medium text-white transition rounded-lg bg-brand-500 shadow-theme-xs hover:bg-brand-600">
-                    Sign Up
+                  <button className="flex h-12 w-full items-center justify-center rounded-full bg-[#E4F56C] text-sm font-semibold text-neutral-950">
+                    Sign up
                   </button>
                 </div>
               </div>
@@ -175,11 +167,8 @@ export default function SignUpForm() {
             <div className="mt-5">
               <p className="text-sm font-normal text-center text-gray-700 dark:text-gray-400 sm:text-start">
                 Already have an account?
-                <Link
-                  href="/signin"
-                  className="text-brand-500 hover:text-brand-600 dark:text-brand-400"
-                >
-                  Sign In
+                <Link href="/signin" className={studioLink}>
+                  Sign in
                 </Link>
               </p>
             </div>

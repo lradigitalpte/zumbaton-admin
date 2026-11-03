@@ -23,6 +23,8 @@ export interface PendingPayment {
   discountAmountCents: number
   createdAt: string
   updatedAt: string
+  paidOnLaterAttempt: boolean
+  reminderSentAt: string | null
 }
 
 async function fetchPendingPayments(): Promise<PendingPayment[]> {
@@ -97,7 +99,7 @@ export function useSyncPayment() {
           success: isConfirmed,
           message: isConfirmed
             ? `✓ Confirmed — ${result?.tokensIssued ?? ''} tokens issued`
-            : result?.message ?? `HitPay status: ${result?.hitpayStatus ?? 'still pending'}`,
+            : `Not paid — customer didn't finish checkout (HitPay: ${result?.hitpayStatus ?? 'pending'})`,
         },
       }))
 

@@ -1,11 +1,36 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import PageBreadCrumb from "@/components/common/PageBreadCrumb";
-import Input from "@/components/form/input/InputField";
+import StudioDate from "@/components/ui/StudioDate";
+import StudioMenu from "@/components/ui/StudioMenu";
 import { useSettings, useUpdateSettings, BusinessSettings, BookingSettings } from "@/hooks/useSettings";
 import { usePromotionsSettings, useUpdatePromotionsSettings, type PromotionsSettings } from "@/hooks/usePromotions";
 import { useOnboarding } from "@/components/onboarding";
+
+const card = "rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800";
+const field = "h-11 w-full rounded-full border border-neutral-200 bg-white px-4 text-sm text-neutral-950 outline-none placeholder:text-neutral-400 dark:border-white/10 dark:bg-gray-800 dark:text-white";
+const label = "mb-2 block text-sm font-medium text-neutral-800 dark:text-white/90";
+const hint = "mt-1 text-xs text-neutral-400";
+
+const countries = ["Singapore", "United States", "Canada", "United Kingdom", "Australia", "Germany", "France", "Spain", "Mexico"].map((value) => ({ value, label: value }));
+const timezones = [
+  { value: "Asia/Singapore", label: "Singapore Time (SGT)" },
+  { value: "America/Los_Angeles", label: "Pacific Time (PT)" },
+  { value: "America/Denver", label: "Mountain Time (MT)" },
+  { value: "America/Chicago", label: "Central Time (CT)" },
+  { value: "America/New_York", label: "Eastern Time (ET)" },
+  { value: "Europe/London", label: "GMT (London)" },
+  { value: "Europe/Paris", label: "CET (Paris)" },
+];
+const currencies = [
+  { value: "SGD", label: "SGD (S$)" },
+  { value: "USD", label: "USD ($)" },
+  { value: "EUR", label: "EUR (€)" },
+  { value: "GBP", label: "GBP (£)" },
+  { value: "CAD", label: "CAD ($)" },
+  { value: "AUD", label: "AUD ($)" },
+  { value: "MXN", label: "MXN ($)" },
+];
 
 export default function GeneralSettingsPage() {
   const [activeTab, setActiveTab] = useState<"business" | "booking" | "promotions">("business");
@@ -88,118 +113,67 @@ export default function GeneralSettingsPage() {
     }
   };
 
+  const handleCancel = () => {
+    if (activeTab === "promotions" && promoSettings) setPromotionSettings(promoSettings);
+    if (settings?.business) setBusinessSettings(settings.business);
+    if (settings?.booking) setBookingSettings(settings.booking);
+  };
+
+  const saving = activeTab === "promotions" ? updatePromoSettings.isPending : updateSettings.isPending;
   const tabs = [
-    { id: "business", label: "Business Info", icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-      </svg>
-    )},
-    { id: "booking", label: "Booking Rules", icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-      </svg>
-    )},
-    { id: "promotions", label: "Promotions", icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    )},
+    { id: "business" as const, label: "Business" },
+    { id: "booking" as const, label: "Booking rules" },
+    { id: "promotions" as const, label: "Promotions" },
   ];
 
   return (
-    <div className="space-y-6">
-      <PageBreadCrumb pageTitle="General Settings" />
-
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-gray-600 to-gray-800 text-white shadow-lg">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">General Settings</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Configure your business and system preferences
-            </p>
-          </div>
+    <div className="min-w-0 space-y-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">Settings</h1>
+          <p className="mt-1 max-w-xl text-sm text-neutral-500">
+            Studio details, booking rules, and promotions. {saveSuccess ? "Saved." : "Save when you are done with this section."}
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          {saveSuccess && (
-            <div className="flex items-center gap-2 rounded-lg bg-emerald-100 px-4 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              Settings saved successfully
-            </div>
-          )}
-          <button
-            onClick={restartOnboarding}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition-colors shadow-md hover:shadow-lg"
-            title="Restart the onboarding tour"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            Restart Tour
-          </button>
-        </div>
+        <button type="button" onClick={restartOnboarding} className="rounded-full bg-neutral-100 px-4 py-2 text-xs font-semibold text-neutral-700 dark:bg-white/10 dark:text-white">
+          Restart tour
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
-        {/* Sidebar Tabs */}
-        <div className="lg:col-span-1">
-          <div className="rounded-2xl border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800">
-            <nav className="space-y-1">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition-colors ${
-                    activeTab === tab.id
-                      ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                      : "text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
-                  }`}
-                >
-                  {tab.icon}
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
-          </div>
-        </div>
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={`rounded-full px-4 py-2 text-xs font-semibold ${activeTab === tab.id ? "bg-neutral-950 text-white dark:bg-white dark:text-neutral-950" : "bg-neutral-100 text-neutral-600 dark:bg-white/10 dark:text-white"}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-        {/* Content */}
-        <div className="lg:col-span-3">
+      <div>
           {isLoading || promoLoading ? (
-            <div className="rounded-2xl border border-gray-200 bg-white p-12 dark:border-gray-700 dark:bg-gray-800 flex items-center justify-center">
-              <div className="text-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent mx-auto mb-4" />
-                <p className="text-sm text-gray-500 dark:text-gray-400">Loading settings...</p>
-              </div>
-            </div>
+            <div className={`${card} h-64 animate-pulse`} />
           ) : error || promoError ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 p-6 dark:border-red-800 dark:bg-red-900/20">
-              <p className="text-sm text-red-800 dark:text-red-300">
-                Failed to load settings: {error instanceof Error ? error.message : promoError instanceof Error ? promoError.message : 'Unknown error'}
-              </p>
+            <div className={`${card} px-6 py-8 text-sm text-red-600`}>
+              Could not load settings. {error instanceof Error ? error.message : promoError instanceof Error ? promoError.message : ""}
             </div>
           ) : (
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
+          <div className={`${card} p-5 sm:p-6`}>
             {/* Business Info Tab */}
             {activeTab === "business" && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Business Information</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Basic details about your fitness studio</p>
+                  <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">Business</h2>
+                  <p className="mt-1 text-sm text-neutral-500">Name, contact, and how prices are shown.</p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                   <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Business Name</label>
-                    <Input
+                    <label className={label}>Business Name</label>
+                    <input className={field}
                       type="text"
                       value={businessSettings.businessName}
                       onChange={(e) => setBusinessSettings({ ...businessSettings, businessName: e.target.value })}
@@ -207,8 +181,8 @@ export default function GeneralSettingsPage() {
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Email Address</label>
-                    <Input
+                    <label className={label}>Email Address</label>
+                    <input className={field}
                       type="email"
                       value={businessSettings.email}
                       onChange={(e) => setBusinessSettings({ ...businessSettings, email: e.target.value })}
@@ -216,8 +190,8 @@ export default function GeneralSettingsPage() {
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Phone Number</label>
-                    <Input
+                    <label className={label}>Phone Number</label>
+                    <input className={field}
                       type="tel"
                       value={businessSettings.phone}
                       onChange={(e) => setBusinessSettings({ ...businessSettings, phone: e.target.value })}
@@ -225,8 +199,8 @@ export default function GeneralSettingsPage() {
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Address</label>
-                    <Input
+                    <label className={label}>Address</label>
+                    <input className={field}
                       type="text"
                       value={businessSettings.address}
                       onChange={(e) => setBusinessSettings({ ...businessSettings, address: e.target.value })}
@@ -234,8 +208,8 @@ export default function GeneralSettingsPage() {
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">City</label>
-                    <Input
+                    <label className={label}>City</label>
+                    <input className={field}
                       type="text"
                       value={businessSettings.city}
                       onChange={(e) => setBusinessSettings({ ...businessSettings, city: e.target.value })}
@@ -243,56 +217,18 @@ export default function GeneralSettingsPage() {
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Country</label>
-                    <select
-                      value={businessSettings.country}
-                      onChange={(e) => setBusinessSettings({ ...businessSettings, country: e.target.value })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-                    >
-                      <option value="Singapore">Singapore</option>
-                      <option value="United States">United States</option>
-                      <option value="Canada">Canada</option>
-                      <option value="United Kingdom">United Kingdom</option>
-                      <option value="Australia">Australia</option>
-                      <option value="Germany">Germany</option>
-                      <option value="France">France</option>
-                      <option value="Spain">Spain</option>
-                      <option value="Mexico">Mexico</option>
-                    </select>
+                    <label className={label}>Country</label>
+                    <StudioMenu value={businessSettings.country} onChange={(value) => setBusinessSettings({ ...businessSettings, country: value })} placeholder="Country" options={countries} />
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Timezone</label>
-                    <select
-                      value={businessSettings.timezone}
-                      onChange={(e) => setBusinessSettings({ ...businessSettings, timezone: e.target.value })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-                    >
-                      <option value="Asia/Singapore">Singapore Time (SGT)</option>
-                      <option value="America/Los_Angeles">Pacific Time (PT)</option>
-                      <option value="America/Denver">Mountain Time (MT)</option>
-                      <option value="America/Chicago">Central Time (CT)</option>
-                      <option value="America/New_York">Eastern Time (ET)</option>
-                      <option value="Europe/London">GMT (London)</option>
-                      <option value="Europe/Paris">CET (Paris)</option>
-                    </select>
+                    <label className={label}>Timezone</label>
+                    <StudioMenu value={businessSettings.timezone} onChange={(value) => setBusinessSettings({ ...businessSettings, timezone: value })} placeholder="Timezone" options={timezones} />
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Currency</label>
-                    <select
-                      value={businessSettings.currency}
-                      onChange={(e) => setBusinessSettings({ ...businessSettings, currency: e.target.value })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-                    >
-                      <option value="SGD">SGD (S$)</option>
-                      <option value="USD">USD ($)</option>
-                      <option value="EUR">EUR (E)</option>
-                      <option value="GBP">GBP (#)</option>
-                      <option value="CAD">CAD ($)</option>
-                      <option value="AUD">AUD ($)</option>
-                      <option value="MXN">MXN ($)</option>
-                    </select>
+                    <label className={label}>Currency</label>
+                    <StudioMenu value={businessSettings.currency} onChange={(value) => setBusinessSettings({ ...businessSettings, currency: value })} placeholder="Currency" options={currencies} />
                   </div>
                 </div>
               </div>
@@ -302,45 +238,45 @@ export default function GeneralSettingsPage() {
             {activeTab === "booking" && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Booking Rules</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Configure how class bookings work</p>
+                  <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">Booking rules</h2>
+                  <p className="mt-1 text-sm text-neutral-500">How class bookings, reminders, and no-shows work.</p>
                 </div>
 
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Max Bookings Per User</label>
-                      <Input
+                      <label className={label}>Max Bookings Per User</label>
+                      <input className={field}
                         type="number"
                         value={bookingSettings.maxBookingsPerUser}
                         onChange={(e) => setBookingSettings({ ...bookingSettings, maxBookingsPerUser: Number(e.target.value) })}
                       />
-                      <p className="mt-1 text-xs text-gray-500">Maximum concurrent active bookings allowed</p>
+                      <p className={hint}>Maximum concurrent active bookings allowed</p>
                     </div>
 
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Cancellation Window (hours)</label>
-                      <Input
+                      <label className={label}>Cancellation Window (hours)</label>
+                      <input className={field}
                         type="number"
                         value={bookingSettings.cancellationWindow}
                         onChange={(e) => setBookingSettings({ ...bookingSettings, cancellationWindow: Number(e.target.value) })}
                       />
-                      <p className="mt-1 text-xs text-gray-500">Hours before class for free cancellation</p>
+                      <p className={hint}>Hours before class for free cancellation</p>
                     </div>
 
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Reminder Time (hours before)</label>
-                      <Input
+                      <label className={label}>Reminder Time (hours before)</label>
+                      <input className={field}
                         type="number"
                         value={bookingSettings.reminderHoursBefore}
                         onChange={(e) => setBookingSettings({ ...bookingSettings, reminderHoursBefore: Number(e.target.value) })}
                       />
-                      <p className="mt-1 text-xs text-gray-500">When to send booking reminders</p>
+                      <p className={hint}>When to send booking reminders</p>
                     </div>
                   </div>
 
                   <div className="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-4">
-                    <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
+                    <div className="flex items-center justify-between p-4 rounded-2xl bg-neutral-50 dark:bg-white/5">
                       <div>
                         <p className="font-medium text-gray-900 dark:text-white">Auto-confirm Bookings</p>
                         <p className="text-sm text-gray-500 dark:text-gray-400">Automatically confirm bookings when made</p>
@@ -348,16 +284,16 @@ export default function GeneralSettingsPage() {
                       <button
                         onClick={() => setBookingSettings({ ...bookingSettings, autoConfirmBookings: !bookingSettings.autoConfirmBookings })}
                         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          bookingSettings.autoConfirmBookings ? "bg-indigo-600" : "bg-gray-300 dark:bg-gray-600"
+                          bookingSettings.autoConfirmBookings ? "bg-[#E4F56C]" : "bg-neutral-200 dark:bg-white/15"
                         }`}
                       >
-                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-neutral-950 transition-transform ${
                           bookingSettings.autoConfirmBookings ? "translate-x-6" : "translate-x-1"
                         }`} />
                       </button>
                     </div>
 
-                    <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
+                    <div className="flex items-center justify-between p-4 rounded-2xl bg-neutral-50 dark:bg-white/5">
                       <div>
                         <p className="font-medium text-gray-900 dark:text-white">Enable Waitlist</p>
                         <p className="text-sm text-gray-500 dark:text-gray-400">Allow users to join waitlist for full classes</p>
@@ -365,16 +301,16 @@ export default function GeneralSettingsPage() {
                       <button
                         onClick={() => setBookingSettings({ ...bookingSettings, waitlistEnabled: !bookingSettings.waitlistEnabled })}
                         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          bookingSettings.waitlistEnabled ? "bg-indigo-600" : "bg-gray-300 dark:bg-gray-600"
+                          bookingSettings.waitlistEnabled ? "bg-[#E4F56C]" : "bg-neutral-200 dark:bg-white/15"
                         }`}
                       >
-                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-neutral-950 transition-transform ${
                           bookingSettings.waitlistEnabled ? "translate-x-6" : "translate-x-1"
                         }`} />
                       </button>
                     </div>
 
-                    <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
+                    <div className="p-4 rounded-2xl bg-neutral-50 dark:bg-white/5">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-medium text-gray-900 dark:text-white">No-Show Penalty</p>
@@ -383,18 +319,18 @@ export default function GeneralSettingsPage() {
                         <button
                           onClick={() => setBookingSettings({ ...bookingSettings, noShowPenalty: !bookingSettings.noShowPenalty })}
                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                            bookingSettings.noShowPenalty ? "bg-indigo-600" : "bg-gray-300 dark:bg-gray-600"
+                            bookingSettings.noShowPenalty ? "bg-[#E4F56C]" : "bg-neutral-200 dark:bg-white/15"
                           }`}
                         >
-                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-neutral-950 transition-transform ${
                             bookingSettings.noShowPenalty ? "translate-x-6" : "translate-x-1"
                           }`} />
                         </button>
                       </div>
                       {bookingSettings.noShowPenalty && (
                         <div className="mt-4">
-                          <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Penalty Amount (tokens)</label>
-                          <Input
+                          <label className={label}>Penalty Amount (tokens)</label>
+                          <input className={field}
                             type="number"
                             value={bookingSettings.noShowPenaltyTokens}
                             onChange={(e) => setBookingSettings({ ...bookingSettings, noShowPenaltyTokens: Number(e.target.value) })}
@@ -411,13 +347,13 @@ export default function GeneralSettingsPage() {
             {activeTab === "promotions" && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Promotions & Discounts</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Manage early bird and referral discount programs</p>
+                  <h2 className="text-sm font-medium text-neutral-800 dark:text-white/90">Promotions</h2>
+                  <p className="mt-1 text-sm text-neutral-500">Early bird, referrals, and the 1-for-1 trial.</p>
                 </div>
 
                 <div className="space-y-6">
                   {/* Early Bird Section */}
-                  <div className="rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-800 p-6">
+                  <div className="rounded-[22px] border border-neutral-200 bg-neutral-50 p-5 dark:border-white/10 dark:bg-white/5">
                     <div className="flex items-start justify-between mb-6">
                       <div>
                         <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-1">Early Bird Program</h4>
@@ -426,10 +362,10 @@ export default function GeneralSettingsPage() {
                       <button
                         onClick={() => setPromotionSettings({ ...promotionSettings, early_bird_enabled: !promotionSettings.early_bird_enabled })}
                         className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors ${
-                          promotionSettings.early_bird_enabled ? "bg-amber-600 dark:bg-amber-700" : "bg-gray-300 dark:bg-gray-600"
+                          promotionSettings.early_bird_enabled ? "bg-[#E4F56C]" : "bg-neutral-200 dark:bg-white/15"
                         }`}
                       >
-                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-neutral-950 transition-transform ${
                           promotionSettings.early_bird_enabled ? "translate-x-6" : "translate-x-1"
                         }`} />
                       </button>
@@ -439,20 +375,20 @@ export default function GeneralSettingsPage() {
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                           <div>
-                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">User Limit</label>
-                            <Input
+                            <label className={label}>User Limit</label>
+                            <input className={field}
                               type="number"
                               min="0"
                               value={promotionSettings.early_bird_limit}
                               onChange={(e) => setPromotionSettings({ ...promotionSettings, early_bird_limit: Number(e.target.value) })}
                             />
-                            <p className="mt-1 text-xs text-gray-500">Maximum number of users eligible for early bird discount</p>
+                            <p className={hint}>Maximum number of users eligible for early bird discount</p>
                           </div>
 
                           <div>
-                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Discount Percentage</label>
+                            <label className={label}>Discount Percentage</label>
                             <div className="flex items-center gap-2">
-                              <Input
+                              <input className={field}
                                 type="number"
                                 min="0"
                                 max="100"
@@ -461,18 +397,18 @@ export default function GeneralSettingsPage() {
                               />
                               <span className="text-sm text-gray-500">%</span>
                             </div>
-                            <p className="mt-1 text-xs text-gray-500">Discount offered to early bird users</p>
+                            <p className={hint}>Discount offered to early bird users</p>
                           </div>
 
                           <div className="sm:col-span-2">
-                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Validity Period (Months)</label>
-                            <Input
+                            <label className={label}>Validity Period (Months)</label>
+                            <input className={field}
                               type="number"
                               min="1"
                               value={promotionSettings.early_bird_validity_months}
                               onChange={(e) => setPromotionSettings({ ...promotionSettings, early_bird_validity_months: Number(e.target.value) })}
                             />
-                            <p className="mt-1 text-xs text-gray-500">How long the early bird discount is valid after registration</p>
+                            <p className={hint}>How long the early bird discount is valid after registration</p>
                           </div>
                         </div>
                       </div>
@@ -480,7 +416,7 @@ export default function GeneralSettingsPage() {
                   </div>
 
                   {/* Referral Section */}
-                  <div className="rounded-xl bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 border border-blue-200 dark:border-blue-800 p-6">
+                  <div className="rounded-[22px] border border-neutral-200 bg-neutral-50 p-5 dark:border-white/10 dark:bg-white/5">
                     <div className="flex items-start justify-between mb-6">
                       <div>
                         <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-1">Referral Program</h4>
@@ -489,10 +425,10 @@ export default function GeneralSettingsPage() {
                       <button
                         onClick={() => setPromotionSettings({ ...promotionSettings, referral_enabled: !promotionSettings.referral_enabled })}
                         className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors ${
-                          promotionSettings.referral_enabled ? "bg-blue-600 dark:bg-blue-700" : "bg-gray-300 dark:bg-gray-600"
+                          promotionSettings.referral_enabled ? "bg-[#E4F56C]" : "bg-neutral-200 dark:bg-white/15"
                         }`}
                       >
-                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-neutral-950 transition-transform ${
                           promotionSettings.referral_enabled ? "translate-x-6" : "translate-x-1"
                         }`} />
                       </button>
@@ -501,9 +437,9 @@ export default function GeneralSettingsPage() {
                     {promotionSettings.referral_enabled && (
                       <div className="space-y-4">
                         <div>
-                          <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Discount Percentage</label>
+                          <label className={label}>Discount Percentage</label>
                           <div className="flex items-center gap-2">
-                            <Input
+                            <input className={field}
                               type="number"
                               min="0"
                               max="100"
@@ -512,25 +448,26 @@ export default function GeneralSettingsPage() {
                             />
                             <span className="text-sm text-gray-500">%</span>
                           </div>
-                          <p className="mt-1 text-xs text-gray-500">Discount amount for referred users</p>
+                          <p className={hint}>Discount amount for referred users</p>
                         </div>
                       </div>
                     )}
                   </div>
 
                   {/* Duo Trial (1-for-1) Section */}
-                  <div className="rounded-xl bg-gradient-to-br from-lime-50 to-emerald-50 dark:from-lime-900/20 dark:to-emerald-900/20 border border-lime-200 dark:border-lime-800 p-6">
-                    <div className="mb-6 pb-6 border-b border-lime-200 dark:border-lime-800">
-                      <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">/start sales page booking</label>
-                      <select
+                  <div className="rounded-[22px] border border-neutral-200 bg-neutral-50 p-5 dark:border-white/10 dark:bg-white/5">
+                    <div className="mb-6 border-b border-neutral-200 pb-6 dark:border-white/10">
+                      <label className={label}>/start sales page booking</label>
+                      <StudioMenu
                         value={promotionSettings.duo_start_page_mode}
-                        onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_start_page_mode: e.target.value as PromotionsSettings["duo_start_page_mode"] })}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-                      >
-                        <option value="quick_join">1-for-1 quick book (pay first, we schedule)</option>
-                        <option value="trial">Fast trial (same quick form, solo trial price)</option>
-                      </select>
-                      <p className="mt-1 text-xs text-gray-500">
+                        onChange={(value) => setPromotionSettings({ ...promotionSettings, duo_start_page_mode: value as PromotionsSettings["duo_start_page_mode"] })}
+                        placeholder="Start page"
+                        options={[
+                          { value: "quick_join", label: "1-for-1 quick book" },
+                          { value: "trial", label: "Fast trial" },
+                        ]}
+                      />
+                      <p className={hint}>
                         Controls the /start page. Fast trial uses the short pay-first form; visitors who want to pick a class themselves can use full trial booking at /trial-booking.
                       </p>
                     </div>
@@ -543,10 +480,10 @@ export default function GeneralSettingsPage() {
                       <button
                         onClick={() => setPromotionSettings({ ...promotionSettings, duo_promo_active: !promotionSettings.duo_promo_active })}
                         className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors ${
-                          promotionSettings.duo_promo_active ? "bg-lime-600 dark:bg-lime-700" : "bg-gray-300 dark:bg-gray-600"
+                          promotionSettings.duo_promo_active ? "bg-[#E4F56C]" : "bg-neutral-200 dark:bg-white/15"
                         }`}
                       >
-                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-neutral-950 transition-transform ${
                           promotionSettings.duo_promo_active ? "translate-x-6" : "translate-x-1"
                         }`} />
                       </button>
@@ -556,10 +493,10 @@ export default function GeneralSettingsPage() {
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                           <div>
-                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Studio (indoor) price</label>
+                            <label className={label}>Studio (indoor) price</label>
                             <div className="flex items-center gap-2">
                               <span className="text-sm text-gray-500">$</span>
-                              <Input
+                              <input className={field}
                                 type="number"
                                 min="1"
                                 step="0.01"
@@ -567,14 +504,14 @@ export default function GeneralSettingsPage() {
                                 onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_indoor_price_cents: Math.round((Number(e.target.value) || 0) * 100) })}
                               />
                             </div>
-                            <p className="mt-1 text-xs text-gray-500">Total price for two people (1-for-1)</p>
+                            <p className={hint}>Total price for two people (1-for-1)</p>
                           </div>
 
                           <div>
-                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Outdoor price</label>
+                            <label className={label}>Outdoor price</label>
                             <div className="flex items-center gap-2">
                               <span className="text-sm text-gray-500">$</span>
-                              <Input
+                              <input className={field}
                                 type="number"
                                 min="1"
                                 step="0.01"
@@ -582,56 +519,59 @@ export default function GeneralSettingsPage() {
                                 onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_outdoor_price_cents: Math.round((Number(e.target.value) || 0) * 100) })}
                               />
                             </div>
-                            <p className="mt-1 text-xs text-gray-500">e.g. OCBC Arena, Kallang</p>
+                            <p className={hint}>e.g. OCBC Arena, Kallang</p>
                           </div>
 
                           <div>
-                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Outdoor on /start page</label>
-                            <select
+                            <label className={label}>Outdoor on /start page</label>
+                            <StudioMenu
                               value={promotionSettings.duo_outdoor_quick_join_mode}
-                              onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_outdoor_quick_join_mode: e.target.value as PromotionsSettings["duo_outdoor_quick_join_mode"] })}
-                              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-                            >
-                              <option value="auto">Auto (when outdoor classes are scheduled)</option>
-                              <option value="on">Always show</option>
-                              <option value="off">Never show</option>
-                            </select>
-                            <p className="mt-1 text-xs text-gray-500">Controls the outdoor option on the quick sales /start page</p>
+                              onChange={(value) => setPromotionSettings({ ...promotionSettings, duo_outdoor_quick_join_mode: value as PromotionsSettings["duo_outdoor_quick_join_mode"] })}
+                              placeholder="Outdoor on /start"
+                              options={[
+                                { value: "auto", label: "Auto, when outdoor classes exist" },
+                                { value: "on", label: "Always show" },
+                                { value: "off", label: "Never show" },
+                              ]}
+                            />
+                            <p className={hint}>Controls the outdoor option on the quick sales /start page</p>
                           </div>
 
                           <div>
-                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Booking mode</label>
-                            <select
+                            <label className={label}>Booking mode</label>
+                            <StudioMenu
                               value={promotionSettings.duo_booking_mode}
-                              onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_booking_mode: e.target.value as PromotionsSettings["duo_booking_mode"] })}
-                              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-                            >
-                              <option value="pay_online">Pay online only</option>
-                              <option value="reserve_only">Reserve &amp; pay at studio only</option>
-                              <option value="both">Both (pay online or reserve)</option>
-                            </select>
-                            <p className="mt-1 text-xs text-gray-500">How visitors confirm their spot</p>
+                              onChange={(value) => setPromotionSettings({ ...promotionSettings, duo_booking_mode: value as PromotionsSettings["duo_booking_mode"] })}
+                              placeholder="Booking mode"
+                              options={[
+                                { value: "pay_online", label: "Pay online only" },
+                                { value: "reserve_only", label: "Reserve and pay at the studio" },
+                                { value: "both", label: "Pay online or reserve" },
+                              ]}
+                            />
+                            <p className={hint}>How visitors confirm their spot</p>
                           </div>
 
                           <div>
-                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Payment terms</label>
-                            <select
+                            <label className={label}>Payment terms</label>
+                            <StudioMenu
                               value={promotionSettings.duo_payment_terms}
-                              onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_payment_terms: e.target.value as PromotionsSettings["duo_payment_terms"] })}
-                              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
-                            >
-                              <option value="full">Pay full online</option>
-                              <option value="deposit">Pay a deposit online</option>
-                              <option value="none">No payment (pay at studio)</option>
-                            </select>
-                            <p className="mt-1 text-xs text-gray-500">How much they pay online now</p>
+                              onChange={(value) => setPromotionSettings({ ...promotionSettings, duo_payment_terms: value as PromotionsSettings["duo_payment_terms"] })}
+                              placeholder="Payment terms"
+                              options={[
+                                { value: "full", label: "Pay in full online" },
+                                { value: "deposit", label: "Pay a deposit online" },
+                                { value: "none", label: "Pay at the studio" },
+                              ]}
+                            />
+                            <p className={hint}>How much they pay online now</p>
                           </div>
 
                           {promotionSettings.duo_payment_terms === "deposit" && (
                             <div>
-                              <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Deposit %</label>
+                              <label className={label}>Deposit %</label>
                               <div className="flex items-center gap-2">
-                                <Input
+                                <input className={field}
                                   type="number"
                                   min="1"
                                   max="100"
@@ -640,18 +580,21 @@ export default function GeneralSettingsPage() {
                                 />
                                 <span className="text-sm text-gray-500">%</span>
                               </div>
-                              <p className="mt-1 text-xs text-gray-500">50% = half now, half at studio</p>
+                              <p className={hint}>50% = half now, half at studio</p>
                             </div>
                           )}
 
                           <div>
-                            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Promo end date</label>
-                            <Input
-                              type="date"
+                            <label className={label}>Promo end date</label>
+                            <StudioDate
+                              block
+                              clearable
+                              ariaLabel="Promo end date"
+                              placeholder="No expiry"
                               value={promotionSettings.duo_end_date}
-                              onChange={(e) => setPromotionSettings({ ...promotionSettings, duo_end_date: e.target.value })}
+                              onChange={(value) => setPromotionSettings({ ...promotionSettings, duo_end_date: value })}
                             />
-                            <p className="mt-1 text-xs text-gray-500">Leave blank for no expiry</p>
+                            <p className={hint}>Leave blank for no expiry</p>
                           </div>
                         </div>
                       </div>
@@ -663,36 +606,24 @@ export default function GeneralSettingsPage() {
 
 
             {/* Save Button */}
-            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
-              <button className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors">
+            <div className="mt-8 flex flex-col items-stretch gap-3 border-t border-neutral-200 pt-6 dark:border-white/10 sm:flex-row sm:justify-end">
+              {(updateSettings.isError || updatePromoSettings.isError) && (
+                <p className="text-sm text-red-600 sm:mr-auto">{updateSettings.error?.message || updatePromoSettings.error?.message || "Could not save"}</p>
+              )}
+              <button type="button" onClick={handleCancel} className="rounded-full border border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-700 dark:border-white/10 dark:text-white">
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleSave}
-                disabled={(activeTab === "promotions" ? updatePromoSettings.isPending : updateSettings.isPending) || isLoading || promoLoading}
-                className="px-6 py-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                disabled={saving || isLoading || promoLoading}
+                className="rounded-full bg-[#E4F56C] px-5 py-2.5 text-sm font-semibold text-neutral-950 disabled:opacity-50"
               >
-                {(activeTab === "promotions" ? updatePromoSettings.isPending : updateSettings.isPending) ? (
-                  <>
-                    <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Saving...
-                  </>
-                ) : (
-                  "Save Changes"
-                )}
+                {saving ? "Saving…" : "Save changes"}
               </button>
-              {(updateSettings.isError || updatePromoSettings.isError) && (
-                <div className="mt-2 text-sm text-red-600 dark:text-red-400">
-                  {updateSettings.error?.message || updatePromoSettings.error?.message || "Failed to save settings"}
-                </div>
-              )}
             </div>
           </div>
           )}
-        </div>
       </div>
     </div>
   );
