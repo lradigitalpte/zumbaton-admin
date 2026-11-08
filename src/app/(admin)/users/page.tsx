@@ -15,6 +15,7 @@ import { useToast } from "@/components/ui/Toast";
 import { supabase } from "@/lib/supabase";
 import StudioMenu from "@/components/ui/StudioMenu";
 import StudioDate from "@/components/ui/StudioDate";
+import SignupsByMonth, { sgtMonthKey } from "@/components/users/SignupsByMonth";
 
 // Skeleton Components
 const StatCardSkeleton = () => (
@@ -93,7 +94,9 @@ export default function UsersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [tokenFilter, setTokenFilter] = useState<TokenFilter>("all");
   const [attendanceFilter, setAttendanceFilter] = useState<"all" | "been" | "never">("all");
-  
+  /** "YYYY-MM" (Singapore time) — only show members who joined that month. */
+  const [joinedMonth, setJoinedMonth] = useState<string | null>(null);
+
   // Sorting
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -229,9 +232,11 @@ export default function UsersPage() {
             ? attended > 0
             : attended === 0;
       
-      return matchesStatus && matchesSearch && matchesTokens && matchesAttendance;
+      const matchesMonth = !joinedMonth || (!!user.joinedDate && sgtMonthKey(user.joinedDate) === joinedMonth);
+
+      return matchesStatus && matchesSearch && matchesTokens && matchesAttendance && matchesMonth;
     });
-  }, [users, filter, searchQuery, tokenFilter, attendanceFilter]);
+  }, [users, filter, searchQuery, tokenFilter, attendanceFilter, joinedMonth]);
 
   // Sorting logic
   const sortedUsers = useMemo(() => {
@@ -303,10 +308,12 @@ export default function UsersPage() {
     setSearchQuery("");
     setTokenFilter("all");
     setAttendanceFilter("all");
+    setJoinedMonth(null);
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = filter !== "all" || searchQuery !== "" || tokenFilter !== "all" || attendanceFilter !== "all";
+  const hasActiveFilters =
+    filter !== "all" || searchQuery !== "" || tokenFilter !== "all" || attendanceFilter !== "all" || joinedMonth !== null;
 
   const getStatusStyle = (status: User["status"]) => {
     switch (status) {
@@ -772,6 +779,15 @@ export default function UsersPage() {
       </div>
       )}
 
+      {/* New sign-ups by month — click a bar to filter the list to that month */}
+      <SignupsByMonth
+        selectedMonth={joinedMonth}
+        onSelectMonth={(month) => {
+          setJoinedMonth(month);
+          setCurrentPage(1);
+        }}
+      />
+
       {/* Main Card */}
       <div className="overflow-hidden rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800">
         <div className="px-5 py-4 sm:px-6">
@@ -826,7 +842,7 @@ export default function UsersPage() {
                 Filters
                 {hasActiveFilters && (
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#E4F56C] text-xs text-neutral-950">
-                    {[filter !== "all", tokenFilter !== "all", attendanceFilter !== "all"].filter(Boolean).length}
+                    {[filter !== "all", tokenFilter !== "all", attendanceFilter !== "all", joinedMonth !== null].filter(Boolean).length}
                   </span>
                 )}
               </button>
@@ -1039,6 +1055,17 @@ export default function UsersPage() {
                         <div className="truncate text-sm text-gray-500 dark:text-gray-400">
                           {user.email}
                         </div>
+                        {user.joinedDate && (
+                          <div className="text-xs text-neutral-400">
+                            Joined{" "}
+                            {new Date(user.joinedDate).toLocaleDateString("en-SG", {
+                              timeZone: "Asia/Singapore",
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </td>

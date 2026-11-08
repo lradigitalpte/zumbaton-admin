@@ -6,6 +6,7 @@ import StudioMenu from "@/components/ui/StudioMenu";
 import { useSettings, useUpdateSettings, BusinessSettings, BookingSettings } from "@/hooks/useSettings";
 import { usePromotionsSettings, useUpdatePromotionsSettings, type PromotionsSettings } from "@/hooks/usePromotions";
 import { useOnboarding } from "@/components/onboarding";
+import Sale1111Section from "@/components/settings/Sale1111Section";
 
 const card = "rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800";
 const field = "h-11 w-full rounded-full border border-neutral-200 bg-white px-4 text-sm text-neutral-950 outline-none placeholder:text-neutral-400 dark:border-white/10 dark:bg-gray-800 dark:text-white";
@@ -80,6 +81,7 @@ export default function GeneralSettingsPage() {
     duo_end_date: "",
     duo_outdoor_quick_join_mode: "auto",
     duo_start_page_mode: "quick_join",
+    sale_1111_enabled: true,
   });
 
   // Load settings from API
@@ -453,6 +455,17 @@ export default function GeneralSettingsPage() {
                       </div>
                     )}
                   </div>
+
+                  {/* 11:11 Sale (one-day promo) */}
+                  <Sale1111Section
+                    enabled={promotionSettings.sale_1111_enabled !== false}
+                    onToggle={() =>
+                      setPromotionSettings({
+                        ...promotionSettings,
+                        sale_1111_enabled: !(promotionSettings.sale_1111_enabled !== false),
+                      })
+                    }
+                  />
 
                   {/* Duo Trial (1-for-1) Section */}
                   <div className="rounded-[22px] border border-neutral-200 bg-neutral-50 p-5 dark:border-white/10 dark:bg-white/5">

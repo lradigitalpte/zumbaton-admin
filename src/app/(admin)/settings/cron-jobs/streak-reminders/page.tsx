@@ -24,12 +24,52 @@ interface Recipient {
   sentAt: string | null;
 }
 
+interface Tracking {
+  userId: string;
+  sentAt: string;
+  openedAt: string | null;
+  openCount: number;
+  clickedAt: string | null;
+  clickCount: number;
+  bookedAfterAt: string | null;
+  attended: boolean;
+  boughtAt: string | null;
+  boughtCents: number;
+  boughtPackage: string | null;
+}
+
+type Engagement = "all" | "opened" | "not_opened" | "clicked" | "booked" | "bought";
+
+/** Member | Streak | Email sent | Opened | Clicked | Booked | Bought tokens */
+const TABLE_COLS = "md:grid md:grid-cols-[minmax(0,1.7fr)_64px_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.1fr)] md:items-center md:gap-3";
+
+function shortTime(value: string | null) {
+  if (!value) return null;
+  return new Date(value).toLocaleString("en-SG", {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Singapore",
+  });
+}
+
+function Step({ done, label, time, tone, title }: { done: boolean; label: string; time?: string | null; tone: string; title?: string }) {
+  if (!done) return <span className="text-sm text-neutral-300 dark:text-white/20">—</span>;
+  return (
+    <div title={title} className="min-w-0">
+      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone}`}>✓ {label}</span>
+      {time && <p className="mt-0.5 truncate text-[11px] text-neutral-400">{time}</p>}
+    </div>
+  );
+}
+
 interface StreakData {
   week: string;
   currentWeek: string;
   weeks: string[];
   recipients: Recipient[];
   members: Member[] | null;
+  tracking?: Tracking[];
 }
 
 interface Row {
@@ -120,6 +160,7 @@ export default function StreakRemindersPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("sent");
+  const [engagement, setEngagement] = useState<Engagement>("all");
   const [search, setSearch] = useState("");
 
   const [testEmail, setTestEmail] = useState("");
@@ -244,14 +285,38 @@ export default function StreakRemindersPage() {
     }));
   }, [data, isCurrentWeek]);
 
+  const tracking = useMemo(() => new Map((data?.tracking ?? []).map((t) => [t.userId, t])), [data]);
+  const results = useMemo(() => {
+    const list = data?.tracking ?? [];
+    const opened = list.filter((t) => t.openedAt).length;
+    const clicked = list.filter((t) => t.clickedAt).length;
+    const booked = list.filter((t) => t.bookedAfterAt).length;
+    const attended = list.filter((t) => t.attended).length;
+    const bought = list.filter((t) => t.boughtAt).length;
+    const boughtCents = list.reduce((sum, t) => sum + (t.boughtAt ? t.boughtCents : 0), 0);
+    const pct = (n: number) => (list.length ? Math.round((n / list.length) * 100) : 0);
+    return { tracked: list.length, opened, clicked, booked, attended, bought, boughtCents, pct };
+  }, [data]);
+
   const activeTab: Tab = isCurrentWeek ? tab : "sent";
   const term = search.trim().toLowerCase();
+  const matchesEngagement = (userId: string) => {
+    if (engagement === "all") return true;
+    const t = tracking.get(userId);
+    if (!t) return false;
+    if (engagement === "opened") return !!t.openedAt;
+    if (engagement === "not_opened") return !t.openedAt;
+    if (engagement === "clicked") return !!t.clickedAt;
+    if (engagement === "bought") return !!t.boughtAt;
+    return !!t.bookedAfterAt;
+  };
   const visibleRows = rows
     .filter((row) => {
       if (activeTab === "all") return true;
       if (activeTab === "skipped") return row.status === "opted_out" || row.status === "no_profile";
       return row.status === activeTab;
     })
+    .filter((row) => activeTab !== "sent" || results.tracked === 0 || matchesEngagement(row.userId))
     .filter((row) => !term || (row.name || "").toLowerCase().includes(term) || (row.email || "").toLowerCase().includes(term))
     .sort((a, b) => b.streakWeeks - a.streakWeeks || (a.name || "").localeCompare(b.name || ""));
 
@@ -353,6 +418,71 @@ export default function StreakRemindersPage() {
         </section>
       )}
 
+      {/* Email results (opens / clicks / bookings after the email) */}
+      {data && (
+        <section className={`${card} p-5 sm:p-6`}>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+              Email results · {formatWeek(data.week)}
+            </p>
+            {results.tracked > 0 && (
+              <p className="text-xs text-neutral-400">Click a number to see who</p>
+            )}
+          </div>
+          {results.tracked === 0 ? (
+            <p className="mt-2 text-sm text-neutral-500">
+              No tracked emails for this week. Open, click and booking tracking starts with the next Friday run —
+              emails sent before it was switched on can&apos;t be tracked.
+            </p>
+          ) : (
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {[
+                { label: "Emailed", value: results.tracked, sub: "tracked", filter: "all" as Engagement },
+                { label: "Opened", value: results.opened, sub: `${results.pct(results.opened)}%`, filter: "opened" as Engagement },
+                { label: "Clicked Book", value: results.clicked, sub: `${results.pct(results.clicked)}%`, filter: "clicked" as Engagement },
+                {
+                  label: "Booked after",
+                  value: results.booked,
+                  sub: `${results.pct(results.booked)}% · ${results.attended} came`,
+                  filter: "booked" as Engagement,
+                  dark: true,
+                },
+                {
+                  label: "Bought tokens",
+                  value: results.bought,
+                  sub: `$${(results.boughtCents / 100).toLocaleString("en-SG", { maximumFractionDigits: 2 })} within 7 days`,
+                  filter: "bought" as Engagement,
+                },
+              ].map((tile) => (
+                <button
+                  key={tile.label}
+                  type="button"
+                  onClick={() => {
+                    setTab("sent");
+                    setEngagement(tile.filter);
+                  }}
+                  className={`rounded-2xl p-4 text-left transition hover:brightness-95 ${
+                    tile.dark
+                      ? "bg-neutral-950 text-white dark:bg-white dark:text-neutral-950"
+                      : "border border-neutral-200 bg-neutral-50 dark:border-white/10 dark:bg-white/5"
+                  }`}
+                >
+                  <p className={`text-xs font-medium ${tile.dark ? "text-[#E4F56C] dark:text-neutral-500" : "text-neutral-500"}`}>{tile.label}</p>
+                  <p className={`mt-1 text-3xl font-semibold tracking-tight ${tile.dark ? "" : "text-neutral-950 dark:text-white"}`}>{tile.value}</p>
+                  <p className={`text-[11px] ${tile.dark ? "text-white/60 dark:text-neutral-500" : "text-neutral-400"}`}>{tile.sub}</p>
+                </button>
+              ))}
+            </div>
+          )}
+          {results.tracked > 0 && (
+            <p className="mt-3 text-[11px] leading-4 text-neutral-400">
+              Opens are approximate: Apple Mail can count an open automatically, and some apps block images so a real
+              open isn&apos;t seen. Clicks and bookings are exact. &ldquo;Booked after&rdquo; = booked a class for that week after the email arrived.
+            </p>
+          )}
+        </section>
+      )}
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
         {/* Members */}
         <section className={`${card} min-w-0 overflow-hidden`}>
@@ -399,6 +529,45 @@ export default function StreakRemindersPage() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
+
+            {activeTab === "sent" && results.tracked > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {([
+                  ["all", "All emailed"],
+                  ["opened", "Opened"],
+                  ["not_opened", "Didn't open"],
+                  ["clicked", "Clicked"],
+                  ["booked", "Booked after"],
+                  ["bought", "Bought tokens"],
+                ] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setEngagement(id)}
+                    className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
+                      engagement === id
+                        ? "bg-neutral-950 text-white dark:bg-white dark:text-neutral-950"
+                        : "border border-neutral-200 text-neutral-500 hover:text-neutral-900 dark:border-white/10 dark:hover:text-white"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Column headings (desktop) */}
+          <div
+            className={`hidden border-t border-neutral-100 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400 dark:border-white/5 sm:px-6 ${TABLE_COLS}`}
+          >
+            <span>Member</span>
+            <span className="text-right">Streak</span>
+            <span>Email</span>
+            <span>Opened</span>
+            <span>Clicked</span>
+            <span>Booked</span>
+            <span>Bought tokens</span>
           </div>
 
           <ul className="divide-y divide-neutral-100 border-t border-neutral-100 dark:divide-white/5 dark:border-white/5">
@@ -417,28 +586,95 @@ export default function StreakRemindersPage() {
             ) : (
               visibleRows.map((row) => {
                 const sentAt = formatSentAt(row.sentAt);
+                const t = tracking.get(row.userId);
+                const emailed = row.status === "sent";
+                const money = (cents: number) =>
+                  `$${(cents / 100).toLocaleString("en-SG", { maximumFractionDigits: 2 })}`;
                 return (
-                  <li key={row.userId} className="flex items-center gap-3 px-5 py-3.5 transition hover:bg-neutral-50 dark:hover:bg-white/5 sm:px-6">
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold ${avatarColor(row.userId)}`}>
-                      {initials(row.name, row.email)}
+                  <li
+                    key={row.userId}
+                    className={`flex flex-wrap items-center gap-3 px-5 py-3.5 transition hover:bg-neutral-50 dark:hover:bg-white/5 sm:px-6 ${TABLE_COLS}`}
+                  >
+                    {/* Member */}
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold ${avatarColor(row.userId)}`}>
+                        {initials(row.name, row.email)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-neutral-950 dark:text-white">{row.name || "No name"}</p>
+                        <p className="truncate text-xs text-neutral-500">{row.email || "No email"}</p>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-neutral-950 dark:text-white">{row.name || "No name"}</p>
-                      <p className="truncate text-xs text-neutral-500">{row.email || "No email"}</p>
-                    </div>
-                    <div className="hidden shrink-0 text-right sm:block">
+
+                    {/* Streak */}
+                    <div className="hidden text-right sm:block">
                       <p className="text-sm font-semibold text-neutral-950 dark:text-white">
                         {row.streakWeeks}
-                        <span className="ml-0.5 text-xs font-medium text-neutral-400">{row.streakWeeks === 1 ? "week" : "weeks"}</span>
+                        <span className="ml-0.5 text-xs font-medium text-neutral-400">wk</span>
                       </p>
-                      <p className="text-[11px] text-neutral-400">streak</p>
                     </div>
-                    <div className="w-32 shrink-0 text-right">
+
+                    {/* Email status + time */}
+                    <div className="min-w-0 text-right md:text-left">
                       <span title={STATUS[row.status].hint} className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS[row.status].badge}`}>
                         {STATUS[row.status].label}
                       </span>
-                      {row.status === "sent" && sentAt ? <p className="mt-1 text-[11px] text-neutral-400">{sentAt}</p> : null}
+                      {emailed && sentAt ? <p className="mt-0.5 truncate text-[11px] text-neutral-400">{sentAt}</p> : null}
                     </div>
+
+                    {/* Opened · Clicked · Booked · Bought */}
+                    {!emailed ? (
+                      <>
+                        <span className="hidden text-sm text-neutral-300 dark:text-white/20 md:block">—</span>
+                        <span className="hidden text-sm text-neutral-300 dark:text-white/20 md:block">—</span>
+                        <span className="hidden text-sm text-neutral-300 dark:text-white/20 md:block">—</span>
+                        <span className="hidden text-sm text-neutral-300 dark:text-white/20 md:block">—</span>
+                      </>
+                    ) : !t ? (
+                      <p
+                        className="w-full text-[11px] text-neutral-400 md:col-span-4 md:w-auto"
+                        title="This email went out before open/click tracking was switched on."
+                      >
+                        Sent before tracking — no open/click data
+                      </p>
+                    ) : (
+                      <>
+                        <div className="contents max-md:flex max-md:w-full max-md:flex-wrap max-md:gap-2 max-md:pl-[52px]">
+                          {t.openedAt ? (
+                            <Step
+                              done
+                              label={t.openCount > 1 ? `Opened ${t.openCount}×` : "Opened"}
+                              time={shortTime(t.openedAt)}
+                              tone="bg-sky-100 text-sky-800"
+                              title={`First opened ${formatSentAt(t.openedAt)}`}
+                            />
+                          ) : (
+                            <span className="text-[11px] font-medium text-neutral-400">Not opened</span>
+                          )}
+                          <Step
+                            done={!!t.clickedAt}
+                            label="Clicked"
+                            time={shortTime(t.clickedAt)}
+                            tone="bg-violet-100 text-violet-800"
+                            title={t.clickedAt ? `Clicked ${formatSentAt(t.clickedAt)} (${t.clickCount}×)` : undefined}
+                          />
+                          <Step
+                            done={!!t.bookedAfterAt}
+                            label={t.attended ? "Came" : "Booked"}
+                            time={shortTime(t.bookedAfterAt)}
+                            tone="bg-[#E4F56C] text-neutral-950"
+                            title={t.bookedAfterAt ? `Booked ${formatSentAt(t.bookedAfterAt)}` : undefined}
+                          />
+                          <Step
+                            done={!!t.boughtAt}
+                            label={money(t.boughtCents)}
+                            time={t.boughtPackage ? `${t.boughtPackage} · ${shortTime(t.boughtAt)}` : shortTime(t.boughtAt)}
+                            tone="bg-emerald-100 text-emerald-800"
+                            title={t.boughtAt ? `Bought ${t.boughtPackage ?? "tokens"} ${formatSentAt(t.boughtAt)}` : undefined}
+                          />
+                        </div>
+                      </>
+                    )}
                   </li>
                 );
               })

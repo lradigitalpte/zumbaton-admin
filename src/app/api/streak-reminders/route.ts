@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { withAuth } from '@/middleware/rbac'
 import { addDaysToDateString, singaporeWeekStart } from '@/lib/week-streak'
 import {
+  getStreakEmailTracking,
   getStreakReminderAudience,
   getStreakReminderRecipients,
 } from '@/services/streak-reminders.service'
@@ -21,10 +22,22 @@ async function handleGetStreakReminders(request: NextRequest): Promise<NextRespo
     const requested = new URL(request.url).searchParams.get('week')
     const week = requested && weeks.includes(requested) ? requested : currentWeek
 
-    const [recipients, audience] = await Promise.all([
+    const [recipients, audience, tracking] = await Promise.all([
       getStreakReminderRecipients(week),
       week === currentWeek ? getStreakReminderAudience() : Promise.resolve(null),
+      getStreakEmailTracking(week),
     ])
+
+    // Tracked sends are the accurate record (real sent time, and they survive later
+    // weeks' reminders). Merge in anyone the tracking log has that the legacy
+    // last-reminder-week field no longer shows.
+    const trackedSentAt = new Map(tracking.map((t) => [t.userId, t.sentAt]))
+    const merged = recipients.map((r) => ({ ...r, sentAt: trackedSentAt.get(r.userId) ?? r.sentAt }))
+    for (const t of tracking) {
+      if (!merged.some((r) => r.userId === t.userId)) {
+        merged.push({ userId: t.userId, name: t.name, email: t.email, streakWeeks: t.streakWeeks, sentAt: t.sentAt })
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -32,8 +45,9 @@ async function handleGetStreakReminders(request: NextRequest): Promise<NextRespo
         week,
         currentWeek,
         weeks,
-        recipients,
+        recipients: merged,
         members: audience?.members ?? null,
+        tracking,
       },
     })
   } catch (error) {

@@ -34,6 +34,8 @@ export interface PromotionsSettings {
   /** Outdoor option on /start quick-join. */
   duo_outdoor_quick_join_mode: OutdoorQuickJoinMode
   duo_start_page_mode: StartPageMode
+  /** 11:11 Sale kill switch — read by the public site (banner, popup, /1111, checkout). */
+  sale_1111_enabled: boolean
 }
 
 function getDefaultPromotionsSettings(): PromotionsSettings {
@@ -53,6 +55,7 @@ function getDefaultPromotionsSettings(): PromotionsSettings {
     duo_end_date: '',
     duo_outdoor_quick_join_mode: 'auto',
     duo_start_page_mode: 'quick_join',
+    sale_1111_enabled: true,
   }
 }
 
@@ -157,6 +160,7 @@ async function handleUpdatePromotionsSettings(
       duo_start_page_mode: validStartPageModes.includes(body.duo_start_page_mode)
         ? body.duo_start_page_mode
         : 'quick_join',
+      sale_1111_enabled: typeof body.sale_1111_enabled === 'boolean' ? body.sale_1111_enabled : true,
     }
 
     // Validate ranges

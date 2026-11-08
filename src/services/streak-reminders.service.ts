@@ -3,7 +3,7 @@
 
 import { getSupabaseAdminClient } from '@/lib/supabase'
 import { getWebAppUrl } from '@/lib/email-url'
-import { singaporeWeekBounds } from '@/lib/week-streak'
+import { addDaysToDateString, singaporeWeekBounds } from '@/lib/week-streak'
 
 export type StreakReminderStatus = 'sent' | 'due' | 'booked' | 'opted_out' | 'no_profile'
 
@@ -184,11 +184,196 @@ export async function getStreakReminderRecipients(weekStart: string): Promise<St
     .sort((a, b) => (a.name || a.email || '').localeCompare(b.name || b.email || ''))
 }
 
+// ---------------------------------------------------------------------------
+// Per-email tracking (email_sends table: migration 20261108_create_email_sends)
+// ---------------------------------------------------------------------------
+
+export const STREAK_EMAIL_KIND = 'streak_reminder'
+
+/**
+ * Log a streak reminder before it is sent; the row id becomes the tracking token
+ * in the email. Returns null if the table isn't there yet, so sending still works.
+ */
+export async function createStreakEmailSend(params: {
+  userId: string
+  email: string
+  weekStart: string
+  streakWeeks: number
+}): Promise<string | null> {
+  const { data, error } = await getSupabaseAdminClient()
+    .from('email_sends')
+    .insert({
+      kind: STREAK_EMAIL_KIND,
+      user_id: params.userId,
+      email: params.email,
+      week_start: params.weekStart,
+      meta: { streak_weeks: params.streakWeeks },
+      status: 'sending',
+    })
+    .select('id')
+    .single()
+  if (error) {
+    console.warn('[StreakReminders] email_sends not recorded (tracking off for this email):', error.message)
+    return null
+  }
+  return data.id as string
+}
+
+export async function finishStreakEmailSend(id: string | null, result: { success: boolean; error?: string }) {
+  if (!id) return
+  const { error } = await getSupabaseAdminClient()
+    .from('email_sends')
+    .update(
+      result.success
+        ? { status: 'sent', sent_at: new Date().toISOString() }
+        : { status: 'failed', error: result.error?.slice(0, 500) ?? 'Unknown error' }
+    )
+    .eq('id', id)
+  if (error) console.error('[StreakReminders] Failed to update email_sends row', id, error.message)
+}
+
+export interface StreakEmailTracking {
+  userId: string
+  name: string | null
+  email: string | null
+  streakWeeks: number
+  sentAt: string
+  openedAt: string | null
+  openCount: number
+  clickedAt: string | null
+  clickCount: number
+  /** First booking made after the email for a class in that week (confirmed or attended). */
+  bookedAfterAt: string | null
+  /** Attended a class that week after the email went out. */
+  attended: boolean
+  /** First successful token purchase within 7 days after the email. */
+  boughtAt: string | null
+  boughtCents: number
+  boughtPackage: string | null
+}
+
+const PURCHASE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * Who opened / clicked / booked after this week's reminder — one row per member emailed,
+ * from the email_sends log. Empty if no tracked emails exist for the week.
+ */
+export async function getStreakEmailTracking(weekStart: string): Promise<StreakEmailTracking[]> {
+  const admin = getSupabaseAdminClient()
+  const { data: sends, error } = await admin
+    .from('email_sends')
+    .select('user_id, email, meta, sent_at, opened_at, open_count, clicked_at, click_count')
+    .eq('kind', STREAK_EMAIL_KIND)
+    .eq('week_start', weekStart)
+    .eq('status', 'sent')
+    .order('sent_at', { ascending: true })
+
+  if (error) {
+    // Table not created yet → no tracking data, not an error for the page.
+    console.warn('[StreakReminders] email_sends unavailable:', error.message)
+    return []
+  }
+
+  // Keep the first send per member for the week.
+  const byUser = new Map<string, NonNullable<typeof sends>[number]>()
+  for (const row of sends || []) {
+    if (row.user_id && !byUser.has(row.user_id)) byUser.set(row.user_id, row)
+  }
+  const userIds = [...byUser.keys()]
+  if (userIds.length === 0) return []
+
+  const weekEnd = addDaysToDateString(weekStart, 7)
+  const startIso = `${weekStart}T00:00:00+08:00`
+  const endIso = `${weekEnd}T00:00:00+08:00`
+
+  const profiles = new Map<string, { name: string | null; email: string | null }>()
+  const bookedAfter = new Map<string, string>()
+  const attended = new Set<string>()
+  const bought = new Map<string, { at: string; cents: number; pkg: string | null }>()
+
+  const sentTimes = userIds.map((uid) => byUser.get(uid)?.sent_at as string).filter(Boolean).sort()
+  const earliestSent = sentTimes[0]
+
+  for (const ids of chunkIds(userIds)) {
+    // Token purchases in the 7 days after each member's email.
+    if (earliestSent) {
+      const { data: payments, error: paymentError } = await admin
+        .from('payments')
+        .select('user_id, amount_cents, created_at, metadata')
+        .in('user_id', ids)
+        .eq('status', 'succeeded')
+        .gt('created_at', earliestSent)
+        .order('created_at', { ascending: true })
+      if (paymentError) {
+        console.error('[StreakReminders] Failed to load purchases for tracking:', paymentError.message)
+      }
+      for (const p of payments || []) {
+        const uid = p.user_id as string
+        const sentAt = byUser.get(uid)?.sent_at as string | undefined
+        if (!sentAt || bought.has(uid)) continue
+        const t = new Date(p.created_at as string).getTime()
+        const s = new Date(sentAt).getTime()
+        if (t <= s || t - s > PURCHASE_WINDOW_MS) continue
+        const meta = (p.metadata || {}) as { package_name?: string }
+        bought.set(uid, { at: p.created_at as string, cents: Number(p.amount_cents) || 0, pkg: meta.package_name ?? null })
+      }
+    }
+
+    const { data: profileRows } = await admin.from('user_profiles').select('id, name, email').in('id', ids)
+    for (const p of profileRows || []) profiles.set(p.id, { name: p.name ?? null, email: p.email ?? null })
+
+    const { data: bookings, error: bookingError } = await admin
+      .from('bookings')
+      .select('user_id, status, created_at, classes!inner(scheduled_at)')
+      .in('user_id', ids)
+      .in('status', ['confirmed', 'attended'])
+      .gte('classes.scheduled_at', startIso)
+      .lt('classes.scheduled_at', endIso)
+    if (bookingError) {
+      console.error('[StreakReminders] Failed to load bookings for tracking:', bookingError.message)
+      continue
+    }
+
+    for (const b of bookings || []) {
+      const uid = b.user_id as string
+      const sentAt = byUser.get(uid)?.sent_at as string | undefined
+      if (!sentAt || !b.created_at || (b.created_at as string) <= sentAt) continue
+      const prev = bookedAfter.get(uid)
+      if (!prev || (b.created_at as string) < prev) bookedAfter.set(uid, b.created_at as string)
+      if (b.status === 'attended') attended.add(uid)
+    }
+  }
+
+  return userIds.map((uid) => {
+    const row = byUser.get(uid)!
+    const profile = profiles.get(uid)
+    const meta = (row.meta || {}) as { streak_weeks?: number }
+    return {
+      userId: uid,
+      name: profile?.name ?? null,
+      email: profile?.email ?? (row.email as string | null) ?? null,
+      streakWeeks: Number(meta.streak_weeks) || 0,
+      sentAt: row.sent_at as string,
+      openedAt: (row.opened_at as string | null) ?? null,
+      openCount: Number(row.open_count) || 0,
+      clickedAt: (row.clicked_at as string | null) ?? null,
+      clickCount: Number(row.click_count) || 0,
+      bookedAfterAt: bookedAfter.get(uid) ?? null,
+      attended: attended.has(uid),
+      boughtAt: bought.get(uid)?.at ?? null,
+      boughtCents: bought.get(uid)?.cents ?? 0,
+      boughtPackage: bought.get(uid)?.pkg ?? null,
+    }
+  })
+}
+
 /** Posts one streak reminder to the web app's email API. Does not record the dedupe week. */
 export async function sendStreakReminderEmail(params: {
   email: string
   name: string
   streakWeeks: number
+  /** email_sends.id — turns on open/click tracking in the email. */
+  trackingId?: string | null
 }): Promise<{ success: boolean; error?: string }> {
   const emailApiSecret = process.env.EMAIL_API_SECRET || 'change-me-in-production'
   const emailUrl = `${getWebAppUrl().replace(/\/$/, '')}/api/email/send`
@@ -206,6 +391,7 @@ export async function sendStreakReminderEmail(params: {
           userName: params.name,
           streakWeeks: params.streakWeeks,
           bookUrl: getStreakBookUrl(),
+          ...(params.trackingId ? { trackingId: params.trackingId } : {}),
         },
       }),
     })

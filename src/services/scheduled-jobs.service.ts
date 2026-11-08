@@ -1088,7 +1088,12 @@ export async function sendCheckoutReminders(): Promise<Record<string, unknown>> 
 export async function sendStreakReminders(): Promise<JobResult> {
   return runJob('sendStreakReminders', async () => {
     const { getSupabaseAdminClient } = await import('@/lib/supabase')
-    const { getStreakReminderAudience, sendStreakReminderEmail } = await import('./streak-reminders.service')
+    const {
+      getStreakReminderAudience,
+      sendStreakReminderEmail,
+      createStreakEmailSend,
+      finishStreakEmailSend,
+    } = await import('./streak-reminders.service')
     const admin = getSupabaseAdminClient()
     const { weekStart, members } = await getStreakReminderAudience()
 
@@ -1106,11 +1111,20 @@ export async function sendStreakReminders(): Promise<JobResult> {
       await Promise.all(
         batch.map(async (member) => {
           const email = member.email!
+          // Log first: the row id is the open/click tracking token inside the email.
+          const trackingId = await createStreakEmailSend({
+            userId: member.userId,
+            email,
+            weekStart,
+            streakWeeks: member.streakWeeks,
+          })
           const result = await sendStreakReminderEmail({
             email,
             name: member.name!,
             streakWeeks: member.streakWeeks,
+            trackingId,
           })
+          await finishStreakEmailSend(trackingId, result)
           if (!result.success) {
             console.error(`[Cron: StreakReminders] Email rejected for ${email}`, result.error)
             failed.push(email)

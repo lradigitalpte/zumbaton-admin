@@ -25,6 +25,8 @@ export interface PromotionsSettings {
   /** Outdoor option on /start: auto = when outdoor classes are scheduled. */
   duo_outdoor_quick_join_mode: OutdoorQuickJoinMode
   duo_start_page_mode: StartPageMode
+  /** 11:11 Sale on/off (banner, popup, /1111 page and checkout on the public site). */
+  sale_1111_enabled: boolean
 }
 
 async function fetchPromotionsSettings(): Promise<PromotionsSettings> {
@@ -64,6 +66,7 @@ function getDefaultSettings(): PromotionsSettings {
     duo_end_date: '',
     duo_outdoor_quick_join_mode: 'auto',
     duo_start_page_mode: 'quick_join',
+    sale_1111_enabled: true,
   }
 }
 
