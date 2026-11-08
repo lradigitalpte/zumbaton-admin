@@ -30,17 +30,19 @@ export async function GET(request: NextRequest) {
     const instructorId = user.id
     const now = new Date()
     
-    // Calculate date ranges
-    const startOfWeek = new Date(now)
-    startOfWeek.setDate(now.getDate() - now.getDay())
-    startOfWeek.setHours(0, 0, 0, 0)
-    const endOfWeek = new Date(startOfWeek)
-    endOfWeek.setDate(startOfWeek.getDate() + 7)
-    
-    const startOfDay = new Date(now)
-    startOfDay.setHours(0, 0, 0, 0)
-    const endOfDay = new Date(now)
-    endOfDay.setHours(23, 59, 59, 999)
+    // Date ranges in Singapore time (the server runs in UTC). Weeks run Monday–Sunday,
+    // matching the instructor schedule page.
+    const todayYmd = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(now)
+    const [ty, tm, td] = todayYmd.split('-').map(Number)
+    const sgtMidnight = (y: number, m: number, d: number) =>
+      new Date(Date.UTC(y, m - 1, d) - 8 * 60 * 60 * 1000) // 00:00 SGT = 16:00 UTC previous day
+    const startOfDay = sgtMidnight(ty, tm, td)
+    const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000)
+    const dow = new Date(Date.UTC(ty, tm - 1, td)).getUTCDay() // 0 = Sunday
+    const startOfWeek = sgtMidnight(ty, tm, td - ((dow + 6) % 7))
+    const endOfWeek = new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000)
 
     // First, get instructor's name to check for multiple instructor classes
     const { data: instructorProfile } = await supabase
@@ -49,7 +51,11 @@ export async function GET(request: NextRequest) {
       .eq('id', instructorId)
       .single()
     
-    const instructorName = instructorProfile?.name || ''
+    // An empty name must not match every class; strip chars that break or().
+    const instructorName = (instructorProfile?.name || '').replace(/[,()%*\\]/g, ' ').trim()
+    const classFilter = instructorName
+      ? `instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`
+      : `instructor_id.eq.${instructorId}`
 
     // Run all initial queries in PARALLEL
     const [
@@ -71,7 +77,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from('classes')
         .select('id, title, class_type, scheduled_at, duration_minutes, capacity, location, room_id, rooms (id, name), status, instructor_name')
-        .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
+        .or(classFilter)
         .gte('scheduled_at', startOfWeek.toISOString())
         .lt('scheduled_at', endOfWeek.toISOString())
         .order('scheduled_at', { ascending: true }),
@@ -80,7 +86,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from('classes')
         .select('id, title, class_type, scheduled_at, duration_minutes, capacity, location, room_id, rooms (id, name), status, instructor_name')
-        .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
+        .or(classFilter)
         .gte('scheduled_at', startOfDay.toISOString())
         .lt('scheduled_at', endOfDay.toISOString())
         .order('scheduled_at', { ascending: true }),
@@ -89,7 +95,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from('classes')
         .select('id', { count: 'exact', head: true })
-        .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
+        .or(classFilter)
         .gte('scheduled_at', now.toISOString())
         .eq('status', 'scheduled'),
       
@@ -97,7 +103,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from('classes')
         .select('scheduled_at')
-        .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
+        .or(classFilter)
         .gte('scheduled_at', now.toISOString())
         .eq('status', 'scheduled')
         .order('scheduled_at', { ascending: true })
@@ -108,7 +114,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from('classes')
         .select('id, class_type')
-        .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`),
+        .or(classFilter),
     ])
 
     const profile = profileResult.data
@@ -177,12 +183,15 @@ export async function GET(request: NextRequest) {
       }, {})
 
       // Process all bookings for stats
-      const allBookings = (allBookingsResult.data || []) as Array<{ user_id: string; status: string }>
-      const uniqueUserIds = new Set(allBookings.map(b => b.user_id))
+      const allBookings = (allBookingsResult.data || []) as Array<{ user_id: string | null; status: string }>
+      // Guest/trial bookings have no user_id — don't count "no account" as a student.
+      const uniqueUserIds = new Set(allBookings.map(b => b.user_id).filter(Boolean))
       uniqueStudents = uniqueUserIds.size
-      
-      totalBooked = allBookings.filter(b => 
-        ['confirmed', 'attended'].includes(b.status)
+
+      // Attendance rate over finished classes only (attended + no-show), so future
+      // confirmed bookings don't drag the rate down.
+      totalBooked = allBookings.filter(b =>
+        ['attended', 'no-show'].includes(b.status)
       ).length
       totalAttendance = allBookings.filter(b => 
         b.status === 'attended'

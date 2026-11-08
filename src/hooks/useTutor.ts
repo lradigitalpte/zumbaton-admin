@@ -84,7 +84,13 @@ export interface TutorStudent {
     classesBooked: number
     classesAttended: number
     noShows: number
+    /** Future confirmed bookings in this instructor's classes. */
+    upcoming?: number
+    lastAttendedAt?: string | null
+    nextBookedAt?: string | null
+    nextClassTitle?: string | null
   }
+  /** attended / (attended + no-shows) */
   attendanceRate: number
 }
 
@@ -93,13 +99,16 @@ export interface TutorSchedule {
     id: string
     title: string
     classType: string
+    /** Start time, formatted in Singapore time. */
     time: string
+    scheduledAt?: string
     duration: number
     location: string | null
     status: string
     booked: number
     capacity: number
   }>>
+  /** start/end are Singapore dates (YYYY-MM-DD), weeks Monday–Sunday. */
   period: {
     start: string
     end: string
@@ -117,6 +126,9 @@ export interface TutorStats {
     totalScheduled: number
     uniqueStudents: number
     totalStudentBookings: number
+    /** Bookings made without a member account (guest/trial). */
+    guestBookings?: number
+    /** attended / (attended + no-show) */
     attendanceRate: number
     noShowRate: number
     avgClassSize: number
@@ -128,14 +140,22 @@ export interface TutorStats {
     attendance: number
     attendanceRate: number
   }
+  lastMonth?: {
+    classes: number
+    students: number
+    attendance: number
+    attendanceRate: number
+  }
   changes: {
     classesChange: number
     studentsChange: number
+    /** Percentage points */
     attendanceRateChange: number
   }
   byClassType: Record<string, { classes: number; students: number; attendance: number; attendanceRate: number }>
-  topStudents: Array<{ name: string; classes: number; attendance: number }>
-  monthlyPerformance: Array<{ month: string; classes: number; students: number; attendance: number }>
+  /** `classes` = classes attended */
+  topStudents: Array<{ id?: string; name: string; classes: number; booked?: number; noShows?: number; attendance: number }>
+  monthlyPerformance: Array<{ month: string; classes: number; students: number; booked?: number; attended?: number; attendance: number }>
 }
 
 export interface TimeSlot {

@@ -4,17 +4,18 @@ import { getAuthenticatedUser } from '@/middleware/rbac'
 
 /**
  * GET /api/tutor/students
- * Get all unique students who have booked instructor's classes
+ * All unique students who have booked the instructor's classes.
+ *
+ * Classes are matched the same way as /api/tutor/dashboard and /api/tutor/classes:
+ * instructor_id = me OR instructor_name contains my name (classes with a free-text
+ * or multi-instructor name have no instructor_id, which is why this list used to be empty).
  */
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request)
-    
+
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: { message: 'Unauthorized' } },
-        { status: 401 }
-      )
+      return NextResponse.json({ success: false, error: { message: 'Unauthorized' } }, { status: 401 })
     }
 
     if (!['instructor', 'super_admin', 'admin'].includes(user.role)) {
@@ -27,119 +28,134 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseAdminClient()
     const instructorId = user.id
 
-    // Parse query params
     const { searchParams } = new URL(request.url)
-    const search = searchParams.get('search')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const search = searchParams.get('search')?.trim() || ''
+    const limit = Math.min(500, parseInt(searchParams.get('limit') || '200'))
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    // Get all class IDs for this instructor
+    const { data: instructorProfile } = await supabase
+      .from('user_profiles')
+      .select('name')
+      .eq('id', instructorId)
+      .single()
+
+    // Strip characters that would break the PostgREST or() filter; never match on an empty name.
+    const instructorName = (instructorProfile?.name || '').replace(/[,()%*\\]/g, ' ').trim()
+    const classFilter = instructorName
+      ? `instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`
+      : `instructor_id.eq.${instructorId}`
+
     const { data: classes } = await supabase
       .from('classes')
-      .select('id')
-      .eq('instructor_id', instructorId)
+      .select('id, scheduled_at, title')
+      .or(classFilter)
 
-    const classIds = (classes || []).map(c => c.id)
+    const classById = new Map((classes || []).map((c) => [c.id as string, c]))
+    const classIds = [...classById.keys()]
 
-    if (classIds.length === 0) {
-      return NextResponse.json({
-        success: true,
-        data: {
-          students: [],
-          meta: { total: 0, limit, offset, hasMore: false },
-        }
-      })
+    const empty = NextResponse.json({
+      success: true,
+      data: { students: [], meta: { total: 0, limit, offset, hasMore: false } },
+    })
+    if (classIds.length === 0) return empty
+
+    // Bookings for the instructor's classes (chunked to keep the URL short).
+    const bookings: { user_id: string | null; status: string; class_id: string }[] = []
+    for (let i = 0; i < classIds.length; i += 150) {
+      const { data } = await supabase
+        .from('bookings')
+        .select('user_id, status, class_id')
+        .in('class_id', classIds.slice(i, i + 150))
+      bookings.push(...(data || []))
     }
 
-    // Get all bookings for instructor's classes
-    const { data: bookings } = await supabase
-      .from('bookings')
-      .select('user_id, status, class_id')
-      .in('class_id', classIds)
-
-    // Get unique user IDs
-    const userStats: Record<string, { 
-      classesBooked: number
-      classesAttended: number
-      noShows: number
-    }> = {}
-
-    for (const booking of bookings || []) {
-      if (!userStats[booking.user_id]) {
-        userStats[booking.user_id] = {
-          classesBooked: 0,
-          classesAttended: 0,
-          noShows: 0,
-        }
+    const now = Date.now()
+    const userStats: Record<
+      string,
+      {
+        classesBooked: number
+        classesAttended: number
+        noShows: number
+        upcoming: number
+        lastAttendedAt: string | null
+        nextBookedAt: string | null
+        nextClassTitle: string | null
       }
-      if (['confirmed', 'attended'].includes(booking.status)) {
-        userStats[booking.user_id].classesBooked++
-      }
+    > = {}
+
+    for (const booking of bookings) {
+      if (!booking.user_id) continue
+      const s = (userStats[booking.user_id] ??= {
+        classesBooked: 0,
+        classesAttended: 0,
+        noShows: 0,
+        upcoming: 0,
+        lastAttendedAt: null,
+        nextBookedAt: null,
+        nextClassTitle: null,
+      })
+      const cls = classById.get(booking.class_id)
+      const at = (cls?.scheduled_at as string | undefined) ?? null
+      const isFuture = at ? new Date(at).getTime() > now : false
+
+      if (['confirmed', 'attended'].includes(booking.status)) s.classesBooked++
       if (booking.status === 'attended') {
-        userStats[booking.user_id].classesAttended++
+        s.classesAttended++
+        if (at && (!s.lastAttendedAt || at > s.lastAttendedAt)) s.lastAttendedAt = at
       }
-      if (booking.status === 'no-show') {
-        userStats[booking.user_id].noShows++
+      if (booking.status === 'no-show') s.noShows++
+      if (booking.status === 'confirmed' && isFuture && at) {
+        s.upcoming++
+        if (!s.nextBookedAt || at < s.nextBookedAt) {
+          s.nextBookedAt = at
+          s.nextClassTitle = (cls?.title as string) ?? null
+        }
       }
     }
 
     const userIds = Object.keys(userStats)
+    if (userIds.length === 0) return empty
 
-    if (userIds.length === 0) {
-      return NextResponse.json({
-        success: true,
-        data: {
-          students: [],
-          meta: { total: 0, limit, offset, hasMore: false },
-        }
-      })
+    // Profiles (chunked), then search/sort/paginate in memory.
+    const profiles: { id: string; name: string; email: string; avatar_url: string | null; phone: string | null; created_at: string }[] = []
+    for (let i = 0; i < userIds.length; i += 150) {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('id, name, email, avatar_url, phone, created_at')
+        .in('id', userIds.slice(i, i + 150))
+      profiles.push(...(data || []))
     }
 
-    // Get user profiles
-    let profileQuery = supabase
-      .from('user_profiles')
-      .select('id, name, email, avatar_url, phone, created_at', { count: 'exact' })
-      .in('id', userIds)
-      .order('name', { ascending: true })
+    const term = search.toLowerCase()
+    const matched = profiles
+      .filter((p) => !term || (p.name || '').toLowerCase().includes(term) || (p.email || '').toLowerCase().includes(term))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 
-    if (search) {
-      profileQuery = profileQuery.or(`name.ilike.%${search}%,email.ilike.%${search}%`)
-    }
-
-    profileQuery = profileQuery.range(offset, offset + limit - 1)
-
-    const { data: profiles, count } = await profileQuery
-
-    // Combine profiles with stats
-    const students = (profiles || []).map(profile => ({
-      ...profile,
-      stats: userStats[profile.id] || {
-        classesBooked: 0,
-        classesAttended: 0,
-        noShows: 0,
-      },
-      attendanceRate: userStats[profile.id]?.classesBooked > 0
-        ? Math.round((userStats[profile.id].classesAttended / userStats[profile.id].classesBooked) * 100)
-        : 0,
-    }))
+    const students = matched.slice(offset, offset + limit).map((profile) => {
+      const s = userStats[profile.id]
+      // Rate over classes that have finished (attended + no-show), so future bookings don't drag it down.
+      const finished = s.classesAttended + s.noShows
+      return {
+        ...profile,
+        stats: s,
+        attendanceRate: finished > 0 ? Math.round((s.classesAttended / finished) * 100) : 0,
+      }
+    })
 
     return NextResponse.json({
       success: true,
       data: {
         students,
         meta: {
-          total: count || 0,
+          total: matched.length,
           limit,
           offset,
-          hasMore: (offset + (profiles?.length || 0)) < (count || 0),
+          hasMore: offset + students.length < matched.length,
         },
-      }
+      },
     })
   } catch (error) {
     console.error('[Tutor API] Students error:', error)
-    return NextResponse.json(
-      { success: false, error: { message: 'Internal server error' } },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: { message: 'Internal server error' } }, { status: 500 })
   }
 }

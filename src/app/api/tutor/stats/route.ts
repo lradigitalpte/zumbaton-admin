@@ -2,19 +2,44 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdminClient } from '@/lib/supabase'
 import { getAuthenticatedUser } from '@/middleware/rbac'
 
+const SGT = 'Asia/Singapore'
+
+/** "YYYY-MM" of an instant in Singapore time. */
+function sgtMonth(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: SGT, year: 'numeric', month: '2-digit' }).format(d)
+}
+
+function shiftMonth(ym: string, delta: number): string {
+  const [y, m] = ym.split('-').map(Number)
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+function rate(attended: number, noShows: number) {
+  const finished = attended + noShows
+  return finished > 0 ? Math.round((attended / finished) * 100) : 0
+}
+
+function pctChange(current: number, previous: number) {
+  if (previous > 0) return Math.round(((current - previous) / previous) * 100)
+  return current > 0 ? 100 : 0
+}
+
 /**
  * GET /api/tutor/stats
- * Get instructor's detailed statistics
+ * Instructor statistics, in Singapore time.
+ *
+ * - Attendance rate = attended / (attended + no-show): only classes that have happened count,
+ *   so future bookings don't look like missed classes.
+ * - Guest/trial bookings (no member account) are counted separately and never appear as a student.
+ * - Classes "taught" = past, not cancelled.
  */
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request)
-    
+
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: { message: 'Unauthorized' } },
-        { status: 401 }
-      )
+      return NextResponse.json({ success: false, error: { message: 'Unauthorized' } }, { status: 401 })
     }
 
     if (!['instructor', 'super_admin', 'admin'].includes(user.role)) {
@@ -28,298 +53,168 @@ export async function GET(request: NextRequest) {
     const instructorId = user.id
     const now = new Date()
 
-    // Get instructor's name to check for multiple instructor classes
     const { data: instructorProfile } = await supabase
       .from('user_profiles')
       .select('name')
       .eq('id', instructorId)
       .single()
-    
-    const instructorName = instructorProfile?.name || ''
 
-    // Get all classes for this instructor - include classes where instructor is primary OR in multiple instructors list
-    const { data: allClasses } = await supabase
+    const instructorName = (instructorProfile?.name || '').replace(/[,()%*\\]/g, ' ').trim()
+    const classFilter = instructorName
+      ? `instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`
+      : `instructor_id.eq.${instructorId}`
+
+    const { data: allClassesRaw } = await supabase
       .from('classes')
       .select('id, class_type, scheduled_at, capacity, status')
-      .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
+      .or(classFilter)
 
-    const classIds = (allClasses || []).map(c => c.id)
-    const totalClasses = classIds.length
-    const completedClasses = (allClasses || []).filter(c => c.status === 'completed').length
+    const allClasses = (allClassesRaw || []).filter((c) => c.status !== 'cancelled')
+    const classById = new Map(allClasses.map((c) => [c.id as string, c]))
+    const classIds = [...classById.keys()]
 
-    // Get all bookings for these classes
-    let totalStudents = 0
-    let totalAttendance = 0
-    let totalNoShows = 0
-    const uniqueStudents = new Set<string>()
-
-    if (classIds.length > 0) {
-      const { data: bookings } = await supabase
+    // One pass over all bookings for these classes (chunked to keep URLs short).
+    const bookings: { user_id: string | null; status: string; class_id: string }[] = []
+    for (let i = 0; i < classIds.length; i += 150) {
+      const { data } = await supabase
         .from('bookings')
-        .select('user_id, status')
-        .in('class_id', classIds)
+        .select('user_id, status, class_id')
+        .in('class_id', classIds.slice(i, i + 150))
+      bookings.push(...(data || []))
+    }
 
-      for (const booking of bookings || []) {
-        uniqueStudents.add(booking.user_id)
-        if (['confirmed', 'attended'].includes(booking.status)) {
-          totalStudents++
+    const thisMonth = sgtMonth(now)
+    const lastMonth = shiftMonth(thisMonth, -1)
+    const months = Array.from({ length: 6 }, (_, i) => shiftMonth(thisMonth, i - 5))
+
+    type Bucket = { classes: number; booked: number; attended: number; noShows: number; members: Set<string>; guests: number }
+    const newBucket = (): Bucket => ({ classes: 0, booked: 0, attended: 0, noShows: 0, members: new Set(), guests: 0 })
+
+    const overall = newBucket()
+    const byMonth = new Map<string, Bucket>(months.map((m) => [m, newBucket()]))
+    byMonth.set(lastMonth, byMonth.get(lastMonth) ?? newBucket())
+    const byType = new Map<string, Bucket>()
+    const perStudent = new Map<string, { booked: number; attended: number; noShows: number }>()
+
+    let taught = 0
+    let totalCapacity = 0
+    for (const c of allClasses) {
+      const month = sgtMonth(new Date(c.scheduled_at))
+      const isPast = new Date(c.scheduled_at) < now
+      if (isPast) taught++
+      totalCapacity += c.capacity || 0
+      overall.classes++
+      const mb = byMonth.get(month)
+      if (mb) mb.classes++
+      const tb = byType.get(c.class_type) ?? newBucket()
+      tb.classes++
+      byType.set(c.class_type, tb)
+    }
+
+    for (const b of bookings) {
+      const cls = classById.get(b.class_id)
+      if (!cls) continue
+      const month = sgtMonth(new Date(cls.scheduled_at))
+      const buckets = [overall, byMonth.get(month), byType.get(cls.class_type)].filter(Boolean) as Bucket[]
+      const counts = ['confirmed', 'attended'].includes(b.status)
+      for (const bucket of buckets) {
+        if (counts) bucket.booked++
+        if (b.status === 'attended') bucket.attended++
+        if (b.status === 'no-show') bucket.noShows++
+        if (counts || b.status === 'no-show') {
+          if (b.user_id) bucket.members.add(b.user_id)
+          else bucket.guests++
         }
-        if (booking.status === 'attended') {
-          totalAttendance++
-        }
-        if (booking.status === 'no-show') {
-          totalNoShows++
-        }
+      }
+      if (b.user_id && (counts || b.status === 'no-show')) {
+        const s = perStudent.get(b.user_id) ?? { booked: 0, attended: 0, noShows: 0 }
+        if (counts) s.booked++
+        if (b.status === 'attended') s.attended++
+        if (b.status === 'no-show') s.noShows++
+        perStudent.set(b.user_id, s)
       }
     }
 
-    // Calculate this month's stats
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
-    const monthClasses = (allClasses || []).filter(c => {
-      const classDate = new Date(c.scheduled_at)
-      return classDate >= startOfMonth && classDate <= endOfMonth
-    })
-    const monthClassIds = monthClasses.map(c => c.id)
-
-    let monthStudents = 0
-    let monthAttendance = 0
-    const monthUniqueStudents = new Set<string>()
-
-    if (monthClassIds.length > 0) {
-      const { data: monthBookings } = await supabase
-        .from('bookings')
-        .select('user_id, status')
-        .in('class_id', monthClassIds)
-        .in('status', ['confirmed', 'attended'])
-
-      for (const booking of monthBookings || []) {
-        monthUniqueStudents.add(booking.user_id)
-        monthStudents++
-        if (booking.status === 'attended') {
-          monthAttendance++
-        }
-      }
+    // Top students by classes actually attended (members only).
+    const ranked = [...perStudent.entries()]
+      .sort((a, b) => b[1].attended - a[1].attended || b[1].booked - a[1].booked)
+      .slice(0, 5)
+    const names = new Map<string, string>()
+    if (ranked.length) {
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('id, name')
+        .in('id', ranked.map(([id]) => id))
+      for (const p of profiles || []) names.set(p.id, p.name || 'Member')
     }
+    const topStudents = ranked.map(([id, s]) => ({
+      id,
+      name: names.get(id) || 'Member',
+      classes: s.attended,
+      booked: s.booked,
+      noShows: s.noShows,
+      attendance: rate(s.attended, s.noShows),
+    }))
 
-    // Calculate previous month's stats for comparison
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
-    const lastMonthClasses = (allClasses || []).filter(c => {
-      const classDate = new Date(c.scheduled_at)
-      return classDate >= startOfLastMonth && classDate <= endOfLastMonth
-    })
-    const lastMonthClassIds = lastMonthClasses.map(c => c.id)
+    const tm = byMonth.get(thisMonth)!
+    const lm = byMonth.get(lastMonth)!
+    const monthLabel = (ym: string) =>
+      new Date(`${ym}-15T12:00:00+08:00`).toLocaleDateString('en-SG', { month: 'short', timeZone: SGT })
 
-    let lastMonthStudents = 0
-    let lastMonthAttendance = 0
-    const lastMonthUniqueStudents = new Set<string>()
-
-    if (lastMonthClassIds.length > 0) {
-      const { data: lastMonthBookings } = await supabase
-        .from('bookings')
-        .select('user_id, status')
-        .in('class_id', lastMonthClassIds)
-        .in('status', ['confirmed', 'attended'])
-
-      for (const booking of lastMonthBookings || []) {
-        lastMonthUniqueStudents.add(booking.user_id)
-        lastMonthStudents++
-        if (booking.status === 'attended') {
-          lastMonthAttendance++
-        }
-      }
-    }
-
-    // Calculate percentage changes
-    const classesChange = lastMonthClasses.length > 0
-      ? Math.round(((monthClasses.length - lastMonthClasses.length) / lastMonthClasses.length) * 100)
-      : monthClasses.length > 0 ? 100 : 0
-
-    const studentsChange = lastMonthUniqueStudents.size > 0
-      ? Math.round(((monthUniqueStudents.size - lastMonthUniqueStudents.size) / lastMonthUniqueStudents.size) * 100)
-      : monthUniqueStudents.size > 0 ? 100 : 0
-
-    const lastMonthAttendanceRate = lastMonthStudents > 0
-      ? Math.round((lastMonthAttendance / lastMonthStudents) * 100)
-      : 0
-
-    const attendanceRateChange = lastMonthAttendanceRate > 0
-      ? Math.round(((monthStudents > 0 ? Math.round((monthAttendance / monthStudents) * 100) : 0) - lastMonthAttendanceRate))
-      : (monthStudents > 0 ? Math.round((monthAttendance / monthStudents) * 100) : 0) > 0 ? 100 : 0
-
-    // Calculate classes by type with detailed stats
-    const classesByType: Record<string, { classes: number; students: number; attendance: number; attendanceRate: number }> = {}
-    const classTypeClassIds: Record<string, string[]> = {}
-    
-    for (const cls of allClasses || []) {
-      if (!classesByType[cls.class_type]) {
-        classesByType[cls.class_type] = { classes: 0, students: 0, attendance: 0, attendanceRate: 0 }
-        classTypeClassIds[cls.class_type] = []
-      }
-      classesByType[cls.class_type].classes++
-      classTypeClassIds[cls.class_type].push(cls.id)
-    }
-
-    // Get booking stats per class type
-    for (const [type, classIds] of Object.entries(classTypeClassIds)) {
-      if (classIds.length > 0) {
-        const { data: typeBookings } = await supabase
-          .from('bookings')
-          .select('status')
-          .in('class_id', classIds)
-          .in('status', ['confirmed', 'attended'])
-
-        const typeStudents = (typeBookings || []).length
-        const typeAttendance = (typeBookings || []).filter(b => b.status === 'attended').length
-        const typeAttendanceRate = typeStudents > 0 
-          ? Math.round((typeAttendance / typeStudents) * 100) 
-          : 0
-
-        classesByType[type].students = typeStudents
-        classesByType[type].attendance = typeAttendance
-        classesByType[type].attendanceRate = typeAttendanceRate
-      }
-    }
-
-    // Calculate average class size
-    const avgClassSize = totalClasses > 0 
-      ? Math.round(totalStudents / totalClasses) 
-      : 0
-
-    // Calculate attendance rate
-    const attendanceRate = totalStudents > 0 
-      ? Math.round((totalAttendance / totalStudents) * 100) 
-      : 0
-
-    // Calculate capacity utilization
-    const totalCapacity = (allClasses || []).reduce((sum, c) => sum + c.capacity, 0)
-    const capacityUtilization = totalCapacity > 0
-      ? Math.round((totalStudents / totalCapacity) * 100)
-      : 0
-
-    // Get top students (students with most bookings)
-    const topStudents: Array<{ name: string; classes: number; attendance: number }> = []
-    if (classIds.length > 0) {
-      const { data: studentBookings } = await supabase
-        .from('bookings')
-        .select('user_id, status')
-        .in('class_id', classIds)
-        .in('status', ['confirmed', 'attended'])
-
-      // Count bookings per student
-      const studentStats: Record<string, { total: number; attended: number }> = {}
-      for (const booking of studentBookings || []) {
-        const userId = booking.user_id
-        if (!studentStats[userId]) {
-          studentStats[userId] = { total: 0, attended: 0 }
-        }
-        studentStats[userId].total++
-        if (booking.status === 'attended') {
-          studentStats[userId].attended++
-        }
-      }
-
-      // Get user profiles for student names
-      const userIds = Object.keys(studentStats)
-      let userProfiles: Record<string, string> = {}
-      if (userIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('user_profiles')
-          .select('id, name')
-          .in('id', userIds)
-
-        if (profiles) {
-          profiles.forEach(profile => {
-            userProfiles[profile.id] = profile.name || 'Unknown'
-          })
-        }
-      }
-
-      const sortedStudents = Object.entries(studentStats)
-        .map(([userId, stats]) => ({
-          name: userProfiles[userId] || 'Unknown',
-          classes: stats.total,
-          attendance: stats.total > 0 ? Math.round((stats.attended / stats.total) * 100) : 0
-        }))
-        .sort((a, b) => b.classes - a.classes)
-        .slice(0, 5)
-
-      topStudents.push(...sortedStudents)
-    }
-
-    // Calculate 6-month monthly performance
-    const monthlyPerformance: Array<{ month: string; classes: number; students: number; attendance: number }> = []
-    for (let i = 5; i >= 0; i--) {
-      const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1)
-      const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 23, 59, 59, 999)
-      
-      const monthClasses = (allClasses || []).filter(c => {
-        const classDate = new Date(c.scheduled_at)
-        return classDate >= monthStart && classDate <= monthEnd
-      })
-      const monthClassIds = monthClasses.map(c => c.id)
-
-      let monthStudents = 0
-      let monthAttendance = 0
-
-      if (monthClassIds.length > 0) {
-        const { data: monthBookings } = await supabase
-          .from('bookings')
-          .select('status')
-          .in('class_id', monthClassIds)
-          .in('status', ['confirmed', 'attended'])
-
-        monthStudents = (monthBookings || []).length
-        monthAttendance = (monthBookings || []).filter(b => b.status === 'attended').length
-      }
-
-      const monthName = monthDate.toLocaleDateString('en-US', { month: 'short' })
-      monthlyPerformance.push({
-        month: monthName,
-        classes: monthClasses.length,
-        students: monthStudents,
-        attendance: monthStudents > 0 ? Math.round((monthAttendance / monthStudents) * 100) : 0
-      })
+    const byClassType: Record<string, { classes: number; students: number; attendance: number; attendanceRate: number }> = {}
+    for (const [type, b] of byType) {
+      byClassType[type] = { classes: b.classes, students: b.members.size, attendance: b.attended, attendanceRate: rate(b.attended, b.noShows) }
     }
 
     return NextResponse.json({
       success: true,
       data: {
         overview: {
-          totalClassesTaught: completedClasses,
-          totalScheduled: totalClasses,
-          uniqueStudents: uniqueStudents.size,
-          totalStudentBookings: totalStudents,
-          attendanceRate,
-          noShowRate: totalStudents > 0 ? Math.round((totalNoShows / totalStudents) * 100) : 0,
-          avgClassSize,
-          capacityUtilization,
+          totalClassesTaught: taught,
+          totalScheduled: overall.classes,
+          uniqueStudents: overall.members.size,
+          totalStudentBookings: overall.booked,
+          guestBookings: overall.guests,
+          attendanceRate: rate(overall.attended, overall.noShows),
+          noShowRate: overall.attended + overall.noShows > 0 ? Math.round((overall.noShows / (overall.attended + overall.noShows)) * 100) : 0,
+          avgClassSize: overall.classes > 0 ? Math.round((overall.booked / overall.classes) * 10) / 10 : 0,
+          capacityUtilization: totalCapacity > 0 ? Math.round((overall.booked / totalCapacity) * 100) : 0,
         },
         thisMonth: {
-          classes: monthClasses.length,
-          students: monthStudents,
-          attendance: monthAttendance,
-          attendanceRate: monthStudents > 0 
-            ? Math.round((monthAttendance / monthStudents) * 100) 
-            : 0,
+          classes: tm.classes,
+          students: tm.members.size,
+          attendance: tm.attended,
+          attendanceRate: rate(tm.attended, tm.noShows),
+        },
+        lastMonth: {
+          classes: lm.classes,
+          students: lm.members.size,
+          attendance: lm.attended,
+          attendanceRate: rate(lm.attended, lm.noShows),
         },
         changes: {
-          classesChange,
-          studentsChange,
-          attendanceRateChange,
+          classesChange: pctChange(tm.classes, lm.classes),
+          studentsChange: pctChange(tm.members.size, lm.members.size),
+          // Percentage points, not percent.
+          attendanceRateChange: rate(tm.attended, tm.noShows) - rate(lm.attended, lm.noShows),
         },
-        byClassType: classesByType,
+        byClassType,
         topStudents,
-        monthlyPerformance,
-      }
+        monthlyPerformance: months.map((m) => {
+          const b = byMonth.get(m)!
+          return {
+            month: monthLabel(m),
+            classes: b.classes,
+            students: b.members.size,
+            booked: b.booked,
+            attended: b.attended,
+            attendance: rate(b.attended, b.noShows),
+          }
+        }),
+      },
     })
   } catch (error) {
     console.error('[Tutor API] Stats error:', error)
-    return NextResponse.json(
-      { success: false, error: { message: 'Internal server error' } },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: { message: 'Internal server error' } }, { status: 500 })
   }
 }

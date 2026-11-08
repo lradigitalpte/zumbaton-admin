@@ -1,251 +1,383 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useTutorStudents } from "@/hooks/useTutor";
+import { useTutorStudents, type TutorStudent } from "@/hooks/useTutor";
 
-interface Student {
-  id: string;
-  name: string;
-  email: string;
-  phone: string | null;
-  avatar_url: string | null;
-  created_at: string;
-  stats: {
-    classesBooked: number;
-    classesAttended: number;
-    noShows: number;
-  };
-  attendanceRate: number;
+type Student = TutorStudent;
+type Filter = "all" | "booked" | "regulars" | "lapsed";
+type Sort = "name" | "attendance" | "classes" | "recent";
+
+const card =
+  "rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800";
+
+const DAY_MS = 86_400_000;
+const LAPSED_DAYS = 30;
+const REGULAR_MIN = 3;
+
+const AVATAR_COLORS = [
+  "bg-[#E4F56C] text-neutral-950",
+  "bg-neutral-950 text-[#E4F56C] dark:bg-white dark:text-neutral-950",
+  "bg-sky-100 text-sky-800",
+  "bg-orange-100 text-orange-800",
+  "bg-violet-100 text-violet-800",
+  "bg-emerald-100 text-emerald-800",
+];
+
+function initials(name: string) {
+  const parts = (name || "?").trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?";
+}
+
+function avatarColor(id: string) {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
+function shortDate(iso: string | null | undefined) {
+  if (!iso) return null;
+  return new Date(iso).toLocaleDateString("en-SG", { day: "numeric", month: "short", timeZone: "Asia/Singapore" });
+}
+
+function daysAgo(iso: string | null | undefined) {
+  if (!iso) return null;
+  return Math.floor((Date.now() - new Date(iso).getTime()) / DAY_MS);
+}
+
+function relative(iso: string | null | undefined) {
+  const d = daysAgo(iso);
+  if (d === null) return null;
+  if (d <= 0) return "Today";
+  if (d === 1) return "Yesterday";
+  if (d < 7) return `${d} days ago`;
+  return shortDate(iso);
+}
+
+function isLapsed(s: Student) {
+  const d = daysAgo(s.stats.lastAttendedAt);
+  return s.stats.classesAttended > 0 && !(s.stats.upcoming ?? 0) && d !== null && d >= LAPSED_DAYS;
+}
+
+function whatsappLink(phone: string | null) {
+  if (!phone) return null;
+  let digits = phone.replace(/\D/g, "");
+  if (digits.length === 8) digits = `65${digits}`; // Singapore local number
+  return digits.length >= 10 ? `https://wa.me/${digits}` : null;
+}
+
+function Avatar({ s, size = "h-10 w-10 text-xs" }: { s: Student; size?: string }) {
+  return s.avatar_url ? (
+    <img src={s.avatar_url} alt="" className={`${size} shrink-0 rounded-full object-cover`} />
+  ) : (
+    <div className={`${size} flex shrink-0 items-center justify-center rounded-full font-bold ${avatarColor(s.id)}`}>{initials(s.name)}</div>
+  );
+}
+
+function RateBar({ s }: { s: Student }) {
+  const finished = s.stats.classesAttended + s.stats.noShows;
+  if (finished === 0) return <span className="text-xs text-neutral-400">No classes yet</span>;
+  return (
+    <div className="w-28">
+      <p className="text-sm font-semibold text-neutral-950 dark:text-white">{s.attendanceRate}%</p>
+      <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-neutral-100 dark:bg-white/10">
+        <div
+          className={`h-full rounded-full ${s.attendanceRate >= 75 ? "bg-neutral-950 dark:bg-[#E4F56C]" : "bg-neutral-400"}`}
+          style={{ width: `${s.attendanceRate}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 export default function TutorStudentsPage() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [sortBy, setSortBy] = useState<Sort>("recent");
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [sortBy, setSortBy] = useState<"name" | "attendance" | "classes">("name");
 
-  const { data, isLoading, error } = useTutorStudents({ search: searchQuery });
+  // Load everyone once; search/filter/sort happen instantly on the client.
+  const { data, isLoading, error } = useTutorStudents({ limit: 500 });
+  const students = useMemo(() => data?.students || [], [data]);
 
-  const students = data?.students || [];
+  const counts = useMemo(
+    () => ({
+      all: students.length,
+      booked: students.filter((s) => (s.stats.upcoming ?? 0) > 0).length,
+      regulars: students.filter((s) => s.stats.classesAttended >= REGULAR_MIN).length,
+      lapsed: students.filter(isLapsed).length,
+    }),
+    [students]
+  );
 
-  const filteredStudents = useMemo(() => {
-    return [...students].sort((a, b) => {
-      if (sortBy === "name") return a.name.localeCompare(b.name);
-      if (sortBy === "attendance") return b.attendanceRate - a.attendanceRate;
-      return b.stats.classesAttended - a.stats.classesAttended;
-    });
-  }, [students, sortBy]);
-
-  const stats = useMemo(() => {
-    const activeStudents = students.filter(s => s.attendanceRate > 0);
-    return {
-      totalStudents: students.length,
-      activeStudents: activeStudents.length,
-      avgAttendance: students.length > 0 
-        ? Math.round(students.reduce((sum, s) => sum + s.attendanceRate, 0) / students.length) 
-        : 0,
-      topPerformers: students.filter(s => s.attendanceRate >= 90).length,
-    };
+  const avgAttendance = useMemo(() => {
+    const withHistory = students.filter((s) => s.stats.classesAttended + s.stats.noShows > 0);
+    return withHistory.length
+      ? Math.round(withHistory.reduce((sum, s) => sum + s.attendanceRate, 0) / withHistory.length)
+      : 0;
   }, [students]);
 
-  const getAttendanceColor = (rate: number) => {
-    if (rate >= 90) return "text-emerald-600 dark:text-emerald-400";
-    if (rate >= 75) return "text-amber-600 dark:text-amber-400";
-    return "text-red-600 dark:text-red-400";
-  };
+  const visible = useMemo(() => {
+    const term = searchQuery.trim().toLowerCase();
+    return students
+      .filter((s) => {
+        if (filter === "booked") return (s.stats.upcoming ?? 0) > 0;
+        if (filter === "regulars") return s.stats.classesAttended >= REGULAR_MIN;
+        if (filter === "lapsed") return isLapsed(s);
+        return true;
+      })
+      .filter((s) => !term || s.name.toLowerCase().includes(term) || s.email.toLowerCase().includes(term))
+      .sort((a, b) => {
+        if (sortBy === "attendance") return b.attendanceRate - a.attendanceRate || a.name.localeCompare(b.name);
+        if (sortBy === "classes") return b.stats.classesAttended - a.stats.classesAttended || a.name.localeCompare(b.name);
+        if (sortBy === "recent") {
+          const at = a.stats.nextBookedAt || a.stats.lastAttendedAt || "";
+          const bt = b.stats.nextBookedAt || b.stats.lastAttendedAt || "";
+          // Booked next first (soonest), then most recently seen.
+          if (!!a.stats.nextBookedAt !== !!b.stats.nextBookedAt) return a.stats.nextBookedAt ? -1 : 1;
+          return a.stats.nextBookedAt ? at.localeCompare(bt) : bt.localeCompare(at);
+        }
+        return a.name.localeCompare(b.name);
+      });
+  }, [students, filter, searchQuery, sortBy]);
 
-  const getAttendanceBg = (rate: number) => {
-    if (rate >= 90) return "bg-emerald-100 dark:bg-emerald-900/30";
-    if (rate >= 75) return "bg-amber-100 dark:bg-amber-900/30";
-    return "bg-red-100 dark:bg-red-900/30";
-  };
+  const header = (
+    <div>
+      <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">My students</h1>
+      <p className="mt-1 text-sm text-neutral-500 dark:text-white/50">Everyone who has booked your classes.</p>
+    </div>
+  );
 
-  // Loading state
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-amber-500 border-t-transparent"></div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Loading students...</p>
+      <div className="min-w-0 space-y-5">
+        {header}
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => <div key={i} className={`${card} h-28 animate-pulse`} />)}
         </div>
+        <div className={`${card} h-80 animate-pulse`} />
       </div>
     );
   }
 
-  // Error state
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="mx-auto h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-4">
-            <svg className="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Failed to load students</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{error.message}</p>
+      <div className="min-w-0 space-y-5">
+        {header}
+        <div className={`${card} px-6 py-14 text-center`}>
+          <p className="text-base font-semibold text-neutral-950 dark:text-white">Couldn&apos;t load your students</p>
+          <p className="mt-1 text-sm text-neutral-500">{error.message}</p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Students</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Students who attend your classes</p>
-        </div>
+  const NextBooked = ({ s }: { s: Student }) =>
+    s.stats.nextBookedAt ? (
+      <div className="min-w-0">
+        <span className="inline-block rounded-full bg-[#E4F56C] px-2 py-0.5 text-[11px] font-semibold text-neutral-950">
+          {shortDate(s.stats.nextBookedAt)}
+        </span>
+        {(s.stats.upcoming ?? 0) > 1 && <span className="ml-1 text-[11px] text-neutral-400">+{(s.stats.upcoming ?? 0) - 1} more</span>}
       </div>
+    ) : (
+      <span className="text-sm text-neutral-300 dark:text-white/20">—</span>
+    );
+
+  return (
+    <div className="min-w-0 space-y-5 sm:space-y-6">
+      {header}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Total Students</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.totalStudents}</p>
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <div className={`${card} p-4 sm:p-5`}>
+          <p className="text-xs font-medium text-neutral-500 dark:text-white/60 sm:text-sm">Students</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:mt-3 sm:text-4xl">{counts.all}</p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Active</p>
-          <p className="text-2xl font-bold text-emerald-600">{stats.activeStudents}</p>
+        <div className="rounded-[28px] border border-[#d5e45c] bg-[#E4F56C] p-4 text-neutral-950 shadow-[0_10px_30px_rgba(16,24,40,0.06)] sm:p-5">
+          <p className="text-xs font-medium sm:text-sm">Booked in next</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight sm:mt-3 sm:text-4xl">{counts.booked}</p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Avg Attendance</p>
-          <p className="text-2xl font-bold text-amber-600">{stats.avgAttendance}%</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Top Performers</p>
-          <p className="text-2xl font-bold text-purple-600">{stats.topPerformers}</p>
-        </div>
-      </div>
-
-      {/* Search & Sort */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <svg className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search students by name or email..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-          />
-        </div>
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-          className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-        >
-          <option value="name">Sort by Name</option>
-          <option value="attendance">Sort by Attendance</option>
-          <option value="classes">Sort by Classes</option>
-        </select>
-      </div>
-
-      {/* Empty State */}
-      {filteredStudents.length === 0 && (
-        <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center dark:border-gray-700 dark:bg-gray-800">
-          <div className="mx-auto h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-4">
-            <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
+        <div className="rounded-[28px] border border-neutral-950 bg-neutral-950 p-4 text-white shadow-[0_10px_30px_rgba(16,24,40,0.14)] sm:p-5">
+          <p className="text-xs font-medium text-white/60 sm:text-sm">Avg attendance</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight sm:mt-3 sm:text-4xl">{avgAttendance}%</p>
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-[#E4F56C]" style={{ width: `${avgAttendance}%` }} />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">No students found</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            {searchQuery ? "Try adjusting your search" : "Students will appear here once they book your classes"}
-          </p>
         </div>
-      )}
+        <div className={`${card} p-4 sm:p-5`}>
+          <p className="text-xs font-medium text-neutral-500 dark:text-white/60 sm:text-sm">Regulars</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:mt-3 sm:text-4xl">{counts.regulars}</p>
+          <p className="mt-1 text-[11px] text-neutral-400">came {REGULAR_MIN}+ times</p>
+        </div>
+      </div>
 
-      {/* Students Grid */}
-      {filteredStudents.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredStudents.map((student) => (
-            <div
-              key={student.id}
-              className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800 hover:shadow-lg transition-shadow cursor-pointer"
-              onClick={() => setSelectedStudent(student)}
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  {student.avatar_url ? (
-                    <img
-                      src={student.avatar_url}
-                      alt={student.name}
-                      className="h-12 w-12 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="h-12 w-12 rounded-full bg-linear-to-br from-amber-500 to-orange-600 flex items-center justify-center text-lg font-bold text-white">
-                      {student.name.split(" ").map(n => n[0]).join("")}
-                    </div>
-                  )}
-                  <div>
-                    <p className="font-semibold text-gray-900 dark:text-white">{student.name}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{student.email}</p>
-                  </div>
-                </div>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                  student.attendanceRate > 0 
-                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                    : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
-                }`}>
-                  {student.attendanceRate > 0 ? "active" : "inactive"}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                <div className="text-center p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50">
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">{student.stats.classesAttended}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Classes</p>
-                </div>
-                <div className={`text-center p-2 rounded-lg ${getAttendanceBg(student.attendanceRate)}`}>
-                  <p className={`text-lg font-bold ${getAttendanceColor(student.attendanceRate)}`}>{student.attendanceRate}%</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Attendance</p>
-                </div>
-                <div className="text-center p-2 rounded-lg bg-red-50 dark:bg-red-900/20">
-                  <p className="text-lg font-bold text-red-600 dark:text-red-400">{student.stats.noShows}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">No-Shows</p>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Member since: <span className="text-gray-700 dark:text-gray-300">{new Date(student.created_at).toLocaleDateString()}</span>
-                </p>
-              </div>
+      {/* Students table */}
+      <section className={`${card} min-w-0 overflow-hidden`}>
+        {/* Toolbar */}
+        <div className="flex flex-col gap-3 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="-mx-1 overflow-x-auto px-1">
+            <div className="inline-flex gap-1 rounded-full bg-neutral-100 p-1 dark:bg-white/5">
+              {([
+                ["all", "All"],
+                ["booked", "Booked"],
+                ["regulars", "Regulars"],
+                ["lapsed", "Lapsed"],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setFilter(id)}
+                  title={id === "lapsed" ? `Came before, nothing booked, not seen in ${LAPSED_DAYS}+ days` : undefined}
+                  className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                    filter === id
+                      ? "bg-white text-neutral-950 shadow-sm dark:bg-gray-700 dark:text-white"
+                      : "text-neutral-500 hover:text-neutral-900 dark:hover:text-white"
+                  }`}
+                >
+                  {label}
+                  <span className="ml-1.5 text-neutral-400">{counts[id]}</span>
+                </button>
+              ))}
             </div>
-          ))}
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              type="search"
+              placeholder="Search name or email"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm outline-none focus:border-neutral-400 dark:border-white/10 dark:bg-gray-900 dark:text-white sm:w-60"
+            />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as Sort)}
+              className="rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 outline-none dark:border-white/10 dark:bg-gray-900 dark:text-white"
+            >
+              <option value="recent">Sort: Coming up</option>
+              <option value="name">Sort: Name</option>
+              <option value="attendance">Sort: Attendance</option>
+              <option value="classes">Sort: Most classes</option>
+            </select>
+          </div>
         </div>
-      )}
 
-      {/* Student Detail Modal */}
-      {selectedStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setSelectedStudent(null)} />
-          <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-xl dark:bg-gray-800">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-4">
-                  {selectedStudent.avatar_url ? (
-                    <img
-                      src={selectedStudent.avatar_url}
-                      alt={selectedStudent.name}
-                      className="h-16 w-16 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="h-16 w-16 rounded-full bg-linear-to-br from-amber-500 to-orange-600 flex items-center justify-center text-2xl font-bold text-white">
-                      {selectedStudent.name.split(" ").map(n => n[0]).join("")}
-                    </div>
-                  )}
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedStudent.name}</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Member since {new Date(selectedStudent.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}</p>
+        {visible.length === 0 ? (
+          <div className="border-t border-neutral-100 px-6 py-14 text-center dark:border-white/5">
+            <p className="text-base font-semibold text-neutral-950 dark:text-white">
+              {students.length === 0 ? "No students yet" : "No one matches"}
+            </p>
+            <p className="mt-1 text-sm text-neutral-500">
+              {students.length === 0
+                ? "Students appear here once they book one of your classes."
+                : searchQuery
+                  ? "Try a different name or email."
+                  : filter === "lapsed"
+                    ? "Nobody has drifted away. Nice."
+                    : "No students in this group yet."}
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[820px] text-left">
+                <thead className="border-y border-neutral-100 text-[11px] uppercase tracking-wide text-neutral-400 dark:border-white/5">
+                  <tr>
+                    <th className="py-2.5 pl-6 pr-4 font-semibold">Student</th>
+                    <th className="px-4 py-2.5 text-right font-semibold">Came</th>
+                    <th className="px-4 py-2.5 text-right font-semibold">No-shows</th>
+                    <th className="px-4 py-2.5 font-semibold">Attendance</th>
+                    <th className="px-4 py-2.5 font-semibold">Last came</th>
+                    <th className="py-2.5 pl-4 pr-6 font-semibold">Next booked</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100 dark:divide-white/5">
+                  {visible.map((s) => (
+                    <tr key={s.id} onClick={() => setSelectedStudent(s)} className="cursor-pointer transition hover:bg-neutral-50 dark:hover:bg-white/5">
+                      <td className="py-3 pl-6 pr-4">
+                        <div className="flex items-center gap-3">
+                          <Avatar s={s} />
+                          <div className="min-w-0">
+                            <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-neutral-950 dark:text-white">
+                              {s.name}
+                              {isLapsed(s) && (
+                                <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold text-orange-800">Lapsed</span>
+                              )}
+                            </p>
+                            <p className="truncate text-xs text-neutral-500">{s.email}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm font-semibold text-neutral-950 dark:text-white">{s.stats.classesAttended}</td>
+                      <td className={`px-4 py-3 text-right text-sm font-semibold ${s.stats.noShows > 0 ? "text-red-600 dark:text-red-400" : "text-neutral-300 dark:text-white/20"}`}>
+                        {s.stats.noShows}
+                      </td>
+                      <td className="px-4 py-3"><RateBar s={s} /></td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-neutral-700 dark:text-white/80">
+                        {relative(s.stats.lastAttendedAt) ?? <span className="text-neutral-300 dark:text-white/20">—</span>}
+                      </td>
+                      <td className="whitespace-nowrap py-3 pl-4 pr-6"><NextBooked s={s} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Phone rows */}
+            <ul className="divide-y divide-neutral-100 border-t border-neutral-100 dark:divide-white/5 dark:border-white/5 md:hidden">
+              {visible.map((s) => (
+                <li key={s.id} onClick={() => setSelectedStudent(s)} className="flex cursor-pointer items-center gap-3 px-4 py-3 active:bg-neutral-50 dark:active:bg-white/5">
+                  <Avatar s={s} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-neutral-950 dark:text-white">{s.name}</p>
+                    <p className="mt-0.5 text-[11px] text-neutral-500">
+                      Came {s.stats.classesAttended}
+                      {s.stats.noShows > 0 && <span className="text-red-600 dark:text-red-400"> · {s.stats.noShows} no-show</span>}
+                      {s.stats.classesAttended + s.stats.noShows > 0 && ` · ${s.attendanceRate}%`}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    {s.stats.nextBookedAt ? (
+                      <span className="rounded-full bg-[#E4F56C] px-2 py-0.5 text-[10px] font-semibold text-neutral-950">
+                        Next {shortDate(s.stats.nextBookedAt)}
+                      </span>
+                    ) : isLapsed(s) ? (
+                      <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-800">Lapsed</span>
+                    ) : s.stats.lastAttendedAt ? (
+                      <span className="text-[11px] text-neutral-400">{relative(s.stats.lastAttendedAt)}</span>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+
+      {/* Student detail — bottom sheet on mobile */}
+      {selectedStudent && (() => {
+        const s = selectedStudent;
+        const wa = whatsappLink(s.phone);
+        return (
+          <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+            <div className="fixed inset-0 bg-black/50" onClick={() => setSelectedStudent(null)} />
+            <div className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-[28px] bg-white p-5 shadow-xl dark:bg-gray-800 sm:max-w-md sm:rounded-[28px] sm:p-6">
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-neutral-200 dark:bg-white/20 sm:hidden" />
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Avatar s={s} size="h-14 w-14 text-base" />
+                  <div className="min-w-0">
+                    <h2 className="truncate text-lg font-semibold text-neutral-950 dark:text-white">{s.name}</h2>
+                    <p className="text-xs text-neutral-500">
+                      Member since {new Date(s.created_at).toLocaleDateString("en-SG", { month: "short", year: "numeric", timeZone: "Asia/Singapore" })}
+                    </p>
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setSelectedStudent(null)}
-                  className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  aria-label="Close"
+                  className="rounded-full p-2 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-white/10"
                 >
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -253,71 +385,70 @@ export default function TutorStudentsPage() {
                 </button>
               </div>
 
-              {/* Contact Info */}
-              <div className="space-y-3 mb-6">
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  <span className="text-sm text-gray-700 dark:text-gray-300">{selectedStudent.email}</span>
+              <div className="mt-5 grid grid-cols-3 gap-2">
+                <div className="rounded-2xl bg-neutral-50 p-3 text-center dark:bg-white/5">
+                  <p className="text-2xl font-semibold text-neutral-950 dark:text-white">{s.stats.classesAttended}</p>
+                  <p className="text-[11px] text-neutral-500">Came</p>
                 </div>
-                {selectedStudent.phone && (
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                    <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                    </svg>
-                    <span className="text-sm text-gray-700 dark:text-gray-300">{selectedStudent.phone}</span>
-                  </div>
+                <div className="rounded-2xl bg-neutral-950 p-3 text-center text-white dark:bg-white/10">
+                  <p className="text-2xl font-semibold">{s.attendanceRate}%</p>
+                  <p className="text-[11px] text-white/60">Attendance</p>
+                </div>
+                <div className="rounded-2xl bg-neutral-50 p-3 text-center dark:bg-white/5">
+                  <p className={`text-2xl font-semibold ${s.stats.noShows > 0 ? "text-red-600 dark:text-red-400" : "text-neutral-950 dark:text-white"}`}>
+                    {s.stats.noShows}
+                  </p>
+                  <p className="text-[11px] text-neutral-500">No-shows</p>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-2 rounded-2xl border border-neutral-100 p-4 text-sm dark:border-white/10">
+                <div className="flex justify-between gap-3">
+                  <span className="text-neutral-500">Last came</span>
+                  <span className="font-semibold text-neutral-950 dark:text-white">{relative(s.stats.lastAttendedAt) ?? "Not yet"}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-neutral-500">Next booked</span>
+                  <span className="truncate text-right font-semibold text-neutral-950 dark:text-white">
+                    {s.stats.nextBookedAt ? `${shortDate(s.stats.nextBookedAt)}${s.stats.nextClassTitle ? ` · ${s.stats.nextClassTitle}` : ""}` : "Nothing booked"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-neutral-500">Upcoming bookings</span>
+                  <span className="font-semibold text-neutral-950 dark:text-white">{s.stats.upcoming ?? 0}</span>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                {wa && (
+                  <a
+                    href={wa}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 rounded-full bg-[#E4F56C] px-4 py-2.5 text-center text-sm font-semibold text-neutral-950 hover:brightness-95"
+                  >
+                    WhatsApp
+                  </a>
                 )}
-              </div>
-
-              {/* Stats */}
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                <div className="text-center p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20">
-                  <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{selectedStudent.stats.classesAttended}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Attended</p>
-                </div>
-                <div className={`text-center p-4 rounded-xl ${getAttendanceBg(selectedStudent.attendanceRate)}`}>
-                  <p className={`text-2xl font-bold ${getAttendanceColor(selectedStudent.attendanceRate)}`}>{selectedStudent.attendanceRate}%</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Attendance</p>
-                </div>
-                <div className="text-center p-4 rounded-xl bg-red-50 dark:bg-red-900/20">
-                  <p className="text-2xl font-bold text-red-600 dark:text-red-400">{selectedStudent.stats.noShows}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">No-Shows</p>
-                </div>
-              </div>
-
-              {/* Attendance Progress */}
-              <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50 mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Attendance Rate</span>
-                  <span className={`text-sm font-bold ${getAttendanceColor(selectedStudent.attendanceRate)}`}>{selectedStudent.attendanceRate}%</span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-600 overflow-hidden">
-                  <div 
-                    className={`h-full rounded-full ${
-                      selectedStudent.attendanceRate >= 90 ? "bg-emerald-500" :
-                      selectedStudent.attendanceRate >= 75 ? "bg-amber-500" : "bg-red-500"
-                    }`}
-                    style={{ width: `${selectedStudent.attendanceRate}%` }}
-                  ></div>
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                  {selectedStudent.attendanceRate >= 90 ? "Excellent attendance! 🌟" :
-                   selectedStudent.attendanceRate >= 75 ? "Good attendance, keep it up!" :
-                   "Needs improvement"}
-                </p>
-              </div>
-
-              <div className="text-center">
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Booked: <span className="font-medium">{selectedStudent.stats.classesBooked} classes</span>
-                </p>
+                {s.phone && (
+                  <a
+                    href={`tel:${s.phone.replace(/\s/g, "")}`}
+                    className="flex-1 rounded-full border border-neutral-200 px-4 py-2.5 text-center text-sm font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-white/10 dark:text-white"
+                  >
+                    Call
+                  </a>
+                )}
+                <a
+                  href={`mailto:${s.email}`}
+                  className="flex-1 rounded-full border border-neutral-200 px-4 py-2.5 text-center text-sm font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-white/10 dark:text-white"
+                >
+                  Email
+                </a>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

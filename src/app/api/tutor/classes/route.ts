@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     // Parse query params
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status') // 'upcoming', 'past', 'today', 'all'
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const limit = Math.min(500, parseInt(searchParams.get('limit') || '50'))
     const offset = parseInt(searchParams.get('offset') || '0')
     const startDate = searchParams.get('startDate') || undefined
     const endDate = searchParams.get('endDate') || undefined
@@ -42,7 +42,11 @@ export async function GET(request: NextRequest) {
       .eq('id', instructorId)
       .single()
     
-    const instructorName = instructorProfile?.name || ''
+    // Strip characters that break the or() filter; an empty name must not match every class.
+    const instructorName = (instructorProfile?.name || '').replace(/[,()%*\\]/g, ' ').trim()
+    const classFilter = instructorName
+      ? `instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`
+      : `instructor_id.eq.${instructorId}`
 
     const now = new Date()
     const ascending = status === 'upcoming' || status === 'today'
@@ -72,7 +76,7 @@ export async function GET(request: NextRequest) {
         parent_class_id
       `, { count: 'exact' })
       // Include classes where instructor is primary OR in multiple instructors list
-      .or(`instructor_id.eq.${instructorId},instructor_name.ilike.%${instructorName}%`)
+      .or(classFilter)
       .order('scheduled_at', { ascending })
 
     if (startDate) {

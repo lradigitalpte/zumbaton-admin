@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { Fragment, useState, useMemo } from "react";
 import Link from "next/link";
-import ClassAttendeesModal from "@/components/attendance/ClassAttendeesModal";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import { useTutorClasses } from "@/hooks/useTutor";
 
@@ -23,6 +22,8 @@ interface ClassItem {
   name: string;
   type: string;
   time: string;
+  /** Minutes since midnight (SGT) — for correct ordering of same-day classes. */
+  minutes: number;
   duration: number;
   room: string;
   date: string;
@@ -33,764 +34,749 @@ interface ClassItem {
   _isParent?: boolean;
   _childInstances?: ClassItem[];
   _totalSessions?: number;
-  recurrence_type?: 'single' | 'recurring' | 'course' | null;
+  recurrence_type?: "single" | "recurring" | "course" | null;
+}
+
+type View = "table" | "calendar";
+
+const card =
+  "rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800";
+
+const STATUS: Record<ClassItem["status"], { label: string; pill: string; chip: string }> = {
+  upcoming: {
+    label: "Upcoming",
+    pill: "bg-neutral-950 text-white dark:bg-white dark:text-neutral-950",
+    chip: "bg-neutral-950 text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-950",
+  },
+  completed: {
+    label: "Completed",
+    pill: "bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white/60",
+    chip: "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-white/10 dark:text-white/70",
+  },
+  cancelled: {
+    label: "Cancelled",
+    pill: "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300",
+    chip: "bg-red-50 text-red-600 line-through hover:bg-red-100 dark:bg-red-500/10 dark:text-red-300",
+  },
+};
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/** Monday (YYYY-MM-DD) of the week containing a YYYY-MM-DD date. */
+function weekStartOf(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+function addMonths(monthYmd: string, months: number): string {
+  const [y, m] = monthYmd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1 + months, 1)).toISOString().slice(0, 10);
+}
+
+function dateParts(ymd: string) {
+  const date = new Date(`${ymd}T12:00:00+08:00`);
+  const fmt = (opts: Intl.DateTimeFormatOptions) => date.toLocaleDateString("en-SG", { ...opts, timeZone: SGT_TZ });
+  return { weekday: fmt({ weekday: "short" }), day: fmt({ day: "numeric" }), month: fmt({ month: "short" }) };
+}
+
+function sgtMinutes(d: Date): number {
+  const [h, m] = d
+    .toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: SGT_TZ })
+    .split(":")
+    .map(Number);
+  return h * 60 + m;
+}
+
+function attendancePct(c: ClassItem) {
+  return c.enrolled > 0 ? Math.round((c.attended / c.enrolled) * 100) : 0;
 }
 
 export default function TutorClassesPage() {
+  const todayYmd = toSgtYmd(new Date());
+  const thisWeek = weekStartOf(todayYmd);
+
+  const [view, setView] = useState<View>("table");
   const [filter, setFilter] = useState<"all" | "upcoming" | "past">("all");
-  const [viewMode, setViewMode] = useState<"card" | "table">("card");
   const [selectedClass, setSelectedClass] = useState<ClassItem | null>(null);
-  const [attendanceClass, setAttendanceClass] = useState<ClassItem | null>(null);
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
   const [dateRange, setDateRange] = useState<{ from: string; to: string }>({ from: "", to: "" });
+  const [month, setMonth] = useState<string>(`${todayYmd.slice(0, 7)}-01`);
+  const [selectedDay, setSelectedDay] = useState<string>(todayYmd);
 
-  // Fetch classes from API based on filter
-  const { data, isLoading, error } = useTutorClasses({ 
-    status: filter === "all" ? "all" : filter === "upcoming" ? "upcoming" : "past",
-    limit: 50,
-    startDate: dateRange.from ? new Date(`${dateRange.from}T00:00:00+08:00`).toISOString() : undefined,
-    endDate: dateRange.to ? new Date(`${dateRange.to}T23:59:59.999+08:00`).toISOString() : undefined,
-  });
+  // Calendar grid: Monday on/before the 1st, through the Sunday on/after month end.
+  const gridStart = weekStartOf(month);
+  const monthEnd = addDays(addMonths(month, 1), -1);
+  const gridEnd = addDays(weekStartOf(monthEnd), 6);
+
+  // One query; its parameters follow the current view.
+  const { data, isLoading, error } = useTutorClasses(
+    view === "calendar"
+      ? {
+          status: "all",
+          limit: 500,
+          startDate: new Date(`${gridStart}T00:00:00+08:00`).toISOString(),
+          endDate: new Date(`${gridEnd}T23:59:59.999+08:00`).toISOString(),
+        }
+      : {
+          status: filter === "all" ? "all" : filter === "upcoming" ? "upcoming" : "past",
+          limit: 50,
+          startDate: dateRange.from ? new Date(`${dateRange.from}T00:00:00+08:00`).toISOString() : undefined,
+          endDate: dateRange.to ? new Date(`${dateRange.to}T23:59:59.999+08:00`).toISOString() : undefined,
+        }
+  );
 
   // Transform API data to component format
   const classes: ClassItem[] = useMemo(() => {
     if (!data?.classes) return [];
-    
+
     const now = new Date();
-    return data.classes.map(cls => {
-      const classTime = new Date(cls.scheduled_at);
-      const isPast = classTime < now;
-      
-      // Transform child instances if they exist
-      const childInstances: ClassItem[] = (cls._childInstances || []).map((child: any) => {
-        const childTime = new Date(child.scheduled_at);
-        const childIsPast = childTime < now;
-        return {
-          id: child.id,
-          name: child.title,
-          type: child.class_type.charAt(0).toUpperCase() + child.class_type.slice(1),
-          time: childTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Singapore" }),
-          duration: child.duration_minutes,
-          room: child.room_name || child.location || "TBD",
-          date: toSgtYmd(childTime),
-          enrolled: child.bookedCount || 0,
-          capacity: child.capacity,
-          attended: child.attendedCount || 0,
-          status: child.status === "cancelled" ? "cancelled" : childIsPast ? "completed" : "upcoming",
-          _isParent: false,
-          _childInstances: [],
-          _totalSessions: 0,
-          recurrence_type: (child.recurrence_type as 'single' | 'recurring' | 'course' | null) || 'single',
-        };
-      });
-      
+    const fmtTime = (d: Date) => d.toLocaleTimeString("en-SG", { hour: "numeric", minute: "2-digit", timeZone: SGT_TZ });
+    const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "Class");
+
+    const toItem = (cls: any, children: ClassItem[] = []): ClassItem => {
+      const t = new Date(cls.scheduled_at);
       return {
         id: cls.id,
         name: cls.title,
-        type: cls.class_type.charAt(0).toUpperCase() + cls.class_type.slice(1),
-        time: classTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Singapore" }),
+        type: cap(cls.class_type),
+        time: fmtTime(t),
+        minutes: sgtMinutes(t),
         duration: cls.duration_minutes,
         room: cls.room_name || cls.location || "TBD",
-        date: toSgtYmd(classTime),
-        enrolled: cls.bookedCount,
+        date: toSgtYmd(t),
+        enrolled: cls.bookedCount || 0,
         capacity: cls.capacity,
-        attended: cls.attendedCount,
-        status: cls.status === "cancelled" ? "cancelled" : isPast ? "completed" : "upcoming",
+        attended: cls.attendedCount || 0,
+        status: cls.status === "cancelled" ? "cancelled" : t < now ? "completed" : "upcoming",
         _isParent: cls._isParent || false,
-        _childInstances: childInstances,
+        _childInstances: children,
         _totalSessions: cls._totalSessions || 0,
-        recurrence_type: (cls.recurrence_type as 'single' | 'recurring' | 'course' | null) || 'single',
+        recurrence_type: (cls.recurrence_type as "single" | "recurring" | "course" | null) || "single",
       };
-    });
+    };
+
+    return data.classes.map((cls) => toItem(cls, (cls._childInstances || []).map((child: any) => toItem(child))));
   }, [data]);
 
-  const filteredClasses = classes;
-
   const formatDate = (dateStr: string) => {
-    // dateStr is YYYY-MM-DD; interpret as Singapore local date
-    const date = new Date(`${dateStr}T00:00:00+08:00`);
-    
-    // Check if date is valid
-    if (isNaN(date.getTime())) {
-      return "TBD";
-    }
-    
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) return "Today";
-    if (date.toDateString() === tomorrow.toDateString()) return "Tomorrow";
-    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
-    
-    return date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    const date = new Date(`${dateStr}T12:00:00+08:00`);
+    if (isNaN(date.getTime())) return "TBD";
+    if (dateStr === todayYmd) return "Today";
+    if (dateStr === addDays(todayYmd, 1)) return "Tomorrow";
+    if (dateStr === addDays(todayYmd, -1)) return "Yesterday";
+    return date.toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short", timeZone: SGT_TZ });
   };
 
-  // Need to get booking data for child instances when expanded
-  const bookingData = useMemo(() => {
-    const data: Record<string, { total: number; attended: number }> = {};
-    classes.forEach(cls => {
-      data[cls.id] = { total: cls.enrolled, attended: cls.attended };
-      // Also include child instances if they exist
-      if (cls._childInstances && cls._childInstances.length > 0) {
-        cls._childInstances.forEach((child: ClassItem) => {
-          data[child.id] = { total: child.enrolled, attended: child.attended };
-        });
-      }
-    });
-    return data;
+  // Upcoming: soonest first. Completed: newest first.
+  // All: upcoming soonest first, then past newest first.
+  const sortedClasses = useMemo(() => {
+    const chrono = (a: ClassItem, b: ClassItem) => a.date.localeCompare(b.date) || a.minutes - b.minutes;
+    if (filter === "upcoming") return [...classes].sort(chrono);
+    if (filter === "past") return [...classes].sort((a, b) => chrono(b, a));
+    const future = classes.filter((c) => c.status === "upcoming").sort(chrono);
+    const past = classes.filter((c) => c.status !== "upcoming").sort((a, b) => chrono(b, a));
+    return [...future, ...past];
+  }, [classes, filter]);
+
+  const weeks = useMemo(() => {
+    const map = new Map<string, ClassItem[]>();
+    for (const cls of sortedClasses) {
+      const key = weekStartOf(cls.date);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(cls);
+    }
+    return [...map.entries()].map(([start, items]) => ({ start, items }));
+  }, [sortedClasses]);
+
+  // Calendar: every individual session (series are expanded into their sessions), by day.
+  const byDay = useMemo(() => {
+    const map = new Map<string, ClassItem[]>();
+    const sessions = classes.flatMap((c) => (c._isParent && c._childInstances?.length ? c._childInstances : [c]));
+    const seen = new Set<string>();
+    for (const s of sessions) {
+      if (seen.has(s.id)) continue;
+      seen.add(s.id);
+      if (!map.has(s.date)) map.set(s.date, []);
+      map.get(s.date)!.push(s);
+    }
+    for (const list of map.values()) list.sort((a, b) => a.minutes - b.minutes);
+    return map;
   }, [classes]);
 
-  const groupedClasses = filteredClasses.reduce((acc, cls) => {
-    const dateKey = cls.date;
-    if (!acc[dateKey]) acc[dateKey] = [];
-    acc[dateKey].push(cls);
-    return acc;
-  }, {} as Record<string, ClassItem[]>);
+  const gridDays = useMemo(() => {
+    const days: string[] = [];
+    for (let d = gridStart; d <= gridEnd; d = addDays(d, 1)) days.push(d);
+    return days;
+  }, [gridStart, gridEnd]);
 
-  const sortedDates = Object.keys(groupedClasses).sort((a, b) => {
-    // Upcoming: soonest first. All/Past: newest first.
-    if (filter === "upcoming") return new Date(a).getTime() - new Date(b).getTime();
-    return new Date(b).getTime() - new Date(a).getTime();
-  });
+  const weekLabel = (start: string) => {
+    if (start === thisWeek) return "This week";
+    if (start === addDays(thisWeek, 7)) return "Next week";
+    if (start === addDays(thisWeek, -7)) return "Last week";
+    const s = dateParts(start);
+    const e = dateParts(addDays(start, 6));
+    return s.month === e.month ? `${s.day}–${e.day} ${s.month}` : `${s.day} ${s.month} – ${e.day} ${e.month}`;
+  };
 
   const stats = useMemo(() => ({
     totalClasses: data?.meta?.total || classes.length,
     upcoming: classes.filter(c => c.status === "upcoming").length,
     completed: classes.filter(c => c.status === "completed").length,
-    totalStudents: classes.reduce((sum, c) => sum + c.enrolled, 0),
+    totalBookings: classes.reduce((sum, c) => sum + c.enrolled, 0),
   }), [data, classes]);
 
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Classes</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">View and manage your scheduled classes</p>
-          </div>
-        </div>
-        
-        {/* Loading skeleton */}
-        <div className="flex h-64 items-center justify-center">
-          <div className="text-center">
-            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-amber-200 border-t-amber-500"></div>
-            <p className="mt-4 text-gray-500 dark:text-gray-400">Loading your classes...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const toggleParent = (id: string) =>
+    setExpandedParents(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
-  // Error state
+  const monthLabel = new Date(`${month}T12:00:00+08:00`).toLocaleDateString("en-SG", {
+    month: "long",
+    year: "numeric",
+    timeZone: SGT_TZ,
+  });
+
+  const goToMonth = (m: string) => {
+    setMonth(m);
+    setSelectedDay(m.slice(0, 7) === todayYmd.slice(0, 7) ? todayYmd : m);
+  };
+
+  const header = (
+    <div>
+      <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">My classes</h1>
+      <p className="mt-1 text-sm text-neutral-500 dark:text-white/50">Your schedule, bookings and attendance.</p>
+    </div>
+  );
+
   if (error) {
     return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Classes</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">View and manage your scheduled classes</p>
-          </div>
-        </div>
-        
-        {/* Error message */}
-        <div className="flex h-64 items-center justify-center">
-          <div className="text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
-              <svg className="h-8 w-8 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-            <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white">Failed to load classes</h3>
-            <p className="mt-2 text-gray-500 dark:text-gray-400">{error.message}</p>
-          </div>
+      <div className="min-w-0 space-y-5">
+        {header}
+        <div className={`${card} px-6 py-14 text-center`}>
+          <p className="text-base font-semibold text-neutral-950 dark:text-white">Couldn&apos;t load your classes</p>
+          <p className="mt-1 text-sm text-neutral-500">{error.message}</p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Classes</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">View and manage your scheduled classes</p>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Total Classes</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.totalClasses}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Upcoming</p>
-          <p className="text-2xl font-bold text-blue-600">{stats.upcoming}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Completed</p>
-          <p className="text-2xl font-bold text-emerald-600">{stats.completed}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Total Students</p>
-          <p className="text-2xl font-bold text-amber-600">{stats.totalStudents}</p>
-        </div>
-      </div>
-
-      {/* Filters and View Toggle */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
-        {[
-          { id: "all", label: "All Classes" },
-          { id: "upcoming", label: "Upcoming" },
-          { id: "past", label: "Completed" },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setFilter(tab.id as typeof filter)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-              filter === tab.id
-                ? "bg-amber-500 text-white"
-                : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700 dark:hover:bg-gray-700"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-        <div className="w-full sm:w-auto">
-          <DateRangePicker
-            value={dateRange}
-            onChange={(from, to) => setDateRange({ from, to })}
-            placeholder="Select date range"
+  /** Booked (upcoming) or came (completed) — text + mini bar. */
+  const Bookings = ({ c }: { c: ClassItem }) => {
+    if (c.status === "cancelled") return <span className="text-sm text-neutral-300 dark:text-white/20">—</span>;
+    const completed = c.status === "completed";
+    const pct = completed ? attendancePct(c) : c.capacity > 0 ? Math.min(100, Math.round((c.enrolled / c.capacity) * 100)) : 0;
+    return (
+      <div className="w-28">
+        <p className="text-sm font-semibold text-neutral-950 dark:text-white">
+          {completed ? `${c.attended}/${c.enrolled}` : `${c.enrolled}/${c.capacity}`}
+          <span className="ml-1 text-[11px] font-medium text-neutral-400">{completed ? `came · ${pct}%` : "booked"}</span>
+        </p>
+        <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-neutral-100 dark:bg-white/10">
+          <div
+            className={`h-full rounded-full ${completed ? "bg-neutral-400" : "bg-neutral-950 dark:bg-[#E4F56C]"}`}
+            style={{ width: `${pct}%` }}
           />
         </div>
+      </div>
+    );
+  };
+
+  const DateCell = ({ c }: { c: ClassItem }) => {
+    const p = dateParts(c.date);
+    const isToday = c.date === todayYmd;
+    const past = c.status !== "upcoming";
+    return (
+      <div className="flex items-center gap-3">
+        <div
+          className={`flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl leading-none ${
+            isToday
+              ? "bg-[#E4F56C] text-neutral-950"
+              : past
+                ? "bg-neutral-100 text-neutral-500 dark:bg-white/10 dark:text-white/60"
+                : "bg-neutral-950 text-white dark:bg-white dark:text-neutral-950"
+          }`}
+        >
+          <span className="text-[9px] font-bold uppercase tracking-wider opacity-80">{isToday ? "Today" : p.weekday}</span>
+          <span className="mt-0.5 text-base font-bold">{p.day}</span>
         </div>
-        <div className="flex items-center gap-2 border border-gray-200 dark:border-gray-700 rounded-xl p-1 bg-white dark:bg-gray-800">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-neutral-950 dark:text-white">{c.time}</p>
+          <p className="text-[11px] text-neutral-400">
+            {p.month} · {c.duration} min
+          </p>
+        </div>
+      </div>
+    );
+  };
+
+  const SeriesBadge = ({ c }: { c: ClassItem }) => {
+    const isSeries = c._isParent && (c.recurrence_type === "recurring" || c.recurrence_type === "course");
+    if (!isSeries) return null;
+    const hasChildren = (c._childInstances?.length ?? 0) > 0;
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (hasChildren) toggleParent(c.id);
+        }}
+        className="rounded-full border border-neutral-200 px-2 py-0.5 text-[10px] font-semibold text-neutral-600 hover:bg-neutral-50 dark:border-white/15 dark:text-white/70"
+      >
+        {c.recurrence_type === "course" ? "Course" : "Series"}
+        {(c._totalSessions ?? 0) > 0 ? ` · ${c._totalSessions}` : ""}
+        {hasChildren ? (expandedParents.has(c.id) ? " ▴" : " ▾") : ""}
+      </button>
+    );
+  };
+
+  /** Desktop table row (also used for expanded series sessions). */
+  const DesktopRow = ({ c, child = false }: { c: ClassItem; child?: boolean }) => (
+    <tr
+      onClick={() => setSelectedClass(c)}
+      className={`cursor-pointer transition hover:bg-neutral-50 dark:hover:bg-white/5 ${c.status === "cancelled" ? "opacity-60" : ""} ${
+        child ? "bg-neutral-50/60 dark:bg-white/[0.02]" : ""
+      }`}
+    >
+      <td className={`whitespace-nowrap py-3 pr-4 ${child ? "pl-12" : "pl-6"}`}>
+        <DateCell c={c} />
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-sm font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{c.name}</span>
+          <SeriesBadge c={c} />
+        </div>
+        <p className="text-[11px] text-neutral-400">{c.type}</p>
+      </td>
+      <td className="px-4 py-3 text-sm text-neutral-700 dark:text-white/80">
+        {c.room && c.room !== "TBD" && c.room !== "TBA" ? c.room : <span className="text-neutral-300 dark:text-white/20">—</span>}
+      </td>
+      <td className="px-4 py-3">
+        <Bookings c={c} />
+      </td>
+      <td className="whitespace-nowrap py-3 pl-4 pr-6">
+        <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS[c.status].pill}`}>{STATUS[c.status].label}</span>
+      </td>
+    </tr>
+  );
+
+  /** Mobile row: same columns, stacked. */
+  const MobileRow = ({ c, child = false }: { c: ClassItem; child?: boolean }) => (
+    <li
+      onClick={() => setSelectedClass(c)}
+      className={`flex cursor-pointer items-center gap-3 py-3 pr-4 transition active:bg-neutral-50 dark:active:bg-white/5 ${
+        child ? "bg-neutral-50/60 pl-8 dark:bg-white/[0.02]" : "pl-4"
+      } ${c.status === "cancelled" ? "opacity-60" : ""}`}
+    >
+      <DateCell c={c} />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="truncate text-xs font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{c.name}</span>
+          <SeriesBadge c={c} />
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS[c.status].pill}`}>{STATUS[c.status].label}</span>
+          {c.status !== "cancelled" && (
+            <span className="text-[11px] font-semibold text-neutral-600 dark:text-white/70">
+              {c.status === "completed" ? `${c.attended}/${c.enrolled} came` : `${c.enrolled}/${c.capacity} booked`}
+            </span>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+
+  const emptyText =
+    filter === "upcoming"
+      ? "You don't have any upcoming classes scheduled."
+      : filter === "past"
+        ? "You haven't completed any classes yet."
+        : "You don't have any classes assigned yet.";
+
+  const selectedDayClasses = byDay.get(selectedDay) ?? [];
+
+  const calendar = (
+    <div className="border-t border-neutral-100 dark:border-white/5">
+      {/* Month nav */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
+        <h2 className="text-base font-semibold text-neutral-950 dark:text-white">{monthLabel}</h2>
+        <div className="flex items-center gap-1.5">
           <button
-            onClick={() => setViewMode("card")}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              viewMode === "card"
-                ? "bg-amber-500 text-white"
-                : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
-            }`}
+            type="button"
+            onClick={() => goToMonth(addMonths(month, -1))}
+            aria-label="Previous month"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-200 text-neutral-600 hover:bg-neutral-50 dark:border-white/10 dark:text-white"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-            </svg>
+            ‹
           </button>
           <button
-            onClick={() => setViewMode("table")}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              viewMode === "table"
-                ? "bg-amber-500 text-white"
-                : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
-            }`}
+            type="button"
+            onClick={() => goToMonth(`${todayYmd.slice(0, 7)}-01`)}
+            className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 dark:border-white/10 dark:text-white"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
+            Today
+          </button>
+          <button
+            type="button"
+            onClick={() => goToMonth(addMonths(month, 1))}
+            aria-label="Next month"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-200 text-neutral-600 hover:bg-neutral-50 dark:border-white/10 dark:text-white"
+          >
+            ›
           </button>
         </div>
       </div>
 
-      {/* Classes List */}
-      <div className="space-y-6">
-        {sortedDates.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 px-4">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700">
-              <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white">No classes found</h3>
-            <p className="mt-2 text-center text-gray-500 dark:text-gray-400">
-              {filter === "upcoming" 
-                ? "You don't have any upcoming classes scheduled."
-                : filter === "past"
-                ? "You haven't completed any classes yet."
-                : "You don't have any classes assigned yet."}
-            </p>
+      {/* Weekday header */}
+      <div className="grid grid-cols-7 border-y border-neutral-100 text-center text-[10px] font-semibold uppercase tracking-wide text-neutral-400 dark:border-white/5 sm:text-[11px]">
+        {WEEKDAYS.map((d) => (
+          <div key={d} className="py-2">
+            <span className="sm:hidden">{d[0]}</span>
+            <span className="hidden sm:inline">{d}</span>
           </div>
-        ) : viewMode === "table" ? (
-          // Table View
-          <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 dark:bg-gray-900/50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date & Time</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Class</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Location</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Duration</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Enrollment</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {sortedDates.map((date) =>
-                    groupedClasses[date].map((classItem) => (
-                      <tr
-                  key={classItem.id}
-                        className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors cursor-pointer"
-                  onClick={() => setSelectedClass(classItem)}
-                >
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <p className="text-sm font-medium text-gray-900 dark:text-white">{formatDate(classItem.date)}</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">{classItem.time}</p>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${
-                        classItem.type.toLowerCase() === "zumba" ? "bg-amber-100 dark:bg-amber-900/30" :
-                        classItem.type.toLowerCase() === "hiit" ? "bg-red-100 dark:bg-red-900/30" :
-                        "bg-purple-100 dark:bg-purple-900/30"
-                      }`}>
-                              <span className={`text-sm font-bold ${
-                          classItem.type.toLowerCase() === "zumba" ? "text-amber-600 dark:text-amber-400" :
-                          classItem.type.toLowerCase() === "hiit" ? "text-red-600 dark:text-red-400" :
-                          "text-purple-600 dark:text-purple-400"
-                        }`}>
-                          {classItem.type[0]}
-                        </span>
-                      </div>
-                      <div>
-                              <p className="text-sm font-semibold text-gray-900 dark:text-white">{classItem.name}</p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">{classItem.type}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            </svg>
-                            <span className="text-sm text-gray-900 dark:text-white">{classItem.room || "TBA"}</span>
-                        </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm text-gray-900 dark:text-white">{classItem.duration} min</span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white">
-                          {classItem.status === "completed" ? classItem.attended : classItem.enrolled}/{classItem.capacity}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {classItem.status === "completed" ? "attended" : "enrolled"}
-                        </p>
-                      </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${
-                        classItem.status === "completed" ? "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300" :
-                        classItem.status === "upcoming" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
-                        "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                      }`}>
-                        {classItem.status === "completed" ? "Completed" : classItem.status === "upcoming" ? "Upcoming" : "Cancelled"}
-                      </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                          {classItem.status === "upcoming" && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setAttendanceClass(classItem);
-                              }}
-                              className="px-3 py-1.5 rounded-lg bg-amber-500 text-xs font-semibold text-white hover:bg-amber-600 transition-colors"
-                            >
-                              Start
-                            </button>
-                          )}
-                          <svg className="h-5 w-5 text-gray-400 inline-block ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : (
-          // Card View
-          sortedDates.map((date) => (
-            <div key={date}>
-              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-2">
-                <span className="h-px flex-1 bg-gray-200 dark:bg-gray-700"></span>
-                {formatDate(date)}
-                <span className="h-px flex-1 bg-gray-200 dark:bg-gray-700"></span>
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {groupedClasses[date].map((classItem) => {
-                  const isRecurringOrCourse = classItem._isParent && (classItem.recurrence_type === 'recurring' || classItem.recurrence_type === 'course');
-                  const isCourse = classItem.recurrence_type === 'course';
-                  const isRecurring = classItem.recurrence_type === 'recurring';
-                  const isExpanded = expandedParents.has(classItem.id);
-                  
-                  return (
-                    <div key={classItem.id} className="space-y-2">
-                      {/* Parent Card for Recurring/Course */}
-                      <div
-                        className={`rounded-xl border p-5 dark:border-gray-700 dark:bg-gray-800 hover:shadow-lg transition-all cursor-pointer ${
-                          isRecurringOrCourse
-                            ? isCourse
-                              ? 'border-purple-300 bg-purple-50/50 dark:bg-purple-950/20 dark:border-purple-700'
-                              : 'border-blue-300 bg-blue-50/50 dark:bg-blue-950/20 dark:border-blue-700'
-                            : 'border-gray-200 bg-white'
-                        }`}
-                        onClick={() => {
-                          if (isRecurringOrCourse && classItem._childInstances && classItem._childInstances.length > 0) {
-                            setExpandedParents(prev => {
-                              const newSet = new Set(prev);
-                              if (newSet.has(classItem.id)) {
-                                newSet.delete(classItem.id);
-                              } else {
-                                newSet.add(classItem.id);
-                              }
-                              return newSet;
-                            });
-                          } else {
-                            setSelectedClass(classItem);
-                          }
-                        }}
-                      >
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <div className={`h-12 w-12 rounded-xl flex items-center justify-center shrink-0 ${
-                              classItem.type.toLowerCase() === "zumba" ? "bg-amber-100 dark:bg-amber-900/30" :
-                              classItem.type.toLowerCase() === "hiit" ? "bg-red-100 dark:bg-red-900/30" :
-                              isCourse ? "bg-purple-100 dark:bg-purple-900/30" :
-                              isRecurring ? "bg-blue-100 dark:bg-blue-900/30" :
-                              "bg-purple-100 dark:bg-purple-900/30"
-                            }`}>
-                              <span className={`text-lg font-bold ${
-                                classItem.type.toLowerCase() === "zumba" ? "text-amber-600 dark:text-amber-400" :
-                                classItem.type.toLowerCase() === "hiit" ? "text-red-600 dark:text-red-400" :
-                                isCourse ? "text-purple-600 dark:text-purple-400" :
-                                isRecurring ? "text-blue-600 dark:text-blue-400" :
-                                "text-purple-600 dark:text-purple-400"
-                              }`}>
-                                {classItem.type[0]}
-                              </span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-semibold text-gray-900 dark:text-white truncate">{classItem.name}</p>
-                                {isRecurringOrCourse && (
-                                  <span className={`px-2 py-0.5 rounded-lg text-xs font-semibold shrink-0 ${
-                                    isCourse
-                                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                                      : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                  }`}>
-                                    {isCourse ? 'Course' : 'Series'}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{classItem.type}</p>
-                              {isRecurringOrCourse && (classItem._totalSessions ?? 0) > 0 && (
-                                <p className={`text-xs mt-1 font-medium ${
-                                  isCourse ? 'text-purple-600 dark:text-purple-400' : 'text-blue-600 dark:text-blue-400'
-                                }`}>
-                                  {classItem._totalSessions ?? 0} session{(classItem._totalSessions ?? 0) !== 1 ? 's' : ''}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-medium shrink-0 ${
-                            classItem.status === "completed" ? "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300" :
-                            classItem.status === "upcoming" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
-                            "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                          }`}>
-                            {classItem.status === "completed" ? "Completed" : classItem.status === "upcoming" ? "Upcoming" : "Cancelled"}
-                          </span>
-                        </div>
-                        
-                        <div className="space-y-2 mb-4">
-                          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span>{classItem.time} • {classItem.duration}min</span>
-                            {isRecurringOrCourse && (
-                              <span className={`text-xs font-medium ${
-                                isCourse ? 'text-purple-600 dark:text-purple-400' : 'text-blue-600 dark:text-blue-400'
-                              }`}>
-                                (Next session)
-                              </span>
-                            )}
-                          </div>
-                          {classItem.room && classItem.room !== "TBD" && classItem.room !== "TBA" && (
-                            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                              </svg>
-                              <span className="truncate">{classItem.room}</span>
-                            </div>
-                          )}
-                          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                            </svg>
-                            <span>{classItem.status === "completed" ? classItem.attended : classItem.enrolled}/{classItem.capacity} {classItem.status === "completed" ? "attended" : "enrolled"}</span>
-                    </div>
-                  </div>
-
-                        {/* Expand/Collapse Button for Recurring/Course */}
-                        {isRecurringOrCourse && classItem._childInstances && classItem._childInstances.length > 0 && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setExpandedParents(prev => {
-                                const newSet = new Set(prev);
-                                if (newSet.has(classItem.id)) {
-                                  newSet.delete(classItem.id);
-                                } else {
-                                  newSet.add(classItem.id);
-                                }
-                                return newSet;
-                              });
-                            }}
-                            className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-colors mb-3 ${
-                              isCourse
-                                ? 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:hover:bg-purple-900/50'
-                                : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50'
-                            }`}
-                          >
-                              {isExpanded ? 'Hide' : 'View'} {classItem._totalSessions ?? 0} Sessions
-                          </button>
-                        )}
-
-                  {/* Attendance Progress */}
-                  {classItem.status === "completed" && (
-                          <div className="mb-4">
-                      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
-                        <span>Attendance Rate</span>
-                        <span>{classItem.enrolled > 0 ? Math.round((classItem.attended / classItem.enrolled) * 100) : 0}%</span>
-                      </div>
-                      <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
-                        <div 
-                          className="h-full rounded-full bg-emerald-500"
-                          style={{ width: `${classItem.enrolled > 0 ? (classItem.attended / classItem.enrolled) * 100 : 0}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Quick Start Attendance Button for Upcoming Classes */}
-                  {classItem.status === "upcoming" && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setAttendanceClass(classItem);
-                        }}
-                            className="w-full px-4 py-2.5 rounded-xl bg-amber-500 text-sm font-semibold text-white hover:bg-amber-600 transition-colors flex items-center justify-center gap-2"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                        </svg>
-                        Start Attendance
-                      </button>
-                        )}
-                      </div>
-                      
-                      {/* Expanded Child Sessions */}
-                      {isExpanded && classItem._childInstances && classItem._childInstances.length > 0 && (
-                        <div className="ml-4 space-y-2 border-l-2 border-gray-200 dark:border-gray-700 pl-4">
-                          {classItem._childInstances.map((session: any) => {
-                            const isPast = new Date(session.date) < new Date();
-                            const sessionStatus = session.status === "cancelled" ? "cancelled" : isPast ? "completed" : "upcoming";
-                            
-                            return (
-                              <div
-                                key={session.id}
-                                className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedClass({
-                                    id: session.id,
-                                    name: session.name,
-                                    type: session.type,
-                                    time: session.time,
-                                    duration: session.duration,
-                                    room: "Studio",
-                                    date: session.date,
-                                    enrolled: bookingData[session.id]?.total || 0,
-                                    capacity: session.capacity,
-                                    attended: bookingData[session.id]?.attended || 0,
-                                    status: sessionStatus,
-                                  });
-                                }}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{session.name}</p>
-                                    <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                      <span>{session.time}</span>
-                                      <span>•</span>
-                                      <span>{(bookingData[session.id]?.total || 0)}/{session.capacity}</span>
-                                    </div>
-                                  </div>
-                                  <span className={`px-2 py-0.5 rounded text-xs font-medium shrink-0 ${
-                                    sessionStatus === "completed" ? "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300" :
-                                    sessionStatus === "upcoming" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
-                                    "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                                  }`}>
-                                    {sessionStatus === "completed" ? "Done" : sessionStatus === "upcoming" ? "Upcoming" : "Cancelled"}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                    </div>
-                  )}
-                </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))
-        )}
+        ))}
       </div>
 
-      {/* Class Detail Modal */}
-      {selectedClass && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setSelectedClass(null)} />
-          <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-xl dark:bg-gray-800">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                  <div className={`h-12 w-12 rounded-xl flex items-center justify-center ${
-                    selectedClass.type.toLowerCase() === "zumba" ? "bg-amber-100 dark:bg-amber-900/30" :
-                    selectedClass.type.toLowerCase() === "hiit" ? "bg-red-100 dark:bg-red-900/30" :
-                    "bg-purple-100 dark:bg-purple-900/30"
-                  }`}>
-                    <span className={`text-lg font-bold ${
-                      selectedClass.type === "Zumba" ? "text-amber-600 dark:text-amber-400" :
-                      selectedClass.type === "HIIT" ? "text-red-600 dark:text-red-400" :
-                      "text-purple-600 dark:text-purple-400"
-                    }`}>
-                      {selectedClass.type[0]}
-                    </span>
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedClass.name}</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{selectedClass.type}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setSelectedClass(null)}
-                  className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+      {/* Days */}
+      <div className={`grid grid-cols-7 ${isLoading ? "animate-pulse" : ""}`}>
+        {gridDays.map((day, i) => {
+          const inMonth = day.slice(0, 7) === month.slice(0, 7);
+          const isToday = day === todayYmd;
+          const isSelected = day === selectedDay;
+          const list = byDay.get(day) ?? [];
+          const dayNum = Number(day.slice(8));
+          return (
+            <div
+              key={day}
+              onClick={() => setSelectedDay(day)}
+              className={`min-h-[56px] cursor-pointer border-neutral-100 p-1 transition dark:border-white/5 md:min-h-[112px] md:p-1.5 ${
+                i % 7 !== 6 ? "border-r" : ""
+              } ${i < gridDays.length - 7 ? "border-b" : ""} ${inMonth ? "" : "bg-neutral-50/70 dark:bg-white/[0.02]"} ${
+                isSelected ? "md:bg-transparent bg-neutral-100 dark:bg-white/10" : "hover:bg-neutral-50 dark:hover:bg-white/5"
+              }`}
+            >
+              <div className="flex justify-center md:justify-start">
+                <span
+                  className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                    isToday
+                      ? "bg-[#E4F56C] text-neutral-950"
+                      : inMonth
+                        ? "text-neutral-800 dark:text-white/80"
+                        : "text-neutral-300 dark:text-white/25"
+                  }`}
                 >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                  {dayNum}
+                </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Date & Time</p>
-                  <p className="font-medium text-gray-900 dark:text-white">
-                    {formatDate(selectedClass.date)}
-                  </p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{selectedClass.time} • {selectedClass.duration}min</p>
-                </div>
-                <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Location</p>
-                  <p className="font-medium text-gray-900 dark:text-white">{selectedClass.room || "TBA"}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Class Location</p>
-                </div>
-                <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Enrollment</p>
-                  <p className="font-medium text-gray-900 dark:text-white">{selectedClass.enrolled}/{selectedClass.capacity}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">students enrolled</p>
-                </div>
-                <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Status</p>
-                  <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${
-                    selectedClass.status === "completed" ? "bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-300" :
-                    "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                  }`}>
-                    {selectedClass.status === "completed" ? "Completed" : "Upcoming"}
-                  </span>
-                </div>
-              </div>
-
-              {selectedClass.status === "completed" && (
-                <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 mb-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">Attendance Report</p>
-                    <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">{selectedClass.enrolled > 0 ? Math.round((selectedClass.attended / selectedClass.enrolled) * 100) : 0}%</p>
-                  </div>
-                  <div className="flex items-center gap-4 text-sm">
-                    <span className="text-emerald-700 dark:text-emerald-400">{selectedClass.attended} attended</span>
-                    <span className="text-gray-500 dark:text-gray-400">{selectedClass.enrolled - selectedClass.attended} absent</span>
-                  </div>
+              {/* Phone: dots */}
+              {list.length > 0 && (
+                <div className="mt-1 flex justify-center gap-0.5 md:hidden">
+                  {list.slice(0, 3).map((c) => (
+                    <span
+                      key={c.id}
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        c.status === "upcoming" ? "bg-neutral-950 dark:bg-[#E4F56C]" : c.status === "cancelled" ? "bg-red-400" : "bg-neutral-300"
+                      }`}
+                    />
+                  ))}
                 </div>
               )}
 
-              <div className="flex gap-3">
-                <Link
-                  href={`/tutor/students?class=${selectedClass.id}`}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors text-center"
-                >
-                  View Students
-                </Link>
-                {selectedClass.status === "upcoming" && (
-                  <button 
+              {/* Desktop: class chips */}
+              <div className="mt-1 hidden space-y-1 md:block">
+                {list.slice(0, 3).map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setAttendanceClass(selectedClass);
-                      setSelectedClass(null);
+                      setSelectedClass(c);
                     }}
-                    className="flex-1 px-4 py-2.5 rounded-xl bg-amber-500 text-sm font-semibold text-white hover:bg-amber-600 transition-colors flex items-center justify-center gap-2"
+                    title={`${c.time} · ${c.name} · ${c.status === "completed" ? `${c.attended}/${c.enrolled} came` : `${c.enrolled}/${c.capacity} booked`}`}
+                    className={`block w-full truncate rounded-lg px-1.5 py-1 text-left text-[11px] font-semibold transition ${STATUS[c.status].chip}`}
                   >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                    </svg>
-                    Start Attendance
+                    <span className="opacity-70">{c.time}</span> {c.name}
                   </button>
-                )}
-                {selectedClass.status === "completed" && (
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setAttendanceClass(selectedClass);
-                      setSelectedClass(null);
-                    }}
-                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                    </svg>
-                    View Attendance
-                  </button>
+                ))}
+                {list.length > 3 && (
+                  <p className="px-1.5 text-[10px] font-semibold text-neutral-400">+{list.length - 3} more</p>
                 )}
               </div>
             </div>
+          );
+        })}
+      </div>
+
+      {/* Phone: selected day's classes */}
+      <div className="border-t border-neutral-100 dark:border-white/5 md:hidden">
+        <p className="bg-neutral-50 px-4 py-2 text-xs font-semibold text-neutral-500 dark:bg-white/[0.03]">{formatDate(selectedDay)}</p>
+        {selectedDayClasses.length === 0 ? (
+          <p className="px-4 py-6 text-center text-sm text-neutral-400">No classes this day</p>
+        ) : (
+          <ul className="divide-y divide-neutral-100 dark:divide-white/5">
+            {selectedDayClasses.map((c) => (
+              <MobileRow key={c.id} c={c} />
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+
+  const table =
+    weeks.length === 0 ? (
+      <div className="border-t border-neutral-100 px-6 py-14 text-center dark:border-white/5">
+        <p className="text-base font-semibold text-neutral-950 dark:text-white">No classes found</p>
+        <p className="mt-1 text-sm text-neutral-500">{emptyText}</p>
+      </div>
+    ) : (
+      <>
+        {/* Desktop / tablet: real table */}
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full min-w-[720px] text-left">
+            <thead className="border-y border-neutral-100 text-[11px] uppercase tracking-wide text-neutral-400 dark:border-white/5">
+              <tr>
+                <th className="py-2.5 pl-6 pr-4 font-semibold">When</th>
+                <th className="px-4 py-2.5 font-semibold">Class</th>
+                <th className="px-4 py-2.5 font-semibold">Room</th>
+                <th className="px-4 py-2.5 font-semibold">Bookings</th>
+                <th className="py-2.5 pl-4 pr-6 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100 dark:divide-white/5">
+              {weeks.map((week) => (
+                <Fragment key={week.start}>
+                  <tr className="bg-neutral-50 dark:bg-white/[0.03]">
+                    <td colSpan={5} className="px-6 py-2">
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                          week.start === thisWeek ? "bg-[#E4F56C] text-neutral-950" : "bg-neutral-950 text-white dark:bg-white dark:text-neutral-950"
+                        }`}
+                      >
+                        {weekLabel(week.start)}
+                      </span>
+                      <span className="ml-2 text-[11px] text-neutral-400">
+                        {week.items.length} class{week.items.length === 1 ? "" : "es"}
+                      </span>
+                    </td>
+                  </tr>
+                  {week.items.map((c) => (
+                    <Fragment key={c.id}>
+                      <DesktopRow c={c} />
+                      {expandedParents.has(c.id) && c._childInstances?.map((s) => <DesktopRow key={s.id} c={s} child />)}
+                    </Fragment>
+                  ))}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Phone: stacked rows */}
+        <div className="border-t border-neutral-100 dark:border-white/5 md:hidden">
+          {weeks.map((week) => (
+            <div key={week.start}>
+              <div className="flex items-center gap-2 bg-neutral-50 px-4 py-2 dark:bg-white/[0.03]">
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                    week.start === thisWeek ? "bg-[#E4F56C] text-neutral-950" : "bg-neutral-950 text-white dark:bg-white dark:text-neutral-950"
+                  }`}
+                >
+                  {weekLabel(week.start)}
+                </span>
+                <span className="text-[11px] text-neutral-400">
+                  {week.items.length} class{week.items.length === 1 ? "" : "es"}
+                </span>
+              </div>
+              <ul className="divide-y divide-neutral-100 dark:divide-white/5">
+                {week.items.map((c) => (
+                  <Fragment key={c.id}>
+                    <MobileRow c={c} />
+                    {expandedParents.has(c.id) && c._childInstances?.map((s) => <MobileRow key={s.id} c={s} child />)}
+                  </Fragment>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </>
+    );
+
+  return (
+    <div className="min-w-0 space-y-5 sm:space-y-6">
+      {header}
+
+      {/* Stats (follow the current view: the filter, or the calendar month) */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <div className={`${card} p-4 sm:p-5`}>
+          <p className="text-xs font-medium text-neutral-500 dark:text-white/60 sm:text-sm">{view === "calendar" ? "Classes this month" : "Total classes"}</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:mt-3 sm:text-4xl">
+            {isLoading ? "…" : stats.totalClasses}
+          </p>
+        </div>
+        <div className="rounded-[28px] border border-[#d5e45c] bg-[#E4F56C] p-4 text-neutral-950 shadow-[0_10px_30px_rgba(16,24,40,0.06)] sm:p-5">
+          <p className="text-xs font-medium sm:text-sm">Upcoming</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight sm:mt-3 sm:text-4xl">{isLoading ? "…" : stats.upcoming}</p>
+        </div>
+        <div className="rounded-[28px] border border-neutral-950 bg-neutral-950 p-4 text-white shadow-[0_10px_30px_rgba(16,24,40,0.14)] sm:p-5">
+          <p className="text-xs font-medium text-white/60 sm:text-sm">Completed</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight sm:mt-3 sm:text-4xl">{isLoading ? "…" : stats.completed}</p>
+        </div>
+        <div className={`${card} p-4 sm:p-5`}>
+          <p className="text-xs font-medium text-neutral-500 dark:text-white/60 sm:text-sm">Total bookings</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:mt-3 sm:text-4xl">
+            {isLoading ? "…" : stats.totalBookings}
+          </p>
+        </div>
+      </div>
+
+      {/* Classes */}
+      <section className={`${card} min-w-0 overflow-hidden`}>
+        {/* Toolbar */}
+        <div className="flex flex-col gap-3 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
+            {/* View switch */}
+            <div className="inline-flex shrink-0 gap-1 self-start rounded-full bg-neutral-950 p-1 dark:bg-white/10">
+              {(["table", "calendar"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setView(v)}
+                  className={`rounded-full px-4 py-1.5 text-xs font-semibold capitalize transition ${
+                    view === v ? "bg-[#E4F56C] text-neutral-950" : "text-white/70 hover:text-white"
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+
+            {view === "table" && (
+              <div className="-mx-1 overflow-x-auto px-1">
+                <div className="inline-flex gap-1 rounded-full bg-neutral-100 p-1 dark:bg-white/5">
+                  {[
+                    { id: "all", label: "All" },
+                    { id: "upcoming", label: "Upcoming" },
+                    { id: "past", label: "Completed" },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setFilter(tab.id as typeof filter)}
+                      className={`whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+                        filter === tab.id
+                          ? "bg-white text-neutral-950 shadow-sm dark:bg-gray-700 dark:text-white"
+                          : "text-neutral-500 hover:text-neutral-900 dark:hover:text-white"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {view === "table" && (
+            <div className="w-full sm:w-64">
+              <DateRangePicker value={dateRange} onChange={(from, to) => setDateRange({ from, to })} placeholder="Any date" />
+            </div>
+          )}
+        </div>
+
+        {view === "calendar" ? (
+          calendar
+        ) : isLoading ? (
+          <div className="space-y-2 border-t border-neutral-100 p-5 dark:border-white/5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-12 animate-pulse rounded-2xl bg-neutral-100 dark:bg-white/10" />
+            ))}
+          </div>
+        ) : (
+          table
+        )}
+      </section>
+
+      {/* Class detail — bottom sheet on mobile, centred dialog on larger screens */}
+      {selectedClass && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setSelectedClass(null)} />
+          <div className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-[28px] bg-white p-5 shadow-xl dark:bg-gray-800 sm:max-w-lg sm:rounded-[28px] sm:p-6">
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-neutral-200 dark:bg-white/20 sm:hidden" />
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="truncate text-lg font-semibold uppercase tracking-wide text-neutral-950 dark:text-white">{selectedClass.name}</h2>
+                <p className="text-sm text-neutral-500">{selectedClass.type}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedClass(null)}
+                aria-label="Close"
+                className="rounded-full p-2 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-white/10"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-neutral-50 p-3.5 dark:bg-white/5">
+                <p className="text-[11px] font-medium text-neutral-500">When</p>
+                <p className="mt-1 text-sm font-semibold text-neutral-950 dark:text-white">{formatDate(selectedClass.date)}</p>
+                <p className="text-xs text-neutral-500">{selectedClass.time} · {selectedClass.duration} min</p>
+              </div>
+              <div className="rounded-2xl bg-neutral-50 p-3.5 dark:bg-white/5">
+                <p className="text-[11px] font-medium text-neutral-500">Where</p>
+                <p className="mt-1 truncate text-sm font-semibold text-neutral-950 dark:text-white">{selectedClass.room || "TBA"}</p>
+              </div>
+              <div className="rounded-2xl bg-neutral-50 p-3.5 dark:bg-white/5">
+                <p className="text-[11px] font-medium text-neutral-500">Booked</p>
+                <p className="mt-1 text-sm font-semibold text-neutral-950 dark:text-white">
+                  {selectedClass.enrolled}/{selectedClass.capacity}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-neutral-50 p-3.5 dark:bg-white/5">
+                <p className="text-[11px] font-medium text-neutral-500">Status</p>
+                <span className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS[selectedClass.status].pill}`}>
+                  {STATUS[selectedClass.status].label}
+                </span>
+              </div>
+            </div>
+
+            {selectedClass.status === "completed" && (
+              <div className="mt-3 rounded-2xl bg-neutral-950 p-4 text-white dark:bg-white/10">
+                <div className="flex items-baseline justify-between">
+                  <p className="text-sm text-white/60">Attendance</p>
+                  <p className="text-2xl font-semibold tracking-tight">{attendancePct(selectedClass)}%</p>
+                </div>
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-[#E4F56C]" style={{ width: `${attendancePct(selectedClass)}%` }} />
+                </div>
+                <p className="mt-2 text-xs text-white/60">
+                  {selectedClass.attended} came · {Math.max(0, selectedClass.enrolled - selectedClass.attended)} didn&apos;t
+                </p>
+              </div>
+            )}
+
+            <Link
+              href={`/tutor/students?class=${selectedClass.id}`}
+              className="mt-5 block rounded-full bg-neutral-950 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-950"
+            >
+              View students
+            </Link>
           </div>
         </div>
-      )}
-
-      {/* QR Attendance Modal */}
-      {attendanceClass && (
-        <ClassAttendeesModal
-          isOpen={!!attendanceClass}
-          onClose={() => setAttendanceClass(null)}
-          classInfo={attendanceClass}
-        />
       )}
     </div>
   );

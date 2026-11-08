@@ -75,8 +75,8 @@ export default function TutorSettingsPage() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Loading settings...</p>
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-neutral-950 border-t-transparent"></div>
+          <p className="text-sm text-neutral-500 dark:text-gray-400">Loading settings...</p>
         </div>
       </div>
     );
@@ -91,8 +91,8 @@ export default function TutorSettingsPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Failed to load settings</h3>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{error.message}</p>
+          <h3 className="text-lg font-medium text-neutral-950 dark:text-white">Failed to load settings</h3>
+          <p className="mt-1 text-sm text-neutral-500 dark:text-gray-400">{error.message}</p>
         </div>
       </div>
     );
@@ -112,15 +112,15 @@ export default function TutorSettingsPage() {
             </svg>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <h1 className="text-2xl font-semibold text-neutral-950 dark:text-white tracking-tight">Settings</h1>
+            <p className="text-sm text-neutral-500 dark:text-gray-400">
               Configure your preferences
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           {saveSuccess && (
-            <div className="flex items-center gap-2 rounded-lg bg-emerald-100 px-4 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+            <div className="flex items-center gap-2 rounded-full bg-emerald-100 px-4 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
@@ -129,7 +129,7 @@ export default function TutorSettingsPage() {
           )}
           <button
             onClick={restartOnboarding}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition-colors shadow-md hover:shadow-lg"
+            className="flex items-center gap-2 rounded-full bg-[#E4F56C] hover:brightness-95 px-4 py-2 text-sm font-semibold text-neutral-950 transition-colors shadow-md hover:shadow-lg"
             title="Restart the onboarding tour"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -140,7 +140,7 @@ export default function TutorSettingsPage() {
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="px-4 py-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            className="px-4 py-2 rounded-full bg-[#E4F56C] text-sm font-semibold text-neutral-950 hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
           >
             {isSaving ? (
               <>
@@ -160,16 +160,16 @@ export default function TutorSettingsPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
         {/* Sidebar Tabs */}
         <div className="lg:col-span-1">
-          <div className="rounded-2xl border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800">
+          <div className="rounded-[28px] border border-neutral-200/80 bg-white p-2 dark:border-white/10 dark:bg-gray-800 shadow-[0_10px_30px_rgba(16,24,40,0.05)]">
             <nav className="space-y-1">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition-colors ${
+                  className={`flex w-full items-center gap-3 rounded-full px-4 py-3 text-left text-sm font-medium transition-colors ${
                     activeTab === tab.id
-                      ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                      : "text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
+                      ? "bg-[#E4F56C]/20 text-neutral-950 dark:bg-white/10 dark:text-white"
+                      : "text-neutral-600 hover:bg-neutral-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
                   }`}
                 >
                   {tab.icon}
@@ -182,22 +182,22 @@ export default function TutorSettingsPage() {
 
         {/* Content */}
         <div className="lg:col-span-3">
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
+          <div className="rounded-[28px] border border-neutral-200/80 bg-white p-6 dark:border-white/10 dark:bg-gray-800 shadow-[0_10px_30px_rgba(16,24,40,0.05)]">
             {/* General Tab */}
             {activeTab === "general" && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">General Settings</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Configure display and regional preferences</p>
+                  <h3 className="text-lg font-semibold text-neutral-950 dark:text-white">General Settings</h3>
+                  <p className="text-sm text-neutral-500 dark:text-gray-400">Configure display and regional preferences</p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Theme</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Theme</label>
                     <select
                       value={settings.theme}
                       onChange={(e) => setSettings({ ...settings, theme: e.target.value as typeof settings.theme })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                      className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
                     >
                       {options?.themes.map(opt => (
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -206,11 +206,11 @@ export default function TutorSettingsPage() {
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Language</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Language</label>
                     <select
                       value={settings.language}
                       onChange={(e) => setSettings({ ...settings, language: e.target.value })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                      className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
                     >
                       {options?.languages.map(opt => (
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -219,11 +219,11 @@ export default function TutorSettingsPage() {
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Timezone</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Timezone</label>
                     <select
                       value={settings.timezone}
                       onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                      className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
                     >
                       {options?.timezones.map(opt => (
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -232,11 +232,11 @@ export default function TutorSettingsPage() {
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Date Format</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Date Format</label>
                     <select
                       value={settings.dateFormat}
                       onChange={(e) => setSettings({ ...settings, dateFormat: e.target.value })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                      className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
                     >
                       {options?.dateFormats.map(opt => (
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -245,11 +245,11 @@ export default function TutorSettingsPage() {
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Time Format</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Time Format</label>
                     <select
                       value={settings.timeFormat}
                       onChange={(e) => setSettings({ ...settings, timeFormat: e.target.value as typeof settings.timeFormat })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                      className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
                     >
                       {options?.timeFormats.map(opt => (
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -264,17 +264,17 @@ export default function TutorSettingsPage() {
             {activeTab === "calendar" && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Calendar Settings</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Customize your calendar view</p>
+                  <h3 className="text-lg font-semibold text-neutral-950 dark:text-white">Calendar Settings</h3>
+                  <p className="text-sm text-neutral-500 dark:text-gray-400">Customize your calendar view</p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Week Starts On</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Week Starts On</label>
                     <select
                       value={settings.calendarStartDay}
                       onChange={(e) => setSettings({ ...settings, calendarStartDay: Number(e.target.value) as typeof settings.calendarStartDay })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                      className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
                     >
                       {options?.calendarStartDays.map(opt => (
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -283,16 +283,16 @@ export default function TutorSettingsPage() {
                   </div>
                 </div>
 
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                  <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
+                <div className="border-t border-neutral-200 dark:border-gray-700 pt-6">
+                  <div className="flex items-center justify-between p-4 rounded-2xl bg-neutral-50 dark:bg-gray-700/50">
                     <div>
-                      <p className="font-medium text-gray-900 dark:text-white">Show Week Numbers</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Display week numbers in calendar</p>
+                      <p className="font-medium text-neutral-950 dark:text-white">Show Week Numbers</p>
+                      <p className="text-sm text-neutral-500 dark:text-gray-400">Display week numbers in calendar</p>
                     </div>
                     <button
                       onClick={() => setSettings({ ...settings, showWeekNumbers: !settings.showWeekNumbers })}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        settings.showWeekNumbers ? "bg-indigo-600" : "bg-gray-300 dark:bg-gray-600"
+                        settings.showWeekNumbers ? "bg-[#E4F56C]" : "bg-neutral-300 dark:bg-gray-600"
                       }`}
                     >
                       <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -308,13 +308,13 @@ export default function TutorSettingsPage() {
             {activeTab === "instructor" && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Instructor Settings</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Configure your teaching preferences</p>
+                  <h3 className="text-lg font-semibold text-neutral-950 dark:text-white">Instructor Settings</h3>
+                  <p className="text-sm text-neutral-500 dark:text-gray-400">Configure your teaching preferences</p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Default Class Duration (minutes)</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Default Class Duration (minutes)</label>
                     <input
                       type="number"
                       min={15}
@@ -322,13 +322,13 @@ export default function TutorSettingsPage() {
                       step={15}
                       value={settings.defaultClassDuration}
                       onChange={(e) => setSettings({ ...settings, defaultClassDuration: Number(e.target.value) })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                      className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
                     />
-                    <p className="mt-1 text-xs text-gray-500">Default duration when creating new classes</p>
+                    <p className="mt-1 text-xs text-neutral-500">Default duration when creating new classes</p>
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Class Reminder (minutes before)</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Class Reminder (minutes before)</label>
                     <input
                       type="number"
                       min={5}
@@ -336,22 +336,22 @@ export default function TutorSettingsPage() {
                       step={5}
                       value={settings.reminderMinutesBefore}
                       onChange={(e) => setSettings({ ...settings, reminderMinutesBefore: Number(e.target.value) })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                      className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300"
                     />
-                    <p className="mt-1 text-xs text-gray-500">When to receive class reminders</p>
+                    <p className="mt-1 text-xs text-neutral-500">When to receive class reminders</p>
                   </div>
                 </div>
 
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                  <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
+                <div className="border-t border-neutral-200 dark:border-gray-700 pt-6">
+                  <div className="flex items-center justify-between p-4 rounded-2xl bg-neutral-50 dark:bg-gray-700/50">
                     <div>
-                      <p className="font-medium text-gray-900 dark:text-white">Auto Check-In</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Automatically check in students when class starts</p>
+                      <p className="font-medium text-neutral-950 dark:text-white">Auto Check-In</p>
+                      <p className="text-sm text-neutral-500 dark:text-gray-400">Automatically check in students when class starts</p>
                     </div>
                     <button
                       onClick={() => setSettings({ ...settings, autoCheckIn: !settings.autoCheckIn })}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        settings.autoCheckIn ? "bg-indigo-600" : "bg-gray-300 dark:bg-gray-600"
+                        settings.autoCheckIn ? "bg-[#E4F56C]" : "bg-neutral-300 dark:bg-gray-600"
                       }`}
                     >
                       <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${

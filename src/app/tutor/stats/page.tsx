@@ -2,251 +2,219 @@
 
 import { useTutorStats } from "@/hooks/useTutor";
 
+const card =
+  "rounded-[28px] border border-neutral-200/80 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800";
+
+function Change({ value, unit = "%", dark = false }: { value: number; unit?: string; dark?: boolean }) {
+  if (!value) return <span className={`text-[11px] ${dark ? "text-white/50" : "text-neutral-400"}`}>same as last month</span>;
+  const up = value > 0;
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+        up
+          ? dark
+            ? "bg-[#E4F56C] text-neutral-950"
+            : "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+          : dark
+            ? "bg-white/10 text-white/70"
+            : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300"
+      }`}
+    >
+      {up ? "▲" : "▼"} {Math.abs(value)}
+      {unit} vs last month
+    </span>
+  );
+}
+
 export default function TutorStatsPage() {
   const { data, isLoading, error } = useTutorStats();
 
-  // Loading state
+  const header = (
+    <div>
+      <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-3xl">My stats</h1>
+      <p className="mt-1 text-sm text-neutral-500 dark:text-white/50">How your classes are doing, in Singapore time.</p>
+    </div>
+  );
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-amber-500 border-t-transparent"></div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Loading stats...</p>
+      <div className="min-w-0 space-y-5">
+        {header}
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => <div key={i} className={`${card} h-32 animate-pulse`} />)}
         </div>
+        <div className={`${card} h-72 animate-pulse`} />
       </div>
     );
   }
 
-  // Error state
-  if (error) {
+  if (error || !data) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="mx-auto h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-4">
-            <svg className="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Failed to load stats</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{error.message}</p>
+      <div className="min-w-0 space-y-5">
+        {header}
+        <div className={`${card} px-6 py-14 text-center`}>
+          <p className="text-base font-semibold text-neutral-950 dark:text-white">Couldn&apos;t load your stats</p>
+          <p className="mt-1 text-sm text-neutral-500">{error?.message}</p>
         </div>
       </div>
     );
   }
 
-  const stats = {
-    totalClasses: data?.overview?.totalClassesTaught || 0,
-    thisMonth: data?.thisMonth?.classes || 0,
-    thisWeek: 0, // Not tracked separately
-    totalStudents: data?.overview?.totalStudentBookings || 0,
-    uniqueStudents: data?.overview?.uniqueStudents || 0,
-    avgClassSize: Math.round(data?.overview?.avgClassSize || 0),
-    avgAttendance: Math.round(data?.overview?.attendanceRate || 0),
-  };
-
-  const changes = {
-    classesChange: data?.changes?.classesChange || 0,
-    studentsChange: data?.changes?.studentsChange || 0,
-    attendanceRateChange: data?.changes?.attendanceRateChange || 0,
-  };
-
-  // Convert byClassType to array for display
-  const classTypeStats = Object.entries(data?.byClassType || {}).map(([type, stats]: [string, any]) => ({
-    type: type.charAt(0).toUpperCase() + type.slice(1),
-    classes: stats.classes || 0,
-    students: stats.students || 0,
-    avgAttendance: stats.attendanceRate || 0,
-    color: type === 'zumba' ? 'amber' : type === 'hiit' ? 'red' : type === 'dance' ? 'purple' : 'blue'
-  }));
-
-  const topStudents = data?.topStudents || [];
-
-  // Monthly data - from API
-  const monthlyData = data?.monthlyPerformance || [];
-
-  const maxStudents = Math.max(...monthlyData.map(d => d.students), 1);
+  const o = data.overview;
+  const monthly = data.monthlyPerformance || [];
+  const maxBooked = Math.max(1, ...monthly.map((m) => m.booked ?? m.students));
+  const types = Object.entries(data.byClassType || {}).sort((a, b) => b[1].classes - a[1].classes);
+  const top = data.topStudents || [];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Stats</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Your performance metrics and insights</p>
+    <div className="min-w-0 space-y-5 sm:space-y-6">
+      {header}
+
+      {/* This month */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <div className={`${card} p-4 sm:p-5`}>
+          <p className="text-xs font-medium text-neutral-500 dark:text-white/60 sm:text-sm">Classes this month</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-4xl">{data.thisMonth.classes}</p>
+          <div className="mt-2"><Change value={data.changes.classesChange} /></div>
+        </div>
+        <div className="rounded-[28px] border border-[#d5e45c] bg-[#E4F56C] p-4 text-neutral-950 shadow-[0_10px_30px_rgba(16,24,40,0.06)] sm:p-5">
+          <p className="text-xs font-medium sm:text-sm">Students this month</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">{data.thisMonth.students}</p>
+          <p className="mt-2 text-[11px] font-semibold text-neutral-700">
+            {data.changes.studentsChange === 0
+              ? "same as last month"
+              : `${data.changes.studentsChange > 0 ? "▲" : "▼"} ${Math.abs(data.changes.studentsChange)}% vs last month`}
+          </p>
+        </div>
+        <div className="rounded-[28px] border border-neutral-950 bg-neutral-950 p-4 text-white shadow-[0_10px_30px_rgba(16,24,40,0.14)] sm:p-5">
+          <p className="text-xs font-medium text-white/60 sm:text-sm">Attendance this month</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">{data.thisMonth.attendanceRate}%</p>
+          <div className="mt-2"><Change value={data.changes.attendanceRateChange} unit=" pts" dark /></div>
+        </div>
+        <div className={`${card} p-4 sm:p-5`}>
+          <p className="text-xs font-medium text-neutral-500 dark:text-white/60 sm:text-sm">Classes taught</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-4xl">{o.totalClassesTaught}</p>
+          <p className="mt-2 text-[11px] text-neutral-400">all time</p>
+        </div>
       </div>
 
-      {/* Key Stats */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between mb-3">
-            <div className="h-10 w-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-              <svg className="h-5 w-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        {/* Monthly chart */}
+        <section className={`${card} min-w-0 p-5 sm:p-6`}>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-base font-semibold text-neutral-950 dark:text-white">Last 6 months</h2>
+            <div className="flex items-center gap-4 text-[11px] text-neutral-500">
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-neutral-200 dark:bg-white/20" /> Booked</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-neutral-950 dark:bg-[#E4F56C]" /> Came</span>
             </div>
-            {changes.classesChange !== undefined && changes.classesChange !== null && (
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                changes.classesChange >= 0
-                  ? "text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/30"
-                  : "text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30"
-              }`}>
-                {changes.classesChange >= 0 ? "+" : ""}{changes.classesChange}%
-              </span>
-            )}
           </div>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.totalClasses}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Total Classes</p>
-        </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between mb-3">
-            <div className="h-10 w-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-              <svg className="h-5 w-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-            </div>
-            {changes.studentsChange !== undefined && changes.studentsChange !== null && (
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                changes.studentsChange >= 0
-                  ? "text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/30"
-                  : "text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30"
-              }`}>
-                {changes.studentsChange >= 0 ? "+" : ""}{changes.studentsChange}%
-              </span>
-            )}
-          </div>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.uniqueStudents}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Unique Students</p>
-        </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between mb-3">
-            <div className="h-10 w-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-              <svg className="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            {changes.attendanceRateChange !== undefined && changes.attendanceRateChange !== null && (
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                changes.attendanceRateChange >= 0
-                  ? "text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/30"
-                  : "text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30"
-              }`}>
-                {changes.attendanceRateChange >= 0 ? "+" : ""}{changes.attendanceRateChange}%
-              </span>
-            )}
-          </div>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.avgAttendance}%</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Avg Attendance</p>
-        </div>
-
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Monthly Trend */}
-        <div className="lg:col-span-2 rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Monthly Performance</h3>
-          <div className="flex items-end gap-4 h-48">
-            {monthlyData.map((data) => (
-              <div key={data.month} className="flex-1 flex flex-col items-center">
-                <div className="w-full flex flex-col items-center gap-1">
-                  <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{data.students}</span>
-                  <div 
-                    className="w-full rounded-t-lg bg-linear-to-t from-amber-500 to-amber-400 transition-all"
-                    style={{ height: `${(data.students / maxStudents) * 100}%`, minHeight: "20px" }}
-                  ></div>
+          <div className="mt-5 flex h-48 items-end gap-2 sm:gap-4">
+            {monthly.map((m, i) => {
+              const booked = m.booked ?? m.students;
+              const came = m.attended ?? 0;
+              const isCurrent = i === monthly.length - 1;
+              return (
+                <div key={`${m.month}-${i}`} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1.5">
+                  <span className="text-[11px] font-semibold tabular-nums text-neutral-700 dark:text-white/80">{booked || ""}</span>
+                  <div
+                    className="relative w-full max-w-[44px] overflow-hidden rounded-xl bg-neutral-200 dark:bg-white/15"
+                    style={{ height: `${(booked / maxBooked) * 100}%`, minHeight: booked ? 6 : 3 }}
+                    title={`${m.month}: ${m.classes} classes · ${booked} booked · ${came} came · ${m.attendance}% attendance`}
+                  >
+                    <div
+                      className="absolute inset-x-0 bottom-0 rounded-xl bg-neutral-950 dark:bg-[#E4F56C]"
+                      style={{ height: `${booked ? (came / booked) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <span className={`text-[11px] font-medium ${isCurrent ? "text-neutral-950 dark:text-white" : "text-neutral-400"}`}>{m.month}</span>
+                  <span className="text-[10px] text-neutral-400">{m.classes} cls</span>
                 </div>
-                <span className="mt-2 text-xs text-gray-500 dark:text-gray-400">{data.month}</span>
+              );
+            })}
+          </div>
+
+          <div className="mt-6 grid grid-cols-2 gap-3 border-t border-neutral-100 pt-5 dark:border-white/5 sm:grid-cols-4">
+            {[
+              ["Students", o.uniqueStudents],
+              ["Avg class size", o.avgClassSize],
+              ["Spots filled", `${o.capacityUtilization}%`],
+              ["Attendance", `${o.attendanceRate}%`],
+            ].map(([label, value]) => (
+              <div key={label as string}>
+                <p className="text-[11px] text-neutral-500">{label}</p>
+                <p className="mt-0.5 text-xl font-semibold text-neutral-950 dark:text-white">{value}</p>
               </div>
             ))}
           </div>
-          <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 grid grid-cols-3 gap-4">
-            <div className="text-center">
-              <p className="text-lg font-bold text-gray-900 dark:text-white">
-                {monthlyData.reduce((sum, d) => sum + d.classes, 0)}
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Total Classes (6 mo)</p>
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-bold text-gray-900 dark:text-white">
-                {monthlyData.reduce((sum, d) => sum + d.students, 0)}
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Total Students</p>
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-bold text-gray-900 dark:text-white">
-                {Math.round(monthlyData.reduce((sum, d) => sum + d.attendance, 0) / monthlyData.length)}%
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Avg Attendance</p>
-            </div>
-          </div>
-        </div>
+          {(o.guestBookings ?? 0) > 0 && (
+            <p className="mt-3 text-[11px] text-neutral-400">
+              Plus {o.guestBookings} guest/trial booking{o.guestBookings === 1 ? "" : "s"} without a member account (not counted as students).
+            </p>
+          )}
+        </section>
 
-        {/* Top Students */}
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Top Students</h3>
-          <div className="space-y-3">
-            {topStudents.length > 0 ? (
-              topStudents.map((student, idx) => (
-                <div key={`${student.name}-${idx}`} className="flex items-center gap-3">
-                  <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                    idx === 0 ? "bg-amber-100 text-amber-700" :
-                    idx === 1 ? "bg-gray-200 text-gray-700" :
-                    idx === 2 ? "bg-orange-100 text-orange-700" :
-                    "bg-gray-100 text-gray-500"
-                  }`}>
-                    {idx + 1}
-                  </span>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">{student.name}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{student.classes} classes</p>
-                  </div>
-                  <span className={`text-sm font-semibold ${
-                    student.attendance >= 90 ? "text-emerald-600" :
-                    student.attendance >= 80 ? "text-amber-600" : "text-red-600"
-                  }`}>
-                    {student.attendance}%
-                  </span>
-                </div>
-              ))
+        <aside className="min-w-0 space-y-5">
+          {/* Top students */}
+          <section className={`${card} overflow-hidden`}>
+            <div className="px-5 pt-5 sm:px-6 sm:pt-6">
+              <h2 className="text-base font-semibold text-neutral-950 dark:text-white">Top students</h2>
+              <p className="text-xs text-neutral-500">By classes attended</p>
+            </div>
+            {top.length === 0 ? (
+              <p className="px-6 py-10 text-center text-sm text-neutral-400">No attendance recorded yet</p>
             ) : (
-              <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No students yet</p>
+              <ol className="mt-3 divide-y divide-neutral-100 dark:divide-white/5">
+                {top.map((s, i) => (
+                  <li key={s.id ?? `${s.name}-${i}`} className="flex items-center gap-3 px-5 py-3 sm:px-6">
+                    <span
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                        i === 0 ? "bg-[#E4F56C] text-neutral-950" : "bg-neutral-100 text-neutral-600 dark:bg-white/10 dark:text-white/70"
+                      }`}
+                    >
+                      {i + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-neutral-950 dark:text-white">{s.name}</p>
+                      <p className="text-[11px] text-neutral-500">
+                        Came {s.classes}
+                        {s.noShows ? ` · ${s.noShows} no-show${s.noShows === 1 ? "" : "s"}` : ""}
+                      </p>
+                    </div>
+                    <span className="text-sm font-semibold text-neutral-950 dark:text-white">{s.attendance}%</span>
+                  </li>
+                ))}
+              </ol>
             )}
-          </div>
-        </div>
-      </div>
+          </section>
 
-      {/* Class Type Performance */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Performance by Class Type</h3>
-          <div className="space-y-4">
-            {classTypeStats.map((type) => (
-              <div key={type.type} className="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`h-3 w-3 rounded-full ${
-                      type.color === "amber" ? "bg-amber-500" :
-                      type.color === "red" ? "bg-red-500" : "bg-purple-500"
-                    }`}></span>
-                    <span className="font-medium text-gray-900 dark:text-white">{type.type}</span>
-                  </div>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">{type.classes} classes/month</span>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Students</p>
-                    <p className="text-lg font-bold text-gray-900 dark:text-white">{type.students}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Avg Attendance</p>
-                    <p className={`text-lg font-bold ${
-                      type.avgAttendance >= 90 ? "text-emerald-600" : "text-amber-600"
-                    }`}>{type.avgAttendance}%</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+          {/* By class type */}
+          <section className={`${card} p-5 sm:p-6`}>
+            <h2 className="text-base font-semibold text-neutral-950 dark:text-white">By class type</h2>
+            {types.length === 0 ? (
+              <p className="mt-3 text-sm text-neutral-400">No classes yet</p>
+            ) : (
+              <ul className="mt-4 space-y-4">
+                {types.map(([type, t]) => (
+                  <li key={type}>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-sm font-semibold capitalize text-neutral-950 dark:text-white">{type}</span>
+                      <span className="text-xs text-neutral-500">
+                        {t.classes} classes · {t.students} students
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-100 dark:bg-white/10">
+                        <div className="h-full rounded-full bg-neutral-950 dark:bg-[#E4F56C]" style={{ width: `${t.attendanceRate}%` }} />
+                      </div>
+                      <span className="w-10 text-right text-xs font-semibold text-neutral-950 dark:text-white">{t.attendanceRate}%</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }

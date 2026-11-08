@@ -43,8 +43,8 @@ export default function TutorNotificationsPage() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Loading notifications...</p>
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-neutral-950 border-t-transparent"></div>
+          <p className="text-sm text-neutral-500 dark:text-gray-400">Loading notifications...</p>
         </div>
       </div>
     );
@@ -54,8 +54,8 @@ export default function TutorNotificationsPage() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Failed to load notifications</h3>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{error.message}</p>
+          <h3 className="text-lg font-medium text-neutral-950 dark:text-white">Failed to load notifications</h3>
+          <p className="mt-1 text-sm text-neutral-500 dark:text-gray-400">{error.message}</p>
         </div>
       </div>
     );
@@ -64,26 +64,26 @@ export default function TutorNotificationsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl text-[#E4F56C] shadow-lg bg-neutral-950">
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
           </svg>
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Notifications</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <h1 className="text-2xl font-semibold text-neutral-950 dark:text-white tracking-tight">Notifications</h1>
+          <p className="text-sm text-neutral-500 dark:text-gray-400">
             Manage booking alerts and view your notification history
           </p>
         </div>
       </div>
 
-      <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex gap-2 border-b border-neutral-200 dark:border-gray-700">
         <button
           onClick={() => setActiveTab("preferences")}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
             activeTab === "preferences"
-              ? "border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
-              : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+              ? "border-neutral-950 text-neutral-950 dark:border-white/20 dark:text-white"
+              : "border-transparent text-neutral-500 hover:text-neutral-700 dark:text-gray-400 dark:hover:text-gray-300"
           }`}
         >
           Preferences
@@ -92,8 +92,8 @@ export default function TutorNotificationsPage() {
           onClick={() => setActiveTab("history")}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2 ${
             activeTab === "history"
-              ? "border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
-              : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+              ? "border-neutral-950 text-neutral-950 dark:border-white/20 dark:text-white"
+              : "border-transparent text-neutral-500 hover:text-neutral-700 dark:text-gray-400 dark:hover:text-gray-300"
           }`}
         >
           History
@@ -110,14 +110,14 @@ export default function TutorNotificationsPage() {
       {activeTab === "history" && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-neutral-500 dark:text-gray-400">
               {data?.notifications.length || 0} notifications
             </p>
             <div className="flex gap-2">
               <button
                 onClick={() => markReadMutation.mutate(undefined)}
                 disabled={markReadMutation.isPending}
-                className="px-3 py-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 disabled:opacity-50"
+                className="px-3 py-1.5 text-sm font-medium text-neutral-950 hover:opacity-70 dark:text-white disabled:opacity-50"
               >
                 Mark all as read
               </button>
@@ -138,20 +138,20 @@ export default function TutorNotificationsPage() {
                   key={notification.id}
                   className={`rounded-xl border p-4 transition-colors ${
                     notification.read
-                      ? "border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
-                      : "border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-900/20"
+                      ? "border-neutral-200 bg-white dark:border-gray-700 dark:bg-gray-800"
+                      : "border-[#d5e45c] bg-[#E4F56C]/20 dark:border-white/20 dark:bg-white/10"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className={`font-medium ${notification.read ? "text-gray-700 dark:text-gray-300" : "text-gray-900 dark:text-white"}`}>
+                      <p className={`font-medium ${notification.read ? "text-neutral-700 dark:text-gray-300" : "text-neutral-950 dark:text-white"}`}>
                         {notification.title}
                       </p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                      <p className="text-sm text-neutral-500 dark:text-gray-400 mt-0.5">
                         {notification.message}
                       </p>
                     </div>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
+                    <p className="text-xs text-neutral-400 dark:text-gray-500 shrink-0">
                       {formatTimeAgo(notification.created_at)}
                     </p>
                   </div>
@@ -159,9 +159,9 @@ export default function TutorNotificationsPage() {
               ))}
             </div>
           ) : (
-            <div className="text-center py-12 rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">No notifications</h3>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            <div className="text-center py-12 rounded-[28px] border border-neutral-200/80 bg-white dark:border-white/10 dark:bg-gray-800 shadow-[0_10px_30px_rgba(16,24,40,0.05)]">
+              <h3 className="text-lg font-medium text-neutral-950 dark:text-white">No notifications</h3>
+              <p className="mt-1 text-sm text-neutral-500 dark:text-gray-400">
                 You&apos;re all caught up.
               </p>
             </div>

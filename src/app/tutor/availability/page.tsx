@@ -165,8 +165,8 @@ export default function TutorAvailabilityPage() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-amber-500 border-t-transparent"></div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Loading availability...</p>
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-neutral-950 border-t-transparent"></div>
+          <p className="text-sm text-neutral-500 dark:text-gray-400">Loading availability...</p>
         </div>
       </div>
     );
@@ -182,8 +182,8 @@ export default function TutorAvailabilityPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Failed to load availability</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{error.message}</p>
+          <h3 className="text-lg font-semibold text-neutral-950 dark:text-white mb-1">Failed to load availability</h3>
+          <p className="text-sm text-neutral-500 dark:text-gray-400">{error.message}</p>
         </div>
       </div>
     );
@@ -196,13 +196,13 @@ export default function TutorAvailabilityPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Availability</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Set your weekly schedule and request time off</p>
+          <h1 className="text-2xl font-semibold text-neutral-950 dark:text-white tracking-tight">My Availability</h1>
+          <p className="text-sm text-neutral-500 dark:text-gray-400">Set your weekly schedule and request time off</p>
         </div>
         <div className="flex gap-3">
           <button
             onClick={() => setShowTimeOffModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            className="inline-flex items-center gap-2 rounded-full border border-neutral-300 bg-white px-4 py-2.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -212,7 +212,7 @@ export default function TutorAvailabilityPage() {
           {hasChanges && (
             <button
               onClick={handleSaveAvailability}
-              className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-amber-600"
+              className="inline-flex items-center gap-2 rounded-full bg-[#E4F56C] px-4 py-2.5 text-sm font-medium text-neutral-950 hover:brightness-95"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -225,50 +225,50 @@ export default function TutorAvailabilityPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{getTotalHours().toFixed(1)}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Hours/Week</p>
+        <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <p className="text-2xl font-semibold text-neutral-950 dark:text-white tracking-tight">{getTotalHours().toFixed(1)}</p>
+          <p className="text-sm text-neutral-500 dark:text-gray-400">Hours/Week</p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">
+        <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <p className="text-2xl font-semibold text-neutral-950 dark:text-white tracking-tight">
             {Object.values(availability).filter(d => d.enabled).length}
           </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Days Available</p>
+          <p className="text-sm text-neutral-500 dark:text-gray-400">Days Available</p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">
+        <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <p className="text-2xl font-semibold text-neutral-950 dark:text-white tracking-tight">
             {timeOffRequests.filter(r => r.status === "pending").length}
           </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Pending Requests</p>
+          <p className="text-sm text-neutral-500 dark:text-gray-400">Pending Requests</p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+        <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <p className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400 tracking-tight">
             {timeOffRequests.filter(r => r.status === "approved").length}
           </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Approved Time Off</p>
+          <p className="text-sm text-neutral-500 dark:text-gray-400">Approved Time Off</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Weekly Availability */}
-        <div className="lg:col-span-2 rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-          <div className="border-b border-gray-200 dark:border-gray-700 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Weekly Availability</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Set the times you&apos;re available to teach classes</p>
+        <div className="lg:col-span-2 rounded-[28px] border border-neutral-200/80 bg-white dark:border-white/10 dark:bg-gray-800 shadow-[0_10px_30px_rgba(16,24,40,0.05)]">
+          <div className="border-b border-neutral-200 dark:border-gray-700 p-6">
+            <h3 className="text-lg font-semibold text-neutral-950 dark:text-white">Weekly Availability</h3>
+            <p className="text-sm text-neutral-500 dark:text-gray-400">Set the times you&apos;re available to teach classes</p>
           </div>
           <div className="p-6 space-y-4">
             {daysOfWeek.map((day) => (
               <div key={day.key} className={`rounded-xl border p-4 transition-colors ${
                 availability[day.key].enabled 
-                  ? "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20" 
-                  : "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800"
+                  ? "border-[#d5e45c] bg-[#E4F56C]/20 dark:border-white/20 dark:bg-white/10" 
+                  : "border-neutral-200 bg-neutral-50 dark:border-gray-700 dark:bg-gray-800"
               }`}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => toggleDay(day.key)}
                       className={`relative h-6 w-11 rounded-full transition-colors ${
-                        availability[day.key].enabled ? "bg-amber-500" : "bg-gray-300 dark:bg-gray-600"
+                        availability[day.key].enabled ? "bg-[#E4F56C]" : "bg-neutral-300 dark:bg-gray-600"
                       }`}
                     >
                       <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
@@ -277,8 +277,8 @@ export default function TutorAvailabilityPage() {
                     </button>
                     <span className={`font-medium ${
                       availability[day.key].enabled 
-                        ? "text-gray-900 dark:text-white" 
-                        : "text-gray-500 dark:text-gray-400"
+                        ? "text-neutral-950 dark:text-white" 
+                        : "text-neutral-500 dark:text-gray-400"
                     }`}>
                       {day.label}
                     </span>
@@ -286,7 +286,7 @@ export default function TutorAvailabilityPage() {
                   {availability[day.key].enabled && (
                     <button
                       onClick={() => addSlot(day.key)}
-                      className="text-sm text-amber-600 hover:text-amber-700 dark:text-amber-400 font-medium"
+                      className="text-sm text-neutral-950 hover:opacity-70 dark:text-white font-medium"
                     >
                       + Add Time Slot
                     </button>
@@ -300,17 +300,17 @@ export default function TutorAvailabilityPage() {
                         <select
                           value={slot.start}
                           onChange={(e) => updateSlot(day.key, idx, "start", e.target.value)}
-                          className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                          className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                         >
                           {timeOptions.map(time => (
                             <option key={time} value={time}>{time}</option>
                           ))}
                         </select>
-                        <span className="text-gray-500">to</span>
+                        <span className="text-neutral-500">to</span>
                         <select
                           value={slot.end}
                           onChange={(e) => updateSlot(day.key, idx, "end", e.target.value)}
-                          className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                          className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                         >
                           {timeOptions.map(time => (
                             <option key={time} value={time}>{time}</option>
@@ -319,7 +319,7 @@ export default function TutorAvailabilityPage() {
                         {availability[day.key].slots.length > 1 && (
                           <button
                             onClick={() => removeSlot(day.key, idx)}
-                            className="p-1 text-gray-400 hover:text-red-500"
+                            className="p-1 text-neutral-400 hover:text-red-500"
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -332,7 +332,7 @@ export default function TutorAvailabilityPage() {
                 )}
 
                 {!availability[day.key].enabled && (
-                  <p className="ml-14 text-sm text-gray-400 dark:text-gray-500">Not available</p>
+                  <p className="ml-14 text-sm text-neutral-400 dark:text-gray-500">Not available</p>
                 )}
               </div>
             ))}
@@ -340,29 +340,29 @@ export default function TutorAvailabilityPage() {
         </div>
 
         {/* Time Off Requests */}
-        <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-          <div className="border-b border-gray-200 dark:border-gray-700 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Time Off Requests</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Your upcoming time off</p>
+        <div className="rounded-[28px] border border-neutral-200/80 bg-white dark:border-white/10 dark:bg-gray-800 shadow-[0_10px_30px_rgba(16,24,40,0.05)]">
+          <div className="border-b border-neutral-200 dark:border-gray-700 p-6">
+            <h3 className="text-lg font-semibold text-neutral-950 dark:text-white">Time Off Requests</h3>
+            <p className="text-sm text-neutral-500 dark:text-gray-400">Your upcoming time off</p>
           </div>
           <div className="p-6">
             {timeOffRequests.length === 0 ? (
               <div className="text-center py-8">
-                <div className="mx-auto h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-3">
-                  <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="mx-auto h-12 w-12 rounded-full bg-neutral-100 dark:bg-gray-700 flex items-center justify-center mb-3">
+                  <svg className="h-6 w-6 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                 </div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">No time off scheduled</p>
+                <p className="text-sm text-neutral-500 dark:text-gray-400">No time off scheduled</p>
               </div>
             ) : (
               <div className="space-y-3">
                 {timeOffRequests.map((request) => (
-                  <div key={request.id} className="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50">
+                  <div key={request.id} className="p-4 rounded-2xl bg-neutral-50 dark:bg-gray-700/50">
                     <div className="flex items-start justify-between mb-2">
                       <div>
-                        <p className="font-medium text-gray-900 dark:text-white">{request.reason}</p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                        <p className="font-medium text-neutral-950 dark:text-white">{request.reason}</p>
+                        <p className="text-sm text-neutral-500 dark:text-gray-400">
                           {request.startDate === request.endDate 
                             ? request.startDate 
                             : `${request.startDate} - ${request.endDate}`
@@ -373,7 +373,7 @@ export default function TutorAvailabilityPage() {
                         request.status === "approved" 
                           ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                           : request.status === "pending"
-                          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                          ? "bg-[#E4F56C] text-neutral-950 dark:bg-white/10 dark:text-white"
                           : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                       }`}>
                         {request.status}
@@ -396,10 +396,10 @@ export default function TutorAvailabilityPage() {
       </div>
 
       {/* Visual Schedule Preview */}
-      <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-        <div className="border-b border-gray-200 dark:border-gray-700 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Schedule Preview</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Visual overview of your weekly availability</p>
+      <div className="rounded-[28px] border border-neutral-200/80 bg-white dark:border-white/10 dark:bg-gray-800 shadow-[0_10px_30px_rgba(16,24,40,0.05)]">
+        <div className="border-b border-neutral-200 dark:border-gray-700 p-6">
+          <h3 className="text-lg font-semibold text-neutral-950 dark:text-white">Schedule Preview</h3>
+          <p className="text-sm text-neutral-500 dark:text-gray-400">Visual overview of your weekly availability</p>
         </div>
         <div className="p-6 overflow-x-auto">
           <div className="min-w-[600px]">
@@ -407,14 +407,14 @@ export default function TutorAvailabilityPage() {
             <div className="flex">
               <div className="w-20"></div>
               {["6AM", "8AM", "10AM", "12PM", "2PM", "4PM", "6PM", "8PM", "10PM"].map(time => (
-                <div key={time} className="flex-1 text-xs text-gray-400 text-center">{time}</div>
+                <div key={time} className="flex-1 text-xs text-neutral-400 text-center">{time}</div>
               ))}
             </div>
             {/* Day rows */}
             {daysOfWeek.map((day) => (
               <div key={day.key} className="flex items-center mt-2">
-                <div className="w-20 text-sm font-medium text-gray-600 dark:text-gray-400">{day.short}</div>
-                <div className="flex-1 h-8 bg-gray-100 dark:bg-gray-700 rounded relative">
+                <div className="w-20 text-sm font-medium text-neutral-600 dark:text-gray-400">{day.short}</div>
+                <div className="flex-1 h-8 bg-neutral-100 dark:bg-gray-700 rounded relative">
                   {availability[day.key].enabled && availability[day.key].slots.map((slot, idx) => {
                     const startHour = parseInt(slot.start.split(":")[0]) + parseInt(slot.start.split(":")[1]) / 60;
                     const endHour = parseInt(slot.end.split(":")[0]) + parseInt(slot.end.split(":")[1]) / 60;
@@ -423,7 +423,7 @@ export default function TutorAvailabilityPage() {
                     return (
                       <div
                         key={idx}
-                        className="absolute top-1 bottom-1 bg-amber-500 rounded"
+                        className="absolute top-1 bottom-1 bg-[#E4F56C] rounded"
                         style={{ left: `${left}%`, width: `${width}%` }}
                         title={`${slot.start} - ${slot.end}`}
                       />
@@ -440,37 +440,37 @@ export default function TutorAvailabilityPage() {
       {showTimeOffModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 dark:bg-gray-800">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Request Time Off</h3>
+            <h3 className="text-lg font-semibold text-neutral-950 dark:text-white mb-4">Request Time Off</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
+                <label className="block text-sm font-medium text-neutral-700 dark:text-gray-300 mb-1">Start Date</label>
                 <StudioDate block ariaLabel="Start date" value={newTimeOff.startDate} onChange={(value) => setNewTimeOff(prev => ({ ...prev, startDate: value }))} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
+                <label className="block text-sm font-medium text-neutral-700 dark:text-gray-300 mb-1">End Date</label>
                 <StudioDate block ariaLabel="End date" value={newTimeOff.endDate} onChange={(value) => setNewTimeOff(prev => ({ ...prev, endDate: value }))} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Reason</label>
+                <label className="block text-sm font-medium text-neutral-700 dark:text-gray-300 mb-1">Reason</label>
                 <input
                   type="text"
                   value={newTimeOff.reason}
                   onChange={(e) => setNewTimeOff(prev => ({ ...prev, reason: e.target.value }))}
                   placeholder="e.g., Vacation, Medical appointment"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  className="w-full rounded-2xl border border-neutral-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 />
               </div>
             </div>
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => setShowTimeOffModal(false)}
-                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                className="flex-1 rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmitTimeOff}
-                className="flex-1 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+                className="flex-1 rounded-full bg-[#E4F56C] px-4 py-2 text-sm font-medium text-neutral-950 hover:brightness-95"
               >
                 Submit Request
               </button>

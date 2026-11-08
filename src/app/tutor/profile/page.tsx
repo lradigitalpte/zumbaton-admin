@@ -195,8 +195,8 @@ export default function TutorProfilePage() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Loading profile...</p>
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-neutral-950 border-t-transparent"></div>
+          <p className="text-sm text-neutral-500 dark:text-gray-400">Loading profile...</p>
         </div>
       </div>
     );
@@ -211,8 +211,8 @@ export default function TutorProfilePage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Failed to load profile</h3>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{error.message}</p>
+          <h3 className="text-lg font-medium text-neutral-950 dark:text-white">Failed to load profile</h3>
+          <p className="mt-1 text-sm text-neutral-500 dark:text-gray-400">{error.message}</p>
         </div>
       </div>
     );
@@ -223,20 +223,20 @@ export default function TutorProfilePage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl text-[#E4F56C] shadow-lg bg-neutral-950">
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Profile</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <h1 className="text-2xl font-semibold text-neutral-950 dark:text-white tracking-tight">My Profile</h1>
+            <p className="text-sm text-neutral-500 dark:text-gray-400">
               Manage your account and security preferences
             </p>
           </div>
         </div>
         {saveSuccess && (
-          <div className="flex items-center gap-2 rounded-lg bg-emerald-100 px-4 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+          <div className="flex items-center gap-2 rounded-full bg-emerald-100 px-4 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
@@ -249,7 +249,7 @@ export default function TutorProfilePage() {
         {/* Sidebar with Avatar */}
         <div className="lg:col-span-1 space-y-4">
           {/* Profile Card */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center dark:border-gray-700 dark:bg-gray-800">
+          <div className="rounded-[28px] border border-neutral-200/80 bg-white p-6 text-center dark:border-white/10 dark:bg-gray-800 shadow-[0_10px_30px_rgba(16,24,40,0.05)]">
             <div className="relative mx-auto h-24 w-24 mb-4">
               {profile.avatar ? (
                 <img
@@ -258,22 +258,22 @@ export default function TutorProfilePage() {
                   className="h-24 w-24 rounded-full object-cover shadow-lg"
                 />
               ) : (
-                <div className="h-24 w-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white shadow-lg">
+                <div className="h-24 w-24 rounded-full flex items-center justify-center text-2xl font-semibold text-[#E4F56C] shadow-lg bg-neutral-950 tracking-tight">
                   {profile.firstName[0]}{profile.lastName[0]}
                 </div>
               )}
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploadingAvatar}
-                className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-white shadow-lg border border-gray-200 dark:border-gray-600 dark:bg-gray-700 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-white shadow-lg border border-neutral-200 dark:border-gray-600 dark:bg-gray-700 flex items-center justify-center hover:bg-neutral-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isUploadingAvatar ? (
-                  <svg className="h-4 w-4 animate-spin text-gray-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24">
+                  <svg className="h-4 w-4 animate-spin text-neutral-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
                 ) : (
-                  <svg className="h-4 w-4 text-gray-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-4 w-4 text-neutral-600 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
@@ -287,22 +287,22 @@ export default function TutorProfilePage() {
               onChange={handleAvatarChange}
               className="hidden"
             />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{profile.firstName} {profile.lastName}</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">{profile.role}</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{profile.email}</p>
+            <h3 className="text-lg font-semibold text-neutral-950 dark:text-white">{profile.firstName} {profile.lastName}</h3>
+            <p className="text-sm text-neutral-500 dark:text-gray-400 capitalize">{profile.role}</p>
+            <p className="text-xs text-neutral-400 dark:text-gray-500 mt-1">{profile.email}</p>
           </div>
 
           {/* Navigation */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800">
+          <div className="rounded-[28px] border border-neutral-200/80 bg-white p-2 dark:border-white/10 dark:bg-gray-800 shadow-[0_10px_30px_rgba(16,24,40,0.05)]">
             <nav className="space-y-1">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition-colors ${
+                  className={`flex w-full items-center gap-3 rounded-full px-4 py-3 text-left text-sm font-medium transition-colors ${
                     activeTab === tab.id
-                      ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                      : "text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
+                      ? "bg-[#E4F56C]/20 text-neutral-950 dark:bg-white/10 dark:text-white"
+                      : "text-neutral-600 hover:bg-neutral-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
                   }`}
                 >
                   {tab.icon}
@@ -315,18 +315,18 @@ export default function TutorProfilePage() {
 
         {/* Content */}
         <div className="lg:col-span-3">
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
+          <div className="rounded-[28px] border border-neutral-200/80 bg-white p-6 dark:border-white/10 dark:bg-gray-800 shadow-[0_10px_30px_rgba(16,24,40,0.05)]">
             {/* Profile Tab */}
             {activeTab === "profile" && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Personal Information</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Update your personal details</p>
+                  <h3 className="text-lg font-semibold text-neutral-950 dark:text-white">Personal Information</h3>
+                  <p className="text-sm text-neutral-500 dark:text-gray-400">Update your personal details</p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">First Name</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">First Name</label>
                     <Input
                       type="text"
                       value={profile.firstName}
@@ -335,7 +335,7 @@ export default function TutorProfilePage() {
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Last Name</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Last Name</label>
                     <Input
                       type="text"
                       value={profile.lastName}
@@ -344,17 +344,17 @@ export default function TutorProfilePage() {
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Email Address</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Email Address</label>
                     <Input
                       type="email"
                       value={profile.email}
                       disabled
                     />
-                    <p className="mt-1 text-xs text-gray-500">Email cannot be changed</p>
+                    <p className="mt-1 text-xs text-neutral-500">Email cannot be changed</p>
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Phone Number</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Phone Number</label>
                     <Input
                       type="tel"
                       value={profile.phone}
@@ -363,37 +363,37 @@ export default function TutorProfilePage() {
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Role</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Role</label>
                     <Input
                       type="text"
                       value={profile.role}
                       disabled
                       className="capitalize"
                     />
-                    <p className="mt-1 text-xs text-gray-500">Contact an admin to change your role</p>
+                    <p className="mt-1 text-xs text-neutral-500">Contact an admin to change your role</p>
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Bio</label>
+                    <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Bio</label>
                     <textarea
                       rows={3}
                       value={profile.bio}
                       onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
                       placeholder="Tell students a bit about yourself..."
-                      className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                      className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 focus:border-neutral-400 focus:ring-1 focus:ring-neutral-200"
                     />
                   </div>
                 </div>
 
                 {/* Save Button */}
-                <div className="pt-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
-                  <button className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors">
+                <div className="pt-6 border-t border-neutral-200 dark:border-gray-700 flex justify-end gap-3">
+                  <button className="px-4 py-2 rounded-full border border-neutral-200 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors">
                     Cancel
                   </button>
                   <button
                     onClick={handleSave}
                     disabled={isSaving}
-                    className="px-6 py-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                    className="px-6 py-2 rounded-full bg-[#E4F56C] text-sm font-semibold text-neutral-950 hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                   >
                     {isSaving ? (
                       <>
@@ -415,36 +415,36 @@ export default function TutorProfilePage() {
             {activeTab === "security" && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Security Settings</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Manage your password and authentication</p>
+                  <h3 className="text-lg font-semibold text-neutral-950 dark:text-white">Security Settings</h3>
+                  <p className="text-sm text-neutral-500 dark:text-gray-400">Manage your password and authentication</p>
                 </div>
 
                 {/* Password Section */}
-                <div className="p-6 rounded-xl bg-gray-50 dark:bg-gray-700/50">
+                <div className="p-6 rounded-2xl bg-neutral-50 dark:bg-gray-700/50">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                        <svg className="h-5 w-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <div className="h-10 w-10 rounded-lg bg-[#E4F56C] dark:bg-white/10 flex items-center justify-center">
+                        <svg className="h-5 w-5 text-neutral-950 dark:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                         </svg>
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900 dark:text-white">Password</p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Change your account password</p>
+                        <p className="font-medium text-neutral-950 dark:text-white">Password</p>
+                        <p className="text-sm text-neutral-500 dark:text-gray-400">Change your account password</p>
                       </div>
                     </div>
                     <button
                       onClick={() => setShowPasswordForm(!showPasswordForm)}
-                      className="text-sm font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+                      className="text-sm font-medium text-neutral-950 hover:opacity-70 dark:text-white"
                     >
                       {showPasswordForm ? "Cancel" : "Change Password"}
                     </button>
                   </div>
 
                   {showPasswordForm && (
-                    <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <div className="space-y-4 pt-4 border-t border-neutral-200 dark:border-gray-600">
                       <div>
-                        <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Current Password</label>
+                        <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Current Password</label>
                         <Input
                           type="password"
                           value={passwords.currentPassword}
@@ -452,7 +452,7 @@ export default function TutorProfilePage() {
                         />
                       </div>
                       <div>
-                        <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">New Password</label>
+                        <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">New Password</label>
                         <Input
                           type="password"
                           value={passwords.newPassword}
@@ -460,7 +460,7 @@ export default function TutorProfilePage() {
                         />
                       </div>
                       <div>
-                        <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Confirm New Password</label>
+                        <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-gray-300">Confirm New Password</label>
                         <Input
                           type="password"
                           value={passwords.confirmPassword}
@@ -470,7 +470,7 @@ export default function TutorProfilePage() {
                       <button
                         onClick={handlePasswordChange}
                         disabled={isSaving || !passwords.currentPassword || !passwords.newPassword || !passwords.confirmPassword}
-                        className="px-4 py-2 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                        className="px-4 py-2 rounded-full bg-[#E4F56C] text-sm font-medium text-neutral-950 hover:brightness-95 disabled:opacity-50 transition-colors"
                       >
                         Update Password
                       </button>
@@ -479,7 +479,7 @@ export default function TutorProfilePage() {
                 </div>
 
                 {/* Two-Factor Auth */}
-                <div className="p-6 rounded-xl bg-gray-50 dark:bg-gray-700/50">
+                <div className="p-6 rounded-2xl bg-neutral-50 dark:bg-gray-700/50">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="h-10 w-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
@@ -488,13 +488,13 @@ export default function TutorProfilePage() {
                         </svg>
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900 dark:text-white">Two-Factor Authentication</p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                        <p className="font-medium text-neutral-950 dark:text-white">Two-Factor Authentication</p>
+                        <p className="text-sm text-neutral-500 dark:text-gray-400">
                           {data?.security.twoFactorEnabled ? "Enabled - Using authenticator app" : "Coming soon"}
                         </p>
                       </div>
                     </div>
-                    <span className="px-3 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-300">
+                    <span className="px-3 py-1 rounded-full text-xs font-medium bg-neutral-200 text-neutral-600 dark:bg-gray-600 dark:text-gray-300">
                       Coming Soon
                     </span>
                   </div>
@@ -507,8 +507,8 @@ export default function TutorProfilePage() {
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Active Sessions</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Manage your logged-in devices</p>
+                    <h3 className="text-lg font-semibold text-neutral-950 dark:text-white">Active Sessions</h3>
+                    <p className="text-sm text-neutral-500 dark:text-gray-400">Manage your logged-in devices</p>
                   </div>
                 </div>
 
@@ -518,28 +518,28 @@ export default function TutorProfilePage() {
                       key={session.id}
                       className={`p-4 rounded-xl border ${
                         session.current
-                          ? "border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-900/20"
-                          : "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-700/50"
+                          ? "border-[#d5e45c] bg-[#E4F56C]/20 dark:border-white/20 dark:bg-white/10"
+                          : "border-neutral-200 bg-neutral-50 dark:border-gray-700 dark:bg-gray-700/50"
                       }`}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex items-start gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                            <svg className="h-5 w-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <div className="h-10 w-10 rounded-lg bg-[#E4F56C] dark:bg-white/10 flex items-center justify-center">
+                            <svg className="h-5 w-5 text-neutral-950 dark:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                             </svg>
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <p className="font-medium text-gray-900 dark:text-white">{session.device}</p>
+                              <p className="font-medium text-neutral-950 dark:text-white">{session.device}</p>
                               {session.current && (
-                                <span className="px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400 rounded-full">
+                                <span className="px-2 py-0.5 text-xs font-medium bg-[#E4F56C] text-neutral-950 dark:bg-white/10 dark:text-white rounded-full">
                                   This device
                                 </span>
                               )}
                             </div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{session.browser}</p>
-                            <div className="flex items-center gap-4 mt-1 text-xs text-gray-400 dark:text-gray-500">
+                            <p className="text-sm text-neutral-500 dark:text-gray-400">{session.browser}</p>
+                            <div className="flex items-center gap-4 mt-1 text-xs text-neutral-400 dark:text-gray-500">
                               <span>{session.location}</span>
                             </div>
                           </div>
@@ -548,7 +548,7 @@ export default function TutorProfilePage() {
                           <p className={`text-sm font-medium ${
                             session.current 
                               ? "text-emerald-600 dark:text-emerald-400" 
-                              : "text-gray-500 dark:text-gray-400"
+                              : "text-neutral-500 dark:text-gray-400"
                           }`}>
                             {session.lastActive}
                           </p>
@@ -559,14 +559,14 @@ export default function TutorProfilePage() {
                 </div>
 
                 {/* Session Info */}
-                <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                <div className="p-4 rounded-xl bg-[#E4F56C]/20 dark:bg-white/10 border border-[#d5e45c] dark:border-white/20">
                   <div className="flex items-start gap-3">
-                    <svg className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="h-5 w-5 text-neutral-950 dark:text-white mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <div>
-                      <p className="text-sm font-medium text-blue-800 dark:text-blue-300">Session Security</p>
-                      <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                      <p className="text-sm font-medium text-neutral-950 dark:text-white">Session Security</p>
+                      <p className="text-xs text-neutral-950 dark:text-white mt-1">
                         Sessions automatically expire after 30 days of inactivity. Enable two-factor authentication for additional security.
                       </p>
                     </div>
