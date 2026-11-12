@@ -22,6 +22,9 @@ export interface User {
   lastActive: string
   // How the account was created
   signupSource?: 'public' | 'admin' | string | null
+  childReviewPending?: boolean
+  guardianName?: string | null
+  guardianPhone?: string | null
   // Computed status
   status: "active" | "flagged" | "inactive"
 }
@@ -122,9 +125,12 @@ async function fetchUsers(filters: UseUsersQueryParams = {}, cacheBuster?: numbe
       classesAttended: user.classesAttended ?? user.stats?.totalClassesAttended ?? 0,
       noShows: user.totalNoShows ?? user.stats?.totalNoShows ?? 0,
       joinedDate: user.createdAt, // Map createdAt to joinedDate for UI
-      lastActive: user.updatedAt || user.createdAt,
+      lastActive: user.lastActive || user.createdAt,
       avatar: user.avatarUrl || undefined, // Map avatarUrl to avatar for compatibility
       signupSource: user.signupSource ?? user.signup_source ?? null,
+      childReviewPending: user.childReviewPending === true || user.child_review_pending === true,
+      guardianName: user.guardianName ?? user.guardian_name ?? null,
+      guardianPhone: user.guardianPhone ?? user.guardian_phone ?? null,
       status, // Computed status
     }
   })

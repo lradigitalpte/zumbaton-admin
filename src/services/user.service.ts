@@ -43,6 +43,10 @@ function toUserProfile(row: Record<string, unknown>): UserProfile {
     earlyBirdEligible: (row.early_bird_eligible as boolean) || false,
     earlyBirdGrantedAt: row.early_bird_granted_at as string | null,
     earlyBirdExpiresAt: row.early_bird_expires_at as string | null,
+    guardianName: (row.guardian_name as string | null) ?? null,
+    guardianPhone: (row.guardian_phone as string | null) ?? null,
+    guardianEmail: (row.guardian_email as string | null) ?? null,
+    childReviewPending: row.child_review_pending === true,
   }
 }
 
@@ -65,6 +69,43 @@ function toUserStats(row: Record<string, unknown>): UserStats {
     memberSince: row.member_since as string,
     updatedAt: row.updated_at as string,
   }
+}
+
+// =====================================================
+// HELPER: Last activity per user
+// "Last Active" used to be user_profiles.updated_at, which only changes when the
+// profile is edited — so members who book/pay every week looked inactive since
+// signup. Use the latest of: sign-in, booking made, successful payment.
+// =====================================================
+
+async function getLastActivityMap(
+  userIds: string[],
+  lastLoginMap: Record<string, string | null> = {}
+): Promise<Record<string, string | null>> {
+  const result: Record<string, string | null> = {}
+  if (userIds.length === 0) return result
+
+  const bump = (id: string, ts: string | null | undefined) => {
+    if (!ts) return
+    const cur = result[id]
+    if (!cur || new Date(ts).getTime() > new Date(cur).getTime()) result[id] = ts
+  }
+
+  for (const id of userIds) bump(id, lastLoginMap[id])
+
+  const admin = getSupabaseAdminClient()
+  const [bookingsRes, paymentsRes] = await Promise.all([
+    admin.from('bookings').select('user_id, created_at').in('user_id', userIds),
+    admin.from('payments').select('user_id, created_at').in('user_id', userIds).eq('status', 'succeeded'),
+  ])
+
+  if (bookingsRes.error) console.warn('Failed to load bookings for last activity:', bookingsRes.error)
+  if (paymentsRes.error) console.warn('Failed to load payments for last activity:', paymentsRes.error)
+
+  for (const row of bookingsRes.data || []) bump(row.user_id as string, row.created_at as string)
+  for (const row of paymentsRes.data || []) bump(row.user_id as string, row.created_at as string)
+
+  return result
 }
 
 // =====================================================
@@ -113,11 +154,23 @@ export async function getUserProfile(
     updatedAt: data.updated_at as string,
   } : undefined
 
+  // Last activity: sign-in + latest booking/payment
+  let lastActive: string | null = null
+  try {
+    const loginMap: Record<string, string | null> = {}
+    const { data: authData } = await getSupabaseAdminClient().auth.admin.getUserById(targetUserId)
+    loginMap[targetUserId] = authData?.user?.last_sign_in_at || null
+    lastActive = (await getLastActivityMap([targetUserId], loginMap))[targetUserId] || null
+  } catch (err) {
+    console.warn('Failed to compute last activity:', err)
+  }
+
   return {
     ...profile,
     stats,
     currentTokenBalance: (data.current_token_balance as number) || 0,
     currentAvailableTokens: (data.current_available_tokens as number) || 0,
+    lastActive,
   }
 }
 
@@ -188,7 +241,8 @@ export async function listUsers(
     try {
       // Fetch ALL auth users and filter (Supabase Admin API doesn't support filtering by IDs)
       // This is still expensive but acceptable for small result sets
-      const { data: authUsersData, error: authError } = await getSupabaseAdminClient().auth.admin.listUsers()
+      // perPage: default page is only 50 users, which silently dropped newer members
+      const { data: authUsersData, error: authError } = await getSupabaseAdminClient().auth.admin.listUsers({ perPage: 1000 })
       
       if (!authError && authUsersData?.users) {
         // Create a Set for O(1) lookup instead of O(n) includes()
@@ -231,6 +285,13 @@ export async function listUsers(
     }
   }
 
+  let lastActivityMap: Record<string, string | null> = {}
+  try {
+    lastActivityMap = await getLastActivityMap(userIds, lastLoginMap)
+  } catch (err) {
+    console.warn('Failed to compute last activity for user list:', err)
+  }
+
   // Map from view data (already has stats + balances) to UserProfile with stats
   const users = (data || []).map((row: Record<string, unknown>) => {
     const profile = toUserProfile(row)
@@ -265,6 +326,7 @@ export async function listUsers(
       classesAttended: classCounts[row.id as string]?.attended ?? ((row.total_classes_attended as number) || 0),
       classesBooked: classCounts[row.id as string]?.booked ?? ((row.total_classes_booked as number) || 0),
       lastLogin: lastLoginMap[row.id as string] || null,
+      lastActive: lastActivityMap[row.id as string] || null,
     }
   })
 
@@ -447,6 +509,10 @@ export async function updateUserStatus(
   const updateData: Record<string, unknown> = {}
   if (updates.isActive !== undefined) updateData.is_active = updates.isActive
   if (updates.isFlagged !== undefined) updateData.is_flagged = updates.isFlagged
+  // Turning the account on is the confirmation that a pending child is real.
+  if (updates.isActive === true && currentData.child_review_pending === true) {
+    updateData.child_review_pending = false
+  }
 
   const { data, error } = await getSupabaseAdminClient()
     .from('user_profiles')

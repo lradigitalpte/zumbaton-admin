@@ -34,6 +34,10 @@ export const UserProfileSchema = z.object({
   earlyBirdEligible: z.boolean().optional(),
   earlyBirdGrantedAt: z.string().datetime().nullable().optional(),
   earlyBirdExpiresAt: z.string().datetime().nullable().optional(),
+  guardianName: z.string().nullable().optional(),
+  guardianPhone: z.string().nullable().optional(),
+  guardianEmail: z.string().nullable().optional(),
+  childReviewPending: z.boolean().optional(),
 })
 
 export type UserProfile = z.infer<typeof UserProfileSchema>
@@ -71,6 +75,8 @@ export const UserProfileWithStatsSchema = UserProfileSchema.extend({
   stats: UserStatsSchema.optional(),
   currentTokenBalance: z.number().int().min(0).optional(),
   currentAvailableTokens: z.number().int().min(0).optional(),
+  /** Latest of sign-in, booking made, or successful payment. */
+  lastActive: z.string().nullable().optional(),
 })
 
 export type UserProfileWithStats = z.infer<typeof UserProfileWithStatsSchema>

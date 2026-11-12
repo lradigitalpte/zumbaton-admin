@@ -71,7 +71,7 @@ const TableSkeleton = () => (
   </div>
 );
 
-type FilterType = "all" | "active" | "flagged" | "inactive" | "public";
+type FilterType = "all" | "active" | "flagged" | "inactive" | "public" | "child";
 type SortField = "name" | "tokenBalance" | "totalClasses" | "classesAttended" | "noShows" | "lastActive" | "joinedDate";
 type SortDirection = "asc" | "desc";
 type TokenFilter = "all" | "zero" | "low" | "normal" | "high";
@@ -209,7 +209,9 @@ export default function UsersPage() {
           ? true
           : filter === "public"
             ? user.signupSource === "public"
-            : user.status === filter;
+            : filter === "child"
+              ? user.childReviewPending === true
+              : user.status === filter;
       
       // Search filter
       const matchesSearch = searchQuery === "" ||
@@ -638,6 +640,7 @@ export default function UsersPage() {
     { key: "active", label: "Active" },
     { key: "flagged", label: "Flagged" },
     { key: "inactive", label: "Inactive" },
+    { key: "child", label: "Child check" },
     { key: "public", label: "Self-signup" },
   ];
 
@@ -648,6 +651,7 @@ export default function UsersPage() {
       active: users.filter((u) => u.status === "active").length,
       flagged: users.filter((u) => u.status === "flagged").length,
       inactive: users.filter((u) => u.status === "inactive").length,
+      child: users.filter((u) => u.childReviewPending).length,
       public: users.filter((u) => u.signupSource === "public").length,
     };
   }, [users]);
@@ -1049,6 +1053,11 @@ export default function UsersPage() {
                           {user.signupSource === "public" && (
                             <span className="shrink-0 rounded-full bg-lime-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-lime-700 dark:bg-lime-900/40 dark:text-lime-300">
                               Self-signup
+                            </span>
+                          )}
+                          {user.childReviewPending && (
+                            <span className="shrink-0 rounded-full bg-neutral-950 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#E4F56C]">
+                              Child check
                             </span>
                           )}
                         </div>

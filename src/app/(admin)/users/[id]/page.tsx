@@ -1321,7 +1321,12 @@ export default function UserDetailPage() {
       return;
     }
 
-    if (!confirm(`Are you sure you want to reactivate ${user.name}? They will be able to book classes again.`)) {
+    const confirmingChild = user.childReviewPending === true;
+    if (!confirm(
+      confirmingChild
+        ? `Confirm ${user.name} is a child and turn the account on? They will be able to sign in.`
+        : `Are you sure you want to reactivate ${user.name}? They will be able to book classes again.`
+    )) {
       return;
     }
 
@@ -1346,7 +1351,10 @@ export default function UserDetailPage() {
         throw new Error(result.error?.message || result.message || 'Failed to reactivate user');
       }
 
-      toast.showToast('User reactivated successfully', 'success');
+      toast.showToast(
+        user.childReviewPending ? 'Child confirmed. Account is active.' : 'User reactivated successfully',
+        'success'
+      );
       
       // Refresh user data
       invalidateDetail(userId);
@@ -1626,7 +1634,11 @@ export default function UserDetailPage() {
                 disabled={isReactivating}
                 className="rounded-full bg-[#E4F56C] px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-[#d5e45c] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isReactivating ? "Reactivating..." : "Reactivate User"}
+                {isReactivating
+                  ? "Reactivating..."
+                  : userData.childReviewPending
+                    ? "Confirm child"
+                    : "Reactivate User"}
               </button>
             )}
           </div>
@@ -1672,6 +1684,16 @@ export default function UserDetailPage() {
         {/* Overview Tab */}
         {activeTab === "overview" && (
           <div>
+            {userData.childReviewPending && (
+              <div className="mb-6 rounded-[28px] border border-neutral-950 bg-[#E4F56C] p-5 text-neutral-950">
+                <p className="text-[11px] font-medium uppercase tracking-[0.16em]">Waiting for child confirmation</p>
+                <p className="mt-2 text-sm font-medium">
+                  This member said they are under 13. The account stays off until you confirm it.
+                  Guardian: {userData.guardianName || "name missing"}
+                  {userData.guardianPhone ? ` · ${userData.guardianPhone}` : ""}.
+                </p>
+              </div>
+            )}
             <div className="grid gap-6 md:grid-cols-2">
               {/* Personal Information */}
               <div className="rounded-[28px] border border-neutral-200/80 bg-white p-5 shadow-[0_10px_30px_rgba(16,24,40,0.05)] dark:border-white/10 dark:bg-gray-800 md:col-span-2">
@@ -1705,6 +1727,15 @@ export default function UserDetailPage() {
                     <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Blood Group</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">{userData.bloodGroup || "-"}</dd>
                   </div>
+                  {(userData.guardianName || userData.guardianPhone) && (
+                    <div className="flex flex-col gap-1 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5 sm:col-span-2">
+                      <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Guardian</dt>
+                      <dd className="text-sm font-medium text-gray-900 dark:text-white">
+                        {userData.guardianName || "—"}
+                        {userData.guardianPhone ? ` · ${userData.guardianPhone}` : ""}
+                      </dd>
+                    </div>
+                  )}
                   <div className="flex flex-col items-start gap-2 rounded-[22px] border border-neutral-200/80 bg-neutral-50 px-4 py-3 dark:border-white/10 dark:bg-white/5 sm:col-span-2 lg:col-span-3">
                     <dt className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Registration Form</dt>
                     <dd className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">

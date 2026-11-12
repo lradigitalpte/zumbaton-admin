@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import React, { useState, useEffect } from "react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
@@ -85,6 +86,7 @@ function getNotificationColor(type: string): string {
 
 export default function NotificationDropdown({ 'data-onboarding': dataOnboarding }: NotificationDropdownProps = {} as NotificationDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const router = useRouter();
   
   // Fetch notifications (only in_app channel for dropdown)
   const { data: notificationsData, isLoading } = useNotifications({
@@ -118,6 +120,10 @@ export default function NotificationDropdown({ 'data-onboarding': dataOnboarding
       }
     }
     closeDropdown();
+    const href = notification.data?.href;
+    if (typeof href === "string" && href.startsWith("/")) {
+      router.push(href);
+    }
   };
 
   return (

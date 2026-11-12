@@ -35,6 +35,10 @@ export interface UserDetail {
   earlyBirdEligible?: boolean
   earlyBirdGrantedAt?: string | null
   earlyBirdExpiresAt?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianEmail?: string | null
+  childReviewPending?: boolean
 }
 
 // Query key factory
@@ -97,7 +101,7 @@ async function fetchUserDetail(userId: string, cacheBuster?: number): Promise<Us
     classesAttended: user.stats?.totalClassesAttended || 0,
     noShows: user.stats?.totalNoShows || 0,
     joinedDate: user.createdAt, // Map createdAt to joinedDate
-    lastActive: user.updatedAt || user.createdAt,
+    lastActive: user.lastActive || user.createdAt,
     status, // Computed status
     // Optional fields - these might not be in the API yet, check preferences
     address: (user.preferences as any)?.address || undefined,
@@ -114,6 +118,10 @@ async function fetchUserDetail(userId: string, cacheBuster?: number): Promise<Us
     earlyBirdEligible: user.earlyBirdEligible || false,
     earlyBirdGrantedAt: user.earlyBirdGrantedAt || null,
     earlyBirdExpiresAt: user.earlyBirdExpiresAt || null,
+    guardianName: user.guardianName || user.guardian_name || null,
+    guardianPhone: user.guardianPhone || user.guardian_phone || null,
+    guardianEmail: user.guardianEmail || user.guardian_email || null,
+    childReviewPending: user.childReviewPending === true || user.child_review_pending === true,
   }
 
   return userDetail

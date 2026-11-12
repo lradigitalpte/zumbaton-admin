@@ -13,6 +13,7 @@ const kinds = [
   { label: "Payments", detail: "Package and trial checkout: started, paid, or failed." },
   { label: "Bookings", detail: "When a member books a class." },
   { label: "Trials", detail: "When a guest pays for a trial class." },
+  { label: "Child signups", detail: "When someone registers as a child and needs confirmation." },
 ];
 
 function initial(email: string) {
